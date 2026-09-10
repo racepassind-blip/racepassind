@@ -1,0 +1,26 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.py[cod]
+backend/app.db
+backend/*.db
+backend/.storage/
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*
+!frontend/.env.example
+frontend/.vite/
+
+# Preserved metadata from the former nested frontend repository
+frontend/.git-frontend-history/
+
+# Local/editor files
+.DS_Store
+.vscode/
