@@ -201,7 +201,7 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         )
         db.get(Ticket, ticket_id).quantity_reserved = 1
         db.commit()
-        return actor, registration.id, ticket_id
+        return actor, event_id, registration.id, ticket_id
 
     def _checkin_fixture(self, db: Session):
         actor, event_id, ticket_id = self._actor_and_event(db, ticket_total=1)
@@ -233,7 +233,7 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
     def test_migrations_create_one_unique_checkin_index_and_head(self) -> None:
         with self.engine.connect() as connection:
             version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0009_unique_checkin_registration")
+        self.assertEqual(version, "0010_organizer_applications")
         unique_indexes = [
             index
             for index in inspect(self.engine).get_indexes("checkins")
@@ -309,7 +309,7 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
 
     def test_concurrent_approval_is_idempotent_and_sells_once(self) -> None:
         with Session(self.engine) as db:
-            actor, registration_id, ticket_id = self._approval_fixture(db)
+            actor, event_id, registration_id, ticket_id = self._approval_fixture(db)
 
         workers = 2
         barrier = Barrier(workers)
@@ -318,7 +318,7 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
             with Session(self.engine) as db:
                 barrier.wait(timeout=30)
                 try:
-                    registration, _ = decide_registration_payment(db, actor, registration_id, decision="approve")
+                    registration, _ = decide_registration_payment(db, actor, event_id, registration_id, decision="approve")
                     return ("ok", registration.status)
                 except Exception as error:
                     db.rollback()

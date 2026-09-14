@@ -1,6 +1,7 @@
-import { Clock3, MapPin, QrCode, Ticket } from "lucide-react";
+import { Clock3, MapPin, MessageCircle, QrCode, Ticket } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ParticipantRegistration } from "@/hooks/useParticipantRegistrations";
 import { formatRegistrationAmount, formatRegistrationDate, registrationStatusDetails } from "@/lib/registration-format";
@@ -66,6 +67,7 @@ export function ParticipantRegistrationCard({ registration }: { registration: Pa
             <p className="mb-3 flex items-center justify-center gap-2 text-sm font-semibold"><QrCode className="h-4 w-4 text-accent" />Event ticket QR</p>
             <img src={registration.ticket.qrDataUrl} alt={`Ticket QR for ${registration.event.name}`} className="mx-auto h-52 w-52 rounded-lg bg-white p-2" />
             <p className="mt-3 text-xs text-muted-foreground">This QR contains only an opaque ticket credential. Keep it private and show it at check-in.</p>
+            {registration.event.whatsappGroupUrl && <Button asChild size="sm" variant="outline" className="mt-4 gap-2"><a href={registration.event.whatsappGroupUrl} target="_blank" rel="noreferrer"><MessageCircle className="h-4 w-4" /> Join WhatsApp group</a></Button>}
           </div>
         )}
       </CardContent>

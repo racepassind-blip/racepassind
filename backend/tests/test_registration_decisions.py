@@ -8,7 +8,6 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.services.registration_service import (
-    RegistrationExpiredError,
     decide_registration_payment,
     list_pending_registrations,
 )
@@ -95,7 +94,7 @@ class RegistrationDecisionTests(unittest.TestCase):
             )
         )
         db.commit()
-        return registration.id, ticket.id
+        return registration.id, ticket.id, event.id
 
     def _create_user_and_org(self, db: Session, name: str):
         user = User(
@@ -116,18 +115,18 @@ class RegistrationDecisionTests(unittest.TestCase):
     def test_organizer_can_list_and_approve_once_without_double_selling(self) -> None:
         with Session(self.engine) as db:
             user, organization = self._create_user_and_org(db, "OrganizerA")
-            registration_id, ticket_id = self._create_registration(db, user=user, organization=organization)
+            registration_id, ticket_id, event_id = self._create_registration(db, user=user, organization=organization)
 
             pending = list_pending_registrations(db, user)
             self.assertEqual(len(pending), 1)
             self.assertEqual(pending[0]["paymentStatus"], "pending_verification")
 
-            decide_registration_payment(db, user, registration_id, decision="approve")
+            decide_registration_payment(db, user, event_id, registration_id, decision="approve")
             ticket = db.get(Ticket, ticket_id)
             self.assertEqual(ticket.quantity_reserved, 0)
             self.assertEqual(ticket.quantity_sold, 1)
 
-            decide_registration_payment(db, user, registration_id, decision="approve")
+            decide_registration_payment(db, user, event_id, registration_id, decision="approve")
             ticket = db.get(Ticket, ticket_id)
             self.assertEqual(ticket.quantity_reserved, 0)
             self.assertEqual(ticket.quantity_sold, 1)
@@ -138,41 +137,68 @@ class RegistrationDecisionTests(unittest.TestCase):
         with Session(self.engine) as db:
             owner, organization = self._create_user_and_org(db, "OwnerA")
             other_user, other_organization = self._create_user_and_org(db, "OwnerB")
-            registration_id, ticket_id = self._create_registration(db, user=owner, organization=organization)
+            registration_id, ticket_id, event_id = self._create_registration(db, user=owner, organization=organization)
 
             self.assertEqual(list_pending_registrations(db, other_user), [])
             with self.assertRaises(ValueError):
-                decide_registration_payment(db, other_user, registration_id, decision="approve")
+                decide_registration_payment(db, other_user, event_id, registration_id, decision="approve")
             ticket = db.get(Ticket, ticket_id)
             self.assertEqual(ticket.quantity_reserved, 1)
             self.assertEqual(ticket.quantity_sold, 0)
             self.assertIsNotNone(other_organization)
 
+    def test_event_scope_rejects_registration_from_another_event(self) -> None:
+        with Session(self.engine) as db:
+            user, organization = self._create_user_and_org(db, "OrganizerEventScope")
+            registration_id, ticket_id, event_id = self._create_registration(db, user=user, organization=organization)
+            other_event = Event(
+                organization=organization,
+                name="Other event",
+                description="Other event",
+                category="running",
+                location_name="Bengaluru",
+                country="India",
+                max_participants=100,
+                status="published",
+                distance="5 km",
+                participants=0,
+                rules=[],
+            )
+            db.add(other_event)
+            db.flush()
+
+            with self.assertRaises(ValueError):
+                decide_registration_payment(db, user, other_event.id, registration_id, decision="approve")
+            ticket = db.get(Ticket, ticket_id)
+            self.assertEqual(ticket.quantity_reserved, 1)
+            self.assertEqual(ticket.quantity_sold, 0)
+            self.assertEqual(db.get(Registration, registration_id).event_id, event_id)
+
     def test_rejection_releases_reservation_and_requires_reason(self) -> None:
         with Session(self.engine) as db:
             user, organization = self._create_user_and_org(db, "OrganizerC")
-            registration_id, ticket_id = self._create_registration(db, user=user, organization=organization)
+            registration_id, ticket_id, event_id = self._create_registration(db, user=user, organization=organization)
 
             with self.assertRaises(ValueError):
-                decide_registration_payment(db, user, registration_id, decision="reject")
-            decide_registration_payment(db, user, registration_id, decision="reject", reason="UTR could not be verified")
+                decide_registration_payment(db, user, event_id, registration_id, decision="reject")
+            decide_registration_payment(db, user, event_id, registration_id, decision="reject", reason="UTR could not be verified")
             ticket = db.get(Ticket, ticket_id)
             registration = db.get(Registration, registration_id)
             self.assertEqual(ticket.quantity_reserved, 0)
             self.assertEqual(ticket.quantity_sold, 0)
             self.assertEqual(registration.status, "rejected")
 
-    def test_expired_registration_is_released_and_cannot_be_approved(self) -> None:
+    def test_organizer_can_approve_after_old_reservation_deadline(self) -> None:
         with Session(self.engine) as db:
             user, organization = self._create_user_and_org(db, "OrganizerD")
-            registration_id, ticket_id = self._create_registration(db, user=user, organization=organization, expired=True)
+            registration_id, ticket_id, event_id = self._create_registration(db, user=user, organization=organization, expired=True)
 
-            with self.assertRaises(RegistrationExpiredError):
-                decide_registration_payment(db, user, registration_id, decision="approve")
+            decide_registration_payment(db, user, event_id, registration_id, decision="approve")
             ticket = db.get(Ticket, ticket_id)
             registration = db.get(Registration, registration_id)
             self.assertEqual(ticket.quantity_reserved, 0)
-            self.assertEqual(registration.status, "expired")
+            self.assertEqual(ticket.quantity_sold, 1)
+            self.assertEqual(registration.status, "confirmed")
 
 
 if __name__ == "__main__":

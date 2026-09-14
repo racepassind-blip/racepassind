@@ -10,6 +10,7 @@ export interface ParticipantRegistration {
     name: string;
     date: string;
     location: string;
+    whatsappGroupUrl: string | null;
   };
   participantName: string;
   ticketType: {

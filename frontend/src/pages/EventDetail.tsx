@@ -46,7 +46,9 @@ const EventDetail = () => {
     );
   }
 
+  const registrationClosed = event.registrationStatus === "closed";
   const updateQty = (tierId: string, delta: number) => {
+    if (registrationClosed) return;
     setQuantities((prev) => {
       const tier = event.tiers.find((t) => t.id === tierId);
       const current = prev[tierId] || 0;
@@ -61,20 +63,18 @@ const EventDetail = () => {
   );
   const totalTickets = Object.values(quantities).reduce((a, b) => a + b, 0);
 
-  const schedule = [
-    { time: "06:00", label: "Registration & Kit Pickup" },
-    { time: "07:00", label: "Transition Area Opens" },
-    { time: "07:30", label: "Warm-up & Race Briefing" },
-    { time: "08:00", label: "Race Start — Wave 1" },
-    { time: "08:15", label: "Race Start — Wave 2" },
-    { time: "12:00", label: "Aid Station Cut-off (50K)" },
-    { time: "14:00", label: "Finish Line Closes" },
-    { time: "15:00", label: "Awards Ceremony & Celebration" },
-  ];
+  const locationParts = [
+    event.locationDetails?.name ?? event.location,
+    event.locationDetails?.address,
+    event.locationDetails?.city,
+    event.locationDetails?.state,
+    event.locationDetails?.country,
+  ].filter((part, index, parts): part is string => Boolean(part) && parts.indexOf(part) === index);
+  const fullLocation = locationParts.join(", ") || event.location;
 
   const details = [
     { icon: Calendar, label: "Date", value: new Date(event.date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }) },
-    { icon: MapPin, label: "Location", value: event.location },
+    { icon: MapPin, label: "Location", value: fullLocation },
     { icon: User, label: "Organizer", value: event.organizer },
     { icon: Tag, label: "Category", value: event.category },
     { icon: Trophy, label: "Distance", value: event.distance },
@@ -84,27 +84,29 @@ const EventDetail = () => {
   return (
     <Layout>
       {/* Banner */}
-      <div className="relative h-[320px] md:h-[420px] overflow-hidden">
+      <div className="relative h-[320px] overflow-hidden md:h-[420px]">
         <img
           src={event.image}
           alt={event.title}
           className="absolute inset-0 h-full w-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-foreground/80 via-foreground/30 to-transparent" />
-        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-full flex flex-col justify-end pb-8">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-1 text-sm text-primary-foreground/80 hover:text-primary-foreground mb-4 w-fit"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
-          <Badge className="w-fit capitalize mb-2">{event.category}</Badge>
-          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-primary-foreground">
-            {event.title}
-          </h1>
-          <p className="mt-2 text-primary-foreground/70 text-sm md:text-base">
-            {new Date(event.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} · {event.location}
-          </p>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/10" />
+        <div className="relative mx-auto flex h-full max-w-7xl flex-col justify-end px-4 pb-8 sm:px-6 lg:px-8">
+          <div className="w-fit max-w-full rounded-2xl bg-black/55 px-4 py-4 shadow-lg backdrop-blur-sm sm:px-5">
+            <button
+              onClick={() => navigate(-1)}
+              className="mb-4 flex w-fit items-center gap-1 text-sm text-white/90 transition-colors hover:text-white"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
+            <Badge className="mb-2 w-fit capitalize">{event.category}</Badge>
+            <h1 className="text-3xl font-extrabold tracking-tight text-white md:text-5xl">
+              {event.title}
+            </h1>
+            <p className="mt-2 text-sm text-white/90 md:text-base">
+              {new Date(event.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} · {event.location}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -134,23 +136,14 @@ const EventDetail = () => {
 
             {/* Description */}
             <section>
-              <h2 className="text-xl font-bold mb-3">About This Event</h2>
-              <p className="text-muted-foreground leading-relaxed">
-                {event.description}
-              </p>
-            </section>
-
-            {/* Location Map Placeholder */}
-            <section>
-              <h2 className="text-xl font-bold mb-3 flex items-center gap-2">
-                <MapPin className="h-5 w-5 text-primary" /> Location
-              </h2>
-              <div className="rounded-xl border bg-card overflow-hidden">
-                <div className="aspect-[16/7] bg-muted flex items-center justify-center">
-                  <div className="text-center space-y-2">
-                    <MapPin className="h-10 w-10 text-muted-foreground/40 mx-auto" />
-                    <p className="text-sm text-muted-foreground">{event.location}</p>
-                    <p className="text-xs text-muted-foreground/60">Interactive map coming soon</p>
+              <h2 className="mb-3 text-xl font-bold">About This Event</h2>
+              <div className="space-y-5 text-muted-foreground">
+                <p className="whitespace-pre-line leading-relaxed">{event.description}</p>
+                <div className="flex items-start gap-3 rounded-xl border bg-card p-4">
+                  <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Event location</p>
+                    <p className="font-semibold text-foreground">{fullLocation}</p>
                   </div>
                 </div>
               </div>
@@ -158,28 +151,24 @@ const EventDetail = () => {
 
             {/* Schedule */}
             <section>
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <h2 className="mb-4 flex items-center gap-2 text-xl font-bold">
                 <Clock className="h-5 w-5 text-primary" /> Event Schedule
               </h2>
               <div className="rounded-xl border bg-card p-5">
-                <div className="space-y-0">
-                  {schedule.map((s, i) => (
-                    <div key={s.time + i} className="flex items-start gap-4 py-3 group">
+                {event.schedule?.length ? <div className="space-y-0">
+                  {event.schedule.map((item, i) => (
+                    <div key={`${item.time}-${i}`} className="group flex items-start gap-4 py-3">
                       <div className="flex flex-col items-center">
                         <div className="h-3 w-3 rounded-full border-2 border-primary bg-card group-first:bg-primary" />
-                        {i < schedule.length - 1 && (
-                          <div className="w-px h-full min-h-[20px] bg-border" />
-                        )}
+                        {i < event.schedule!.length - 1 && <div className="min-h-[20px] h-full w-px bg-border" />}
                       </div>
-                      <div className="flex items-center gap-3 -mt-1">
-                        <span className="font-mono font-semibold text-sm text-primary w-14">
-                          {s.time}
-                        </span>
-                        <span className="text-sm text-muted-foreground">{s.label}</span>
+                      <div className="-mt-1 flex items-center gap-3">
+                        <span className="w-14 font-mono text-sm font-semibold text-primary">{item.time}</span>
+                        <span className="text-sm text-muted-foreground">{item.label}</span>
                       </div>
                     </div>
                   ))}
-                </div>
+                </div> : <p className="text-sm text-muted-foreground">The event schedule will be announced by the organizer.</p>}
               </div>
             </section>
 
@@ -189,16 +178,16 @@ const EventDetail = () => {
                 <ShieldCheck className="h-5 w-5 text-primary" /> Rules & Regulations
               </h2>
               <div className="rounded-xl border bg-card p-5">
-                <ul className="space-y-3">
+                {event.rules?.length ? <ul className="space-y-3">
                   {event.rules.map((rule, i) => (
                     <li key={i} className="flex items-start gap-3 text-sm text-muted-foreground">
-                      <span className="flex-shrink-0 mt-0.5 h-5 w-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
                         {i + 1}
                       </span>
-                      {rule}
+                      <span>{rule}</span>
                     </li>
                   ))}
-                </ul>
+                </ul> : <p className="text-sm text-muted-foreground">No rules have been published by the organizer yet.</p>}
               </div>
             </section>
           </div>
@@ -215,6 +204,8 @@ const EventDetail = () => {
                     {event.participants.toLocaleString()} / {event.maxParticipants.toLocaleString()} registered
                   </p>
                 </div>
+
+                {registrationClosed && <div className="border-b bg-amber-50 px-5 py-4 text-sm text-amber-950"><p className="font-semibold">Registration is closed</p><p className="mt-1">The organizer is not accepting new responses for this race.</p></div>}
 
                 <div className="p-5 space-y-4">
                   {event.tiers.map((tier) => {
@@ -245,7 +236,7 @@ const EventDetail = () => {
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => updateQty(tier.id, -1)}
-                              disabled={qty === 0}
+                              disabled={registrationClosed || qty === 0}
                               className="h-7 w-7 rounded-md border flex items-center justify-center text-muted-foreground hover:bg-muted disabled:opacity-30 transition-colors"
                             >
                               <Minus className="h-3.5 w-3.5" />
@@ -255,7 +246,7 @@ const EventDetail = () => {
                             </span>
                             <button
                               onClick={() => updateQty(tier.id, 1)}
-                              disabled={qty >= Math.min(tier.available, 10)}
+                              disabled={registrationClosed || qty >= Math.min(tier.available, 10)}
                               className="h-7 w-7 rounded-md border flex items-center justify-center text-muted-foreground hover:bg-muted disabled:opacity-30 transition-colors"
                             >
                               <Plus className="h-3.5 w-3.5" />
@@ -278,13 +269,16 @@ const EventDetail = () => {
                   <Button
                     className="w-full"
                     size="lg"
-                    disabled={totalTickets === 0}
+                    disabled={registrationClosed || totalTickets === 0}
                     onClick={() => {
-                      const firstTier = Object.entries(quantities).find(([, q]) => q > 0);
-                      if (firstTier) navigate(`/checkout/${event.id}/${firstTier[0]}`);
+                      const cart = Object.entries(quantities)
+                        .filter(([, quantity]) => quantity > 0)
+                        .map(([ticketId, quantity]) => ({ ticketId, quantity }));
+                      sessionStorage.setItem(`racepass_cart_${event.id}`, JSON.stringify(cart));
+                      navigate(`/checkout/${event.id}`);
                     }}
                   >
-                    {totalTickets === 0 ? "Select Tickets to Continue" : `Register Now — ₹${totalPrice}`}
+                    {registrationClosed ? "Registration Closed" : totalTickets === 0 ? "Select Tickets to Continue" : `Register Now — ₹${totalPrice}`}
                   </Button>
                 </div>
               </div>

@@ -38,7 +38,7 @@ class LocalStorageAdapter(StorageService):
         return hmac.new(self.signing_secret, material, hashlib.sha256).hexdigest()
 
     def put_private(self, file: BinaryIO, metadata: StorageMetadata) -> str:
-        object_key = f"private/qr/{token_hex(16)}.{metadata.extension}"
+        object_key = f"private/{metadata.purpose}/{token_hex(16)}.{metadata.extension}"
         path = self._safe_path(object_key)
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(f"{path.suffix}.tmp-{token_hex(6)}")

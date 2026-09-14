@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut, Menu, Settings2, ShieldCheck, Ticket, X } from "lucide-react";
+import { LayoutDashboard, LogOut, Menu, ReceiptText, ShieldCheck, Ticket, X } from "lucide-react";
 import { useState } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -19,11 +19,14 @@ export function Navbar() {
   const navigate = useNavigate();
   const { user, logout, isAdmin, isStaff, isLoading } = useAuth();
 
-  const dashboardPath = isStaff ? "/organizer" : "/dashboard";
-  const links = [
+  const dashboardPath = isAdmin ? "/admin" : isStaff ? "/organizer" : "/dashboard";
+  const links: Array<{ to: string; label: string; comingSoon?: boolean }> = [
     { to: "/", label: "Browse Events" },
-    ...(user && isAdmin ? [{ to: "/admin/organizer-fees", label: "Organizer Fees" }] : []),
-    ...(user && isStaff ? [{ to: "/organizer", label: "Organizer" }] : []),
+    { to: "/organizers", label: "For Organizers" },
+    { to: "/federations-associations", label: "Federations & Associations", comingSoon: true },
+    ...(user && isAdmin ? [{ to: "/admin", label: "Admin workspace" }] : []),
+    ...(user && isStaff ? [{ to: "/organizer", label: "Manage Events" }] : []),
+    ...(user && isStaff && !isAdmin ? [{ to: "/organizer/pricing", label: "Plans & Pricing" }] : []),
     ...(user && !isStaff ? [{ to: "/dashboard", label: "My Dashboard" }] : []),
   ];
 
@@ -39,11 +42,14 @@ export function Navbar() {
     .toUpperCase() ?? "";
 
   return (
-    <header className="sticky top-0 z-50 border-b bg-card/80 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link to="/" className="flex items-center gap-2 text-xl font-bold tracking-tight">
-          <Ticket className="h-6 w-6 text-primary" />
-          <span>RacePass</span>
+    <header className="sticky top-0 z-50 border-b border-border/80 bg-card/90 backdrop-blur-xl">
+      <div className="h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" />
+      <div className="mx-auto flex h-[4.5rem] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <Link to="/" className="flex items-center gap-2.5 text-lg font-black tracking-tight sm:text-xl">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/15">
+            <Ticket className="h-5 w-5 text-primary" />
+          </span>
+          <span>RacePass <span className="text-primary">India</span></span>
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
@@ -51,9 +57,10 @@ export function Navbar() {
             <Link
               key={link.to}
               to={link.to}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${pathname === link.to ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${pathname === link.to ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
             >
-              {link.label}
+              <span>{link.label}</span>
+              {link.comingSoon && <span title="Coming soon" aria-label="Coming soon" className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Soon</span>}
             </Link>
           ))}
 
@@ -79,12 +86,12 @@ export function Navbar() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate(dashboardPath)}>
                   <LayoutDashboard className="mr-2 h-4 w-4" />
-                  Dashboard
+                  {isStaff ? "Manage Events" : "Dashboard"}
                 </DropdownMenuItem>
                 {isAdmin && (
-                  <DropdownMenuItem onClick={() => navigate("/admin/organizer-fees")}>
-                    <Settings2 className="mr-2 h-4 w-4" />
-                    Organizer fees
+                  <DropdownMenuItem onClick={() => navigate("/admin/billing")}>
+                    <ReceiptText className="mr-2 h-4 w-4" />
+                    Organizer billing
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
@@ -99,7 +106,14 @@ export function Navbar() {
           ) : null}
         </nav>
 
-        <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setOpen(!open)}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          aria-label={open ? "Close navigation menu" : "Open navigation menu"}
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
       </div>
@@ -111,9 +125,10 @@ export function Navbar() {
               key={link.to}
               to={link.to}
               onClick={() => setOpen(false)}
-              className={`block rounded-lg px-4 py-2.5 text-sm font-medium ${pathname === link.to ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium ${pathname === link.to ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
             >
-              {link.label}
+              <span>{link.label}</span>
+              {link.comingSoon && <span title="Coming soon" aria-label="Coming soon" className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Soon</span>}
             </Link>
           ))}
           {user ? (

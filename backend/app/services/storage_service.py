@@ -12,6 +12,7 @@ class StorageMetadata:
     size_bytes: int
     width: int
     height: int
+    purpose: str = "qr"
 
 
 class StorageService(Protocol):

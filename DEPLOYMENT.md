@@ -90,7 +90,7 @@ sh scripts/migrate.sh
 alembic current
 ```
 
-The expected current head is `0009_unique_checkin_registration`. Keep `AUTO_MIGRATE=false` in production. Application startup must not run migrations, create demo data, or create a default admin account.
+The expected current head is `0010_organizer_applications`. Keep `AUTO_MIGRATE=false` in production. Application startup must not run migrations, create demo data, or create a default admin account.
 
 Build the backend image from the repository root:
 

@@ -972,37 +972,26 @@ The backend shall enforce the configured capacity.
 
 Confirmed registrations must never exceed available capacity.
 
-For the POC:
-
-A new unpaid registration may temporarily reserve inventory.
-
-Recommended initial policy:
+For the POC, a new paid registration reserves inventory while it awaits payment verification. The organizer may approve or reject it at any time.
 
 ```text
 Registration Created
         ↓
 Reserve Seat
         ↓
-30-minute payment window
-```
-
-If no payment reference is submitted within the reservation period:
-
-```text
-reservation expires
+Organizer reviews payment
         ↓
-seat becomes available again
+Approve → seat becomes sold
+Reject  → seat becomes available again
 ```
 
-If the participant submits the UTR/payment reference before expiry:
+If the participant submits the UTR/payment reference, the registration becomes:
 
 ```text
 pending_verification
 ```
 
-The reservation may remain held until the organizer approves or rejects the registration.
-
-RacePass shall NOT automatically release a seat where the participant has already submitted payment evidence without providing an organizer review path.
+The reservation remains held until the organizer approves or rejects the registration. RacePass shall NOT automatically release a seat where the participant has submitted payment evidence without providing an organizer review path.
 
 Reservation expiry duration should be configurable in backend configuration.
 

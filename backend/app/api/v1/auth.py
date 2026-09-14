@@ -21,7 +21,7 @@ from app.services.auth_service import (
 )
 from app.services.rate_limit_service import RateLimitExceeded, enforce_account_registration_limit, enforce_login_limit
 from db import get_db
-from models import User
+from models import OrganizerApplication, User
 
 router = APIRouter()
 
@@ -36,6 +36,15 @@ class RegisterIn(BaseModel):
 class LoginIn(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=256)
+
+
+class OrganizerApplicationIn(BaseModel):
+    organization_name: str = Field(min_length=2, max_length=160)
+    name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=3, max_length=320)
+    phone: str | None = Field(default=None, max_length=32)
+    password: str = Field(min_length=12, max_length=256)
+    message: str | None = Field(default=None, max_length=2000)
 
 
 def _set_session_cookies(response: Response, raw_session: str, csrf_token: str) -> None:
@@ -114,6 +123,77 @@ def register(
 
     _set_session_cookies(response, raw_session, csrf_token)
     return {"user": public_user(user)}
+
+
+@router.post("/organizer-applications", status_code=status.HTTP_201_CREATED)
+def submit_organizer_application(
+    payload: OrganizerApplicationIn,
+    request: Request,
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    email = normalize_email(payload.email)
+    client_ip = request.client.host if request.client else "unknown"
+    try:
+        enforce_account_registration_limit(db, email=email, client_ip=client_ip)
+        db.commit()
+    except RateLimitExceeded as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
+
+    existing_user = db.scalar(select(User).where(User.normalized_email == email))
+    if existing_user is None:
+        existing_user = db.scalar(select(User).where(User.email == email))
+    if existing_user is not None:
+        raise HTTPException(status_code=409, detail="An account with that email already exists")
+
+    existing_application = db.scalar(
+        select(OrganizerApplication).where(
+            OrganizerApplication.normalized_email == email,
+            OrganizerApplication.status == "pending",
+        )
+    )
+    if existing_application is not None:
+        raise HTTPException(status_code=409, detail="An organizer application is already pending for this email")
+
+    try:
+        application = OrganizerApplication(
+            organization_name=payload.organization_name.strip(),
+            applicant_name=payload.name.strip(),
+            email=email,
+            normalized_email=email,
+            phone=payload.phone.strip() if payload.phone else None,
+            normalized_phone=normalize_phone(payload.phone),
+            password_hash=hash_password(payload.password),
+            message=payload.message.strip() if payload.message else None,
+            status="pending",
+        )
+        db.add(application)
+        db.flush()
+        record_audit(
+            db,
+            actor_user_id=None,
+            action="organizer_application_submitted",
+            resource_type="organizer_application",
+            resource_id=application.id,
+            metadata={"organization_name": application.organization_name},
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "application": {
+            "id": str(application.id),
+            "organizationName": application.organization_name,
+            "status": application.status,
+        }
+    }
 
 
 @router.post("/login")

@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Chrome, LogIn } from "lucide-react";
+import { Chrome, LogIn, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { Layout } from "@/components/Layout";
@@ -26,7 +26,7 @@ const Login = () => {
     try {
       const loggedInUser = await login(email.trim(), password);
       toast.success("Welcome back!");
-      const destination = from ?? (loggedInUser.role === "admin" || loggedInUser.role === "organizer" ? "/organizer" : "/dashboard");
+      const destination = from ?? (loggedInUser.role === "admin" ? "/admin" : loggedInUser.role === "organizer" ? "/organizer" : "/dashboard");
       navigate(destination, { replace: true });
     } catch (loginError) {
       setError(loginError instanceof ApiError ? loginError.message : "Could not sign in. Please try again.");
@@ -79,6 +79,16 @@ const Login = () => {
             Continue with Google
           </Button>
           <p className="mt-2 text-center text-xs text-muted-foreground">Google sign-in will be enabled after OAuth credentials are configured.</p>
+        </div>
+
+        <div className="mt-6 grid gap-2 sm:grid-cols-2">
+          <Button type="button" variant="outline" className="gap-2" onClick={() => navigate("/signup?type=participant")}>
+            <UserPlus className="h-4 w-4" />
+            Create account
+          </Button>
+          <Button type="button" variant="outline" onClick={() => navigate("/signup?type=organizer")}>
+            Apply as organizer
+          </Button>
         </div>
       </div>
     </Layout>

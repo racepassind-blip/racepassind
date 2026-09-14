@@ -5,7 +5,7 @@ from collections.abc import Callable
 
 from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.services.auth_service import hash_opaque_token, utc_now
 from db import get_db
@@ -23,7 +23,9 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
     session = db.scalar(
-        select(AuthSession).where(
+        select(AuthSession)
+        .options(joinedload(AuthSession.user))
+        .where(
             AuthSession.token_hash == hash_opaque_token(session_token),
             AuthSession.revoked_at.is_(None),
         )
@@ -40,7 +42,7 @@ def get_current_user(
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
 
-    user = db.get(User, session.user_id)
+    user = session.user
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     return user

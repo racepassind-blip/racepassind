@@ -21,10 +21,11 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.checkins import router as checkins_router
 from app.api.v1.events import router as events_router
 from app.api.v1.organizer import router as organizer_router
-from app.api.v1.public_events import router as public_events_router
+from app.api.v1.public_events import _public_event, router as public_events_router
 from app.api.v1.storage import router as storage_router
 from app.api.v1.registrations import router as registrations_router
 from app.config import get_settings
+from app.infrastructure.storage.factory import get_storage_service
 from db import SessionLocal, engine, get_db
 from models import Event, EventCategory, EventPaymentSettings, Organization, Ticket
 from schemas import EventOut
@@ -77,9 +78,12 @@ async def security_and_observability_middleware(request: Request, call_next):
     started = time.perf_counter()
     try:
         response = await call_next(request)
-    except Exception:
+    except Exception as exc:
         logger.exception("request_failed", extra={"request_id": request_id, "method": request.method})
-        response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
+        detail = "Internal server error"
+        if settings.environment != "production":
+            detail = f"{type(exc).__name__}: {exc}"
+        response = JSONResponse(status_code=500, content={"detail": detail})
 
     if not request.cookies.get(CSRF_COOKIE):
         response.set_cookie(
@@ -359,27 +363,42 @@ def readiness(db: Session = Depends(get_db)) -> dict[str, str]:
 
 
 @app.get("/events", response_model=list[EventOut])
-def list_events(db: Session = Depends(get_db)) -> list[Event]:
-    return list(
-        db.scalars(
-            select(Event)
-            .options(selectinload(Event.organization), selectinload(Event.tickets))
-            .order_by(Event.start_date)
+def list_events(
+    db: Session = Depends(get_db),
+    storage=Depends(get_storage_service),
+) -> list[dict]:
+    events = db.scalars(
+        select(Event)
+        .options(
+            selectinload(Event.organization),
+            selectinload(Event.tickets),
+            selectinload(Event.categories).selectinload(EventCategory.tickets),
         )
-    )
+        .where(Event.status == "published", Event.archived_at.is_(None))
+        .order_by(Event.start_date)
+    ).unique().all()
+    return [_public_event(event, storage) for event in events]
 
 
 @app.get("/events/{event_id}", response_model=EventOut)
-def get_event(event_id: str, db: Session = Depends(get_db)) -> Event:
+def get_event(
+    event_id: str,
+    db: Session = Depends(get_db),
+    storage=Depends(get_storage_service),
+) -> dict:
     try:
         event_uuid = uuid.UUID(event_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid event id") from exc
     event = db.scalar(
         select(Event)
-        .options(selectinload(Event.organization), selectinload(Event.tickets))
-        .where(Event.id == event_uuid)
+        .options(
+            selectinload(Event.organization),
+            selectinload(Event.tickets),
+            selectinload(Event.categories).selectinload(EventCategory.tickets),
+        )
+        .where(Event.id == event_uuid, Event.status == "published", Event.archived_at.is_(None))
     )
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    return event
+    return _public_event(event, storage)

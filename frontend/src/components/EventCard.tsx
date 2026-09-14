@@ -17,30 +17,31 @@ export function EventCard({ event }: { event: SportEvent }) {
   return (
     <Link
       to={`/event/${event.id}`}
-      className="group block rounded-xl overflow-hidden bg-card shadow-sm border hover:shadow-lg transition-shadow duration-300"
+      className="group block overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
     >
-      <div className="relative aspect-[16/10] overflow-hidden">
+      <div className="relative aspect-[16/10] overflow-hidden bg-secondary">
         <img
           src={event.image}
           alt={event.title}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           loading="lazy"
         />
-        <Badge className={`absolute top-3 left-3 ${categoryColors[event.category]} capitalize`}>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent opacity-70" />
+        <Badge className={`absolute left-4 top-4 ${categoryColors[event.category]} capitalize shadow-sm`}>
           {event.category}
         </Badge>
       </div>
 
-      <div className="p-5 space-y-3">
-        <h3 className="text-lg font-bold tracking-tight group-hover:text-primary transition-colors">
+      <div className="space-y-3 p-5">
+        <h3 className="text-lg font-bold tracking-tight transition-colors group-hover:text-primary">
           {event.title}
         </h3>
 
         <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
           <span className="flex items-center gap-2">
             <Calendar className="h-4 w-4" />
-            {new Date(event.date).toLocaleDateString("en-US", {
-              month: "long",
+            {new Date(event.date).toLocaleDateString("en-IN", {
+              month: "short",
               day: "numeric",
               year: "numeric",
             })}

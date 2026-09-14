@@ -11,15 +11,15 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import and_, or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.services.auth_service import hash_opaque_token, normalize_email, normalize_phone, utc_now
 from app.services.audit_service import record_audit
 from app.services.payment_service import normalize_payment_reference, validate_manual_upi_settings
+from app.services.registration_config_service import calculate_registration_total, normalize_event_configs
 from app.services.ticket_service import serialize_ticket, ticket_token_for_registration
+from app.services.organizer_visibility_service import _authorized_event_ids, get_visibility_for_events, serialize_visibility, visibility_filter_for_events
 from models import Event, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, Ticket, User
-
-_RESERVATION_MINUTES = 30
 
 
 def _human_reference() -> str:
@@ -37,7 +37,7 @@ def _confirmation_token() -> str:
 def registration_query():
     return select(Registration).options(
         selectinload(Registration.participant),
-        selectinload(Registration.ticket),
+        selectinload(Registration.ticket).selectinload(Ticket.category),
         selectinload(Registration.payment),
         selectinload(Registration.user),
     )
@@ -62,11 +62,17 @@ def serialize_registration(registration: Registration, *, confirmation_token: st
         },
         "quantity": registration.quantity,
         "amountPaise": registration.total_amount_paise,
+        "responses": registration.responses or {},
+        "selections": registration.selections or {},
+        "computedTotal": registration.computed_total or {},
         "currency": "INR",
         "status": registration.status,
         "checkInStatus": "checked_in" if registration.checked_in or registration.status == "checked_in" else "not_checked_in",
         "checkedInAt": registration.checked_in_at,
         "paymentStatus": registration.payment_status,
+        "source": registration.source,
+        "isManualEntry": registration.source == "manual",
+        "receivedAmountPaise": payment.received_amount_paise if payment else None,
         "utrReference": payment.utr_reference if payment else None,
         "reservedUntil": registration.reserved_until,
         "ticketToken": None,
@@ -82,6 +88,24 @@ def _load_idempotent_registration(db: Session, idempotency_key: str | None) -> R
     if not existing_order or not existing_order.items:
         return None
     return db.scalar(registration_query().where(Registration.id == existing_order.items[0].registration_id))
+
+
+def _registration_responses(payload) -> dict:
+    responses = dict(payload.responses or {})
+    legacy_values = {
+        "full_name": payload.full_name,
+        "email": payload.email,
+        "phone": payload.phone,
+        "date_of_birth": payload.date_of_birth.isoformat() if payload.date_of_birth else None,
+        "gender": payload.gender,
+        "jersey_size": payload.jersey_size,
+        "emergency_contact_name": payload.emergency_contact,
+        "team_name": payload.team_name,
+    }
+    for field_id, value in legacy_values.items():
+        if field_id not in responses and value not in (None, ""):
+            responses[field_id] = value
+    return responses
 
 
 def create_guest_registration(db: Session, payload, *, idempotency_key: str | None, user_id=None) -> tuple[Registration, str, str]:
@@ -106,9 +130,8 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
         raise ValueError("Event or ticket not found")
     if event.status != "published" or event.archived_at is not None:
         raise ValueError("Event is not available for registration")
-    if event.payment_settings is None:
-        raise ValueError("Manual UPI payment settings are not configured")
-    validate_manual_upi_settings(event.payment_settings)
+    if event.registration_status != "open":
+        raise ValueError("Registration is closed")
     if not ticket.is_active:
         raise ValueError("Ticket is not available")
     now = utc_now()
@@ -123,23 +146,48 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
     if ticket.available < 1:
         raise ValueError("Ticket is sold out")
 
-    email = normalize_email(payload.email) if payload.email else None
-    phone = normalize_phone(payload.phone)
+    field_config, addon_config = normalize_event_configs(event.field_config, event.addon_config)
+    try:
+        responses, selections, computed_total = calculate_registration_total(
+            field_config,
+            addon_config,
+            _registration_responses(payload),
+            payload.selections,
+            base_fee_paise=ticket.price,
+        )
+    except ValueError:
+        raise
+    amount_paise = computed_total["totalPaise"]
+    if amount_paise > 0:
+        if event.payment_settings is None:
+            raise ValueError("Manual UPI payment settings are not configured")
+        validate_manual_upi_settings(event.payment_settings)
+    computed_total["fieldConfig"] = field_config
+    computed_total["addonConfig"] = addon_config
+    is_free = amount_paise == 0
     confirmation_token = _confirmation_token()
     claim_code = _claim_code()
-    reservation_until = now + dt.timedelta(minutes=_RESERVATION_MINUTES)
-    amount_paise = ticket.price
+    reservation_until = None
+    participant_name = str(responses["full_name"])
+    email_value = responses.get("email")
+    phone_value = responses.get("phone")
+    emergency_name = responses.get("emergency_contact_name")
+    emergency_phone = responses.get("emergency_contact_phone")
+    emergency_contact = " / ".join(str(value) for value in (emergency_name, emergency_phone) if value) or None
+    date_of_birth = None
+    if responses.get("date_of_birth"):
+        date_of_birth = dt.date.fromisoformat(str(responses["date_of_birth"]))
     participant = Participant(
-        name=payload.full_name.strip(),
-        email=email,
-        normalized_email=email,
-        phone=payload.phone.strip() if payload.phone else None,
-        normalized_phone=phone,
-        date_of_birth=payload.date_of_birth,
-        gender=payload.gender,
-        jersey_size=payload.jersey_size,
-        emergency_contact=payload.emergency_contact,
-        team_name=payload.team_name,
+        name=participant_name,
+        email=normalize_email(str(email_value)) if email_value else None,
+        normalized_email=normalize_email(str(email_value)) if email_value else None,
+        phone=str(phone_value).strip() if phone_value else None,
+        normalized_phone=normalize_phone(str(phone_value)) if phone_value else None,
+        date_of_birth=date_of_birth,
+        gender=str(responses["gender"]) if responses.get("gender") else None,
+        jersey_size=str(responses["jersey_size"]) if responses.get("jersey_size") else None,
+        emergency_contact=emergency_contact,
+        team_name=str(responses["team_name"]) if responses.get("team_name") else None,
     )
     db.add(participant)
     db.flush()
@@ -149,11 +197,14 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
         user_id=user_id,
         ticket_id=ticket.id,
         category_id=ticket.category_id,
-        status="awaiting_payment",
-        payment_status="pending",
+        status="confirmed" if is_free else "awaiting_payment",
+        payment_status="not_required" if is_free else "pending",
         quantity=1,
         unit_price_paise=amount_paise,
         total_amount_paise=amount_paise,
+        responses=responses,
+        selections=selections,
+        computed_total=computed_total,
         registration_reference=_human_reference(),
         confirmation_token_hash=hash_opaque_token(confirmation_token),
         claim_code_hash=hash_opaque_token(claim_code),
@@ -163,12 +214,17 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
     ticket.quantity_reserved += 1
     db.add(registration)
     db.flush()
+    if is_free:
+        _release_reservation(ticket, 1)
+        ticket.quantity_sold += registration.quantity
+        event.participants += registration.quantity
+        registration.ticket_token_hash = hash_opaque_token(ticket_token_for_registration(registration))
     order = Order(
         user_id=user_id,
         total_amount=Decimal(amount_paise) / Decimal(100),
         total_amount_paise=amount_paise,
         currency="INR",
-        status="pending",
+        status="paid" if is_free else "pending",
         idempotency_key=idempotency_key,
     )
     db.add(order)
@@ -181,9 +237,10 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
             amount=Decimal(amount_paise) / Decimal(100),
             expected_amount_paise=amount_paise,
             currency="INR",
-            payment_gateway="manual_upi",
-            method="manual_upi",
-            status="pending",
+            payment_gateway="free" if is_free else "manual_upi",
+            method="free" if is_free else "manual_upi",
+            status="not_required" if is_free else "pending",
+            paid_at=now if is_free else None,
         )
     )
     record_audit(db, actor_user_id=user_id, action="registration_created", resource_type="registration", resource_id=registration.id)
@@ -199,10 +256,6 @@ def update_payment_reference(db: Session, confirmation_token: str, utr_reference
     if registration is None:
         raise ValueError("Registration not found")
     now = utc_now()
-    if registration.reserved_until:
-        reserved_until = registration.reserved_until if registration.reserved_until.tzinfo else registration.reserved_until.replace(tzinfo=dt.timezone.utc)
-        if now > reserved_until and registration.status in {"awaiting_payment", "pending_verification"}:
-            raise ValueError("Registration payment window has expired")
     if registration.status not in {"awaiting_payment", "pending_verification"}:
         raise ValueError("Registration is no longer awaiting payment")
     payment = registration.payment
@@ -220,19 +273,28 @@ def update_payment_reference(db: Session, confirmation_token: str, utr_reference
     if normalized_reference is None:
         return registration
 
-    payment.utr_reference = normalized_reference
-    payment.submitted_at = now
-    payment.status = "reference_submitted"
-    registration.payment_status = "pending_verification"
-    registration.status = "pending_verification"
-    record_audit(
-        db,
-        actor_user_id=None,
-        action="utr_submitted",
-        resource_type="registration",
-        resource_id=registration.id,
-        metadata={"submission_mode": "confirmation_token", "reference_present": True},
-    )
+    order = _lock_order_for_registration(db, registration.id)
+    all_batch = _registrations_for_order(db, order.id) if order is not None else [registration]
+    batch = [child for child in all_batch if child.status in {"awaiting_payment", "pending_verification"}]
+    if not batch:
+        return registration
+    for child in batch:
+        if child.payment is None:
+            raise ValueError("A registration in this order has no payment record")
+    for child in batch:
+        child.payment.utr_reference = normalized_reference
+        child.payment.submitted_at = now
+        child.payment.status = "reference_submitted"
+        child.payment_status = "pending_verification"
+        child.status = "pending_verification"
+        record_audit(
+            db,
+            actor_user_id=None,
+            action="utr_submitted",
+            resource_type="registration",
+            resource_id=child.id,
+            metadata={"submission_mode": "confirmation_token", "reference_present": True},
+        )
     db.commit()
     return db.scalar(registration_query().where(Registration.id == registration.id))
 
@@ -240,7 +302,7 @@ def update_payment_reference(db: Session, confirmation_token: str, utr_reference
 _REVIEWABLE_REGISTRATION_STATES = {"awaiting_payment", "pending_verification"}
 _REVIEWABLE_PAYMENT_STATES = {"pending", "reference_submitted"}
 _LISTABLE_STATES = _REVIEWABLE_REGISTRATION_STATES | {"confirmed", "rejected", "expired", "checked_in"}
-_PAYMENT_STATUS_FILTERS = _REVIEWABLE_PAYMENT_STATES | {"approved", "rejected", "expired"}
+_PAYMENT_STATUS_FILTERS = _REVIEWABLE_PAYMENT_STATES | {"approved", "not_required", "rejected", "expired"}
 _CHECK_IN_STATUS_FILTERS = {"all", "checked_in", "not_checked_in"}
 _MAX_CSV_EXPORT_ROWS = 5000
 _CSV_HEADERS = [
@@ -257,10 +319,6 @@ _CSV_HEADERS = [
     "Registration date",
     "Check-in status",
 ]
-
-
-class RegistrationExpiredError(ValueError):
-    pass
 
 
 def _active_organization_ids_for_user(user):
@@ -304,9 +362,15 @@ def serialize_organizer_registration(registration: Registration, event: Event) -
             "category": ticket.category.name if ticket.category else None,
         },
         "amountPaise": registration.total_amount_paise,
+        "responses": registration.responses or {},
+        "selections": registration.selections or {},
+        "computedTotal": registration.computed_total or {},
         "currency": "INR",
         "status": registration.status,
         "paymentStatus": registration.payment_status,
+        "source": registration.source,
+        "isManualEntry": registration.source == "manual",
+        "receivedAmountPaise": payment.received_amount_paise if payment else None,
         "checkInStatus": "checked_in" if is_checked_in else "not_checked_in",
         "checkedInAt": registration.checked_in_at,
         "utrReference": payment.utr_reference if payment else None,
@@ -324,6 +388,7 @@ def _normalize_filter(value: str | None) -> str | None:
 
 
 def _organizer_registration_query(
+    db: Session,
     user,
     *,
     event_id: UUID | None = None,
@@ -337,12 +402,28 @@ def _organizer_registration_query(
     registration_reference: str | None = None,
     payment_status: str | None = None,
     check_in_status: str | None = None,
+    visibility_by_event: dict[UUID, dict] | None = None,
+    visibility_event_ids: list[UUID] | None = None,
 ):
     query = _scoped_registration_query(user).add_columns(Event).options(
-        selectinload(Registration.participant),
-        selectinload(Registration.ticket).selectinload(Ticket.category),
-        selectinload(Registration.payment),
+        joinedload(Registration.participant),
+        joinedload(Registration.ticket).joinedload(Ticket.category),
+        joinedload(Registration.payment),
     ).join(Participant, Participant.id == Registration.participant_id)
+
+    if visibility_event_ids is None:
+        visibility_event_ids = _authorized_event_ids(db, user, event_id)
+    if visibility_by_event is None:
+        visibility_by_event = get_visibility_for_events(db, user, visibility_event_ids)
+    visibility_filter = visibility_filter_for_events(
+        db,
+        user,
+        visibility_event_ids,
+        visibility_by_event=visibility_by_event,
+    )
+    if visibility_filter is not None:
+        ranked_registrations, visibility_condition = visibility_filter
+        query = query.outerjoin(ranked_registrations, ranked_registrations.c.registration_id == Registration.id).where(visibility_condition)
 
     if event_id is not None:
         query = query.where(Registration.event_id == event_id)
@@ -435,9 +516,14 @@ def list_organizer_registrations(
     check_in_status: str | None = None,
     page_size: int = 50,
     cursor: str | None = None,
+    visibility_by_event: dict[UUID, dict] | None = None,
+    visibility_event_ids: list[UUID] | None = None,
 ) -> dict:
-    page_size = max(1, min(page_size, 100))
+    authorized_event_ids = visibility_event_ids if visibility_event_ids is not None else _authorized_event_ids(db, user, event_id)
+    if visibility_by_event is None:
+        visibility_by_event = get_visibility_for_events(db, user, authorized_event_ids)
     query = _organizer_registration_query(
+        db,
         user,
         event_id=event_id,
         category_id=category_id,
@@ -450,6 +536,8 @@ def list_organizer_registrations(
         registration_reference=registration_reference,
         payment_status=payment_status,
         check_in_status=check_in_status,
+        visibility_by_event=visibility_by_event,
+        visibility_event_ids=authorized_event_ids,
     )
     if cursor:
         cursor_created_at, cursor_id = _decode_registration_cursor(cursor)
@@ -470,7 +558,28 @@ def list_organizer_registrations(
     if has_more and page_rows:
         last_registration = page_rows[-1][0]
         next_cursor = _encode_registration_cursor(last_registration.created_at, last_registration.id)
-    return {"items": items, "nextCursor": next_cursor, "hasMore": has_more}
+    if event_id is not None and event_id in visibility_by_event:
+        visibility_response = serialize_visibility(visibility_by_event[event_id])
+    else:
+        visibility_response = {
+            "plan": None,
+            "upgradePlan": None,
+            "planLimit": None,
+            "effectiveLimit": None,
+            "totalConfirmedQuantity": sum(item["totalConfirmedQuantity"] for item in visibility_by_event.values()),
+            "visibleConfirmedQuantity": sum(item["visibleConfirmedQuantity"] for item in visibility_by_event.values()),
+            "lockedConfirmedQuantity": sum(item["lockedConfirmedQuantity"] for item in visibility_by_event.values()),
+            "lockedConfirmedRecords": sum(item["lockedConfirmedRecords"] for item in visibility_by_event.values()),
+            "visibleConfirmedRecords": sum(item["visibleConfirmedRecords"] for item in visibility_by_event.values()),
+            "visibleCheckedInQuantity": sum(item["visibleCheckedInQuantity"] for item in visibility_by_event.values()),
+            "visibleCheckedInRecords": sum(item["visibleCheckedInRecords"] for item in visibility_by_event.values()),
+            "visibleApprovedAmountPaise": sum(item["visibleApprovedAmountPaise"] for item in visibility_by_event.values()),
+            "graceActive": any(item["graceActive"] for item in visibility_by_event.values()),
+            "graceEndsAt": next((item["graceEndsAt"] for item in visibility_by_event.values() if item["graceEndsAt"]), None),
+            "lockedSummary": next((item["lockedSummary"] for item in visibility_by_event.values() if item["lockedSummary"]), None),
+            "isLocked": any(item["isLocked"] for item in visibility_by_event.values()),
+        }
+    return {"items": items, "nextCursor": next_cursor, "hasMore": has_more, "visibility": visibility_response}
 
 
 def list_pending_registrations(
@@ -526,6 +635,56 @@ def _csv_amount(amount_paise: int | None) -> str:
     return f"INR {amount_paise / 100:.2f}"
 
 
+def _export_config_definitions(event: Event, rows: list[tuple[Registration, Event]]) -> tuple[list[dict], list[dict]]:
+    field_definitions: dict[str, dict] = {}
+    addon_definitions: dict[str, dict] = {}
+    current_field_config = event.field_config or {}
+    current_addon_config = event.addon_config or {}
+    for field in current_field_config.get("fields", []) if isinstance(current_field_config, dict) else []:
+        if isinstance(field, dict) and field.get("id"):
+            field_definitions[field["id"]] = field
+    for addon in current_addon_config.get("addons", []) if isinstance(current_addon_config, dict) else []:
+        if isinstance(addon, dict) and addon.get("id"):
+            addon_definitions[addon["id"]] = addon
+    for registration, _ in rows:
+        snapshot = registration.computed_total or {}
+        for field in snapshot.get("fieldConfig", {}).get("fields", []) if isinstance(snapshot, dict) else []:
+            if isinstance(field, dict) and field.get("id"):
+                field_definitions.setdefault(field["id"], field)
+        for addon in snapshot.get("addonConfig", {}).get("addons", []) if isinstance(snapshot, dict) else []:
+            if isinstance(addon, dict) and addon.get("id"):
+                addon_definitions.setdefault(addon["id"], addon)
+    return list(field_definitions.values()), list(addon_definitions.values())
+
+
+def _legacy_response_value(registration: Registration, field_id: str):
+    responses = registration.responses or {}
+    if field_id in responses:
+        return responses[field_id]
+    participant = registration.participant
+    return {
+        "full_name": participant.name,
+        "email": participant.email,
+        "phone": participant.phone,
+        "date_of_birth": participant.date_of_birth,
+        "gender": participant.gender,
+        "jersey_size": participant.jersey_size,
+        "emergency_contact_name": participant.emergency_contact,
+        "team_name": participant.team_name,
+    }.get(field_id)
+
+
+def _addon_export_value(registration: Registration, addon_id: str) -> str:
+    selection = (registration.selections or {}).get(addon_id)
+    if not isinstance(selection, dict):
+        return ""
+    if "selected" in selection:
+        return str(selection["selected"])
+    if "qty" in selection:
+        return str(selection["qty"])
+    return ""
+
+
 def export_organizer_registrations_csv(
     db: Session,
     user,
@@ -548,6 +707,7 @@ def export_organizer_registrations_csv(
 
     rows = db.execute(
         _organizer_registration_query(
+            db,
             user,
             event_id=event_id,
             category_id=category_id,
@@ -560,6 +720,7 @@ def export_organizer_registrations_csv(
             registration_reference=registration_reference,
             payment_status=payment_status,
             check_in_status=check_in_status,
+            visibility_event_ids=[event_id],
         ).order_by(Registration.created_at.desc(), Registration.id.desc()).limit(_MAX_CSV_EXPORT_ROWS + 1)
     ).all()
     if len(rows) > _MAX_CSV_EXPORT_ROWS:
@@ -574,13 +735,29 @@ def export_organizer_registrations_csv(
         db.commit()
         raise CsvExportTooLargeError(f"Export exceeds the {_MAX_CSV_EXPORT_ROWS}-row limit")
 
+    field_definitions, addon_definitions = _export_config_definitions(event, rows)
+    dynamic_headers = [field.get("label", field.get("id", "")) for field in field_definitions]
+    dynamic_headers += [f"Add-on: {addon.get('name', addon.get('id', ''))}" for addon in addon_definitions]
+    if field_definitions or addon_definitions or any(registration.computed_total for registration, _ in rows):
+        dynamic_headers.append("Computed total")
+
     output = io.StringIO(newline="")
     writer = csv.writer(output, lineterminator="\r\n")
-    writer.writerow(_CSV_HEADERS)
+    writer.writerow(_CSV_HEADERS + dynamic_headers)
     for registration, _ in rows:
         ticket = registration.ticket
         payment = registration.payment
         is_checked_in = registration.checked_in or registration.status == "checked_in"
+        dynamic_values = [
+            _csv_cell(_legacy_response_value(registration, field.get("id", "")))
+            for field in field_definitions
+        ]
+        dynamic_values.extend(
+            _csv_cell(_addon_export_value(registration, addon.get("id", "")))
+            for addon in addon_definitions
+        )
+        if field_definitions or addon_definitions or registration.computed_total:
+            dynamic_values.append(_csv_cell(_csv_amount(registration.total_amount_paise)))
         writer.writerow([
             _csv_cell(registration.registration_reference),
             _csv_cell(registration.participant.name),
@@ -594,6 +771,7 @@ def export_organizer_registrations_csv(
             _csv_cell(payment.utr_reference if payment else None),
             _csv_cell(registration.created_at),
             _csv_cell("checked_in" if is_checked_in else "not_checked_in"),
+            *dynamic_values,
         ])
     record_audit(
         db,
@@ -631,111 +809,95 @@ def _release_reservation(ticket: Ticket, quantity: int) -> None:
     ticket.quantity_reserved = max(0, ticket.quantity_reserved - quantity)
 
 
-def decide_registration_payment(db: Session, user, registration_id, *, decision: str, reason: str | None = None):
+def decide_registration_payment(db: Session, user, event_id, registration_id, *, decision: str, reason: str | None = None):
     if decision not in {"approve", "reject"}:
         raise ValueError("Unsupported payment decision")
     if decision == "reject" and not reason:
         raise ValueError("A rejection reason is required")
 
     registration = db.scalar(
-        _scoped_registration_query(user).where(Registration.id == registration_id).with_for_update()
+        _scoped_registration_query(user).where(
+            Registration.id == registration_id,
+            Registration.event_id == event_id,
+        ).with_for_update()
     )
     if registration is None:
         raise ValueError("Registration not found")
-    payment = db.scalar(
-        select(Payment).where(Payment.registration_id == registration.id).with_for_update()
-    )
-    ticket = db.scalar(select(Ticket).where(Ticket.id == registration.ticket_id).with_for_update())
-    if payment is None or ticket is None:
-        raise ValueError("Registration payment data is incomplete")
     order = _lock_order_for_registration(db, registration.id)
+    all_batch = _registrations_for_order(db, order.id) if order is not None else [registration]
+    batch = [child for child in all_batch if child.status in _REVIEWABLE_REGISTRATION_STATES]
+    if not batch:
+        return _reload_organizer_registration(db, registration.id)
+    payments: dict[UUID, Payment] = {}
+    tickets: dict[UUID, Ticket] = {}
+    for child in batch:
+        payment = db.scalar(select(Payment).where(Payment.registration_id == child.id).with_for_update())
+        ticket = db.scalar(select(Ticket).where(Ticket.id == child.ticket_id).with_for_update())
+        if payment is None or ticket is None:
+            raise ValueError("Registration payment data is incomplete")
+        payments[child.id] = payment
+        tickets[child.id] = ticket
     now = utc_now()
 
-    if decision == "approve" and registration.status == "confirmed" and payment.status == "approved":
+    if all(
+        (child.status == "confirmed" and payments[child.id].status == "approved")
+        if decision == "approve"
+        else (child.status == "rejected" and payments[child.id].status == "rejected")
+        for child in batch
+    ):
         record_audit(
             db,
             actor_user_id=user.id,
-            action="payment_approval_idempotent",
+            action="payment_approval_idempotent" if decision == "approve" else "payment_rejection_idempotent",
             resource_type="registration",
             resource_id=registration.id,
-            metadata={"decision": "approve", "alreadyConfirmed": True},
+            metadata={"decision": decision, "alreadyFinalized": True, "batchSize": len(batch)},
         )
         db.commit()
         return _reload_organizer_registration(db, registration.id)
-    if decision == "reject" and registration.status == "rejected" and payment.status == "rejected":
+
+    if any(
+        child.status not in _REVIEWABLE_REGISTRATION_STATES or payments[child.id].status not in _REVIEWABLE_PAYMENT_STATES
+        for child in batch
+    ):
+        raise ValueError("A registration in this order is no longer awaiting payment review")
+    if any(tickets[child.id].quantity_reserved < child.quantity for child in batch):
+        raise ValueError("A registration reservation is no longer available")
+
+    event = db.get(Event, event_id)
+    for child in batch:
+        payment = payments[child.id]
+        ticket = tickets[child.id]
+        payment.reviewed_by = user.id
+        payment.reviewed_at = now
+        payment.decision_reason = reason
+        child.reserved_until = None
+        _release_reservation(ticket, child.quantity)
+        if decision == "approve":
+            ticket.quantity_sold += child.quantity
+            if event is not None:
+                event.participants += child.quantity
+            child.status = "confirmed"
+            child.payment_status = "approved"
+            payment.status = "approved"
+            payment.paid_at = now
+            if not child.confirmation_token_hash:
+                child.confirmation_token_hash = hash_opaque_token(_confirmation_token())
+            child.ticket_token_hash = hash_opaque_token(ticket_token_for_registration(child))
+        else:
+            child.status = "rejected"
+            child.payment_status = "rejected"
+            payment.status = "rejected"
         record_audit(
             db,
             actor_user_id=user.id,
-            action="payment_rejection_idempotent",
+            action="payment_approved" if decision == "approve" else "payment_rejected",
             resource_type="registration",
-            resource_id=registration.id,
-            metadata={"decision": "reject", "alreadyRejected": True},
+            resource_id=child.id,
+            metadata={"decision": decision, "hasUtr": bool(payment.utr_reference), "batchSize": len(batch)},
         )
-        db.commit()
-        return _reload_organizer_registration(db, registration.id)
-    if registration.status not in _REVIEWABLE_REGISTRATION_STATES or payment.status not in _REVIEWABLE_PAYMENT_STATES:
-        raise ValueError("Registration is no longer awaiting payment review")
-
-    if registration.reserved_until:
-        reserved_until = registration.reserved_until if registration.reserved_until.tzinfo else registration.reserved_until.replace(tzinfo=dt.timezone.utc)
-        if now > reserved_until:
-            _release_reservation(ticket, registration.quantity)
-            registration.status = "expired"
-            registration.payment_status = "expired"
-            payment.status = "expired"
-            payment.reviewed_at = now
-            payment.decision_reason = "Registration payment window expired"
-            registration.reserved_until = None
-            if order is not None:
-                order.status = "expired"
-            record_audit(
-                db,
-                actor_user_id=user.id,
-                action="registration_expired",
-                resource_type="registration",
-                resource_id=registration.id,
-                metadata={"reason": "reservation_expired"},
-            )
-            db.commit()
-            raise RegistrationExpiredError("Registration payment window has expired")
-
-    quantity = registration.quantity
-    if ticket.quantity_reserved < quantity:
-        raise ValueError("Registration reservation is no longer available")
-
-    payment.reviewed_by = user.id
-    payment.reviewed_at = now
-    payment.decision_reason = reason
-    registration.reserved_until = None
-    if decision == "approve":
-        _release_reservation(ticket, quantity)
-        ticket.quantity_sold += quantity
-        registration.status = "confirmed"
-        registration.payment_status = "approved"
-        payment.status = "approved"
-        payment.paid_at = now
-        if not registration.confirmation_token_hash:
-            registration.confirmation_token_hash = hash_opaque_token(_confirmation_token())
-        registration.ticket_token_hash = hash_opaque_token(ticket_token_for_registration(registration))
-        if order is not None:
-            order.status = "paid"
-        audit_action = "payment_approved"
-    else:
-        _release_reservation(ticket, quantity)
-        registration.status = "rejected"
-        registration.payment_status = "rejected"
-        payment.status = "rejected"
-        if order is not None:
-            order.status = "cancelled"
-        audit_action = "payment_rejected"
-    record_audit(
-        db,
-        actor_user_id=user.id,
-        action=audit_action,
-        resource_type="registration",
-        resource_id=registration.id,
-        metadata={"decision": decision, "hasUtr": bool(payment.utr_reference)},
-    )
+    if order is not None:
+        order.status = "paid" if decision == "approve" else "cancelled"
     db.commit()
     return _reload_organizer_registration(db, registration.id)
 
@@ -749,38 +911,12 @@ def load_confirmation_registration(db: Session, confirmation_token: str) -> Regi
     if registration is None:
         return None
 
-    if registration.status in _REVIEWABLE_REGISTRATION_STATES and registration.reserved_until:
-        reserved_until = registration.reserved_until if registration.reserved_until.tzinfo else registration.reserved_until.replace(tzinfo=dt.timezone.utc)
-        if utc_now() > reserved_until:
-            payment = db.scalar(select(Payment).where(Payment.registration_id == registration.id).with_for_update())
-            ticket = db.scalar(select(Ticket).where(Ticket.id == registration.ticket_id).with_for_update())
-            order = _lock_order_for_registration(db, registration.id)
-            if payment is not None and ticket is not None:
-                now = utc_now()
-                _release_reservation(ticket, registration.quantity)
-                registration.status = "expired"
-                registration.payment_status = "expired"
-                registration.reserved_until = None
-                payment.status = "expired"
-                payment.reviewed_at = now
-                payment.decision_reason = "Registration payment window expired"
-                if order is not None:
-                    order.status = "expired"
-                record_audit(
-                    db,
-                    actor_user_id=None,
-                    action="registration_expired",
-                    resource_type="registration",
-                    resource_id=registration.id,
-                    metadata={"reason": "confirmation_lookup_expired"},
-                )
-                db.commit()
-                return db.scalar(registration_query().where(Registration.id == registration.id))
     return registration
 
 
 def serialize_participant_registration(registration: Registration, event: Event) -> dict:
     ticket = registration.ticket
+    serialized_ticket = serialize_ticket(registration)
     return {
         "id": str(registration.id),
         "registrationReference": registration.registration_reference,
@@ -789,6 +925,7 @@ def serialize_participant_registration(registration: Registration, event: Event)
             "name": event.name,
             "date": event.date,
             "location": event.location,
+            "whatsappGroupUrl": event.whatsapp_group_url if serialized_ticket is not None else None,
         },
         "participantName": registration.participant.name,
         "ticketType": {
@@ -796,12 +933,15 @@ def serialize_participant_registration(registration: Registration, event: Event)
             "category": ticket.category.name if ticket.category else None,
         },
         "amountPaise": registration.total_amount_paise,
+        "responses": registration.responses or {},
+        "selections": registration.selections or {},
+        "computedTotal": registration.computed_total or {},
         "currency": "INR",
         "status": registration.status,
         "checkInStatus": "checked_in" if registration.checked_in or registration.status == "checked_in" else "not_checked_in",
         "checkedInAt": registration.checked_in_at,
         "paymentStatus": registration.payment_status,
-        "ticket": serialize_ticket(registration),
+        "ticket": serialized_ticket,
     }
 
 
@@ -921,3 +1061,338 @@ def claim_registration(db: Session, user: User, *, registration_reference: str, 
     db.commit()
     registration_result, event = _reload_organizer_registration(db, registration.id)
     return serialize_participant_registration(registration_result, event)
+
+
+def _registrations_for_order(db: Session, order_id) -> list[Registration]:
+    return list(
+        db.scalars(
+            select(Registration)
+            .join(OrderItem, OrderItem.registration_id == Registration.id)
+            .where(OrderItem.order_id == order_id)
+            .options(
+                selectinload(Registration.participant),
+                selectinload(Registration.ticket).selectinload(Ticket.category),
+                selectinload(Registration.payment),
+                selectinload(Registration.user),
+            )
+            .order_by(Registration.created_at, Registration.id)
+        ).all()
+    )
+
+
+def create_guest_batch_registration(db: Session, payload, *, idempotency_key: str | None, user_id=None) -> tuple[list[Registration], list[str], list[str]]:
+    existing = _load_idempotent_registration(db, idempotency_key)
+    if existing is not None:
+        order = _lock_order_for_registration(db, existing.id)
+        return _registrations_for_order(db, order.id) if order is not None else [existing], [], []
+
+    event = db.scalar(
+        select(Event)
+        .options(selectinload(Event.payment_settings))
+        .where(Event.id == payload.event_id)
+        .with_for_update()
+    )
+    if event is None:
+        raise ValueError("Event or ticket not found")
+    if event.status != "published" or event.archived_at is not None:
+        raise ValueError("Event is not available for registration")
+    if event.registration_status != "open":
+        raise ValueError("Registration is closed")
+
+    ticket_ids = {rider.ticket_id for rider in payload.riders}
+    tickets = {
+        ticket.id: ticket
+        for ticket in db.scalars(
+            select(Ticket).where(Ticket.id.in_(ticket_ids)).with_for_update()
+        ).all()
+    }
+    if len(tickets) != len(ticket_ids) or any(ticket.event_id != payload.event_id for ticket in tickets.values()):
+        raise ValueError("Event or ticket not found")
+
+    now = utc_now()
+    for ticket in tickets.values():
+        if not ticket.is_active:
+            raise ValueError("Ticket is not available")
+        for value, label in ((ticket.sale_start, "Ticket sales have not opened"), (ticket.sale_end, "Ticket sales have closed")):
+            if value is None:
+                continue
+            aware_value = value if value.tzinfo else value.replace(tzinfo=dt.timezone.utc)
+            if label.endswith("opened") and now < aware_value:
+                raise ValueError(label)
+            if label.endswith("closed") and now > aware_value:
+                raise ValueError(label)
+    requested_by_ticket: dict[UUID, int] = {}
+    for rider in payload.riders:
+        requested_by_ticket[rider.ticket_id] = requested_by_ticket.get(rider.ticket_id, 0) + 1
+    for ticket_id, requested in requested_by_ticket.items():
+        if tickets[ticket_id].available < requested:
+            raise ValueError(f"Not enough spots left for {tickets[ticket_id].name}")
+
+    field_config, addon_config = normalize_event_configs(event.field_config, event.addon_config)
+    prepared: list[dict] = []
+    for rider in payload.riders:
+        responses, selections, computed_total = calculate_registration_total(
+            field_config,
+            addon_config,
+            dict(rider.responses or {}),
+            rider.selections,
+            base_fee_paise=tickets[rider.ticket_id].price,
+        )
+        computed_total["fieldConfig"] = field_config
+        computed_total["addonConfig"] = addon_config
+        amount_paise = computed_total["totalPaise"]
+        if amount_paise > 0 and event.payment_settings is None:
+            raise ValueError("Manual UPI payment settings are not configured")
+        prepared.append({
+            "rider": rider,
+            "responses": responses,
+            "selections": selections,
+            "computed_total": computed_total,
+            "amount_paise": amount_paise,
+        })
+
+    total_amount_paise = sum(item["amount_paise"] for item in prepared)
+    if total_amount_paise > 0:
+        validate_manual_upi_settings(event.payment_settings)
+    confirmation_tokens: list[str] = []
+    claim_codes: list[str] = []
+    registrations: list[Registration] = []
+    for item in prepared:
+        rider = item["rider"]
+        responses = item["responses"]
+        amount_paise = item["amount_paise"]
+        is_free = amount_paise == 0
+        confirmation_token = _confirmation_token()
+        claim_code = _claim_code()
+        confirmation_tokens.append(confirmation_token)
+        claim_codes.append(claim_code)
+        email_value = responses.get("email")
+        phone_value = responses.get("phone")
+        emergency_contact = " / ".join(str(value) for value in (
+            responses.get("emergency_contact_name"), responses.get("emergency_contact_phone")
+        ) if value) or None
+        date_of_birth = dt.date.fromisoformat(str(responses["date_of_birth"])) if responses.get("date_of_birth") else None
+        participant = Participant(
+            name=str(responses["full_name"]),
+            email=normalize_email(str(email_value)) if email_value else None,
+            normalized_email=normalize_email(str(email_value)) if email_value else None,
+            phone=str(phone_value).strip() if phone_value else None,
+            normalized_phone=normalize_phone(str(phone_value)) if phone_value else None,
+            date_of_birth=date_of_birth,
+            gender=str(responses["gender"]) if responses.get("gender") else None,
+            jersey_size=str(responses["jersey_size"]) if responses.get("jersey_size") else None,
+            emergency_contact=emergency_contact,
+            team_name=str(responses["team_name"]) if responses.get("team_name") else None,
+        )
+        db.add(participant)
+        db.flush()
+        ticket = tickets[rider.ticket_id]
+        registration = Registration(
+            event_id=event.id,
+            participant_id=participant.id,
+            user_id=user_id,
+            ticket_id=ticket.id,
+            category_id=ticket.category_id,
+            status="confirmed" if is_free else "awaiting_payment",
+            payment_status="not_required" if is_free else "pending",
+            quantity=1,
+            unit_price_paise=amount_paise,
+            total_amount_paise=amount_paise,
+            responses=responses,
+            selections=item["selections"],
+            computed_total=item["computed_total"],
+            registration_reference=_human_reference(),
+            confirmation_token_hash=hash_opaque_token(confirmation_token),
+            claim_code_hash=hash_opaque_token(claim_code),
+            claim_code_expires_at=now + dt.timedelta(days=7),
+        )
+        ticket.quantity_reserved += 1
+        db.add(registration)
+        db.flush()
+        if is_free:
+            _release_reservation(ticket, 1)
+            ticket.quantity_sold += 1
+            event.participants += 1
+            registration.ticket_token_hash = hash_opaque_token(ticket_token_for_registration(registration))
+        registrations.append(registration)
+
+    order = Order(
+        user_id=user_id,
+        total_amount=Decimal(total_amount_paise) / Decimal(100),
+        total_amount_paise=total_amount_paise,
+        currency="INR",
+        status="paid" if total_amount_paise == 0 else "pending",
+        idempotency_key=idempotency_key,
+    )
+    db.add(order)
+    db.flush()
+    for registration in registrations:
+        amount = Decimal(registration.total_amount_paise or 0) / Decimal(100)
+        db.add(OrderItem(order_id=order.id, registration_id=registration.id, price=amount))
+        db.add(Payment(
+            order_id=order.id,
+            registration_id=registration.id,
+            amount=amount,
+            expected_amount_paise=registration.total_amount_paise or 0,
+            currency="INR",
+            payment_gateway="free" if (registration.total_amount_paise or 0) == 0 else "manual_upi",
+            method="free" if (registration.total_amount_paise or 0) == 0 else "manual_upi",
+            status="not_required" if (registration.total_amount_paise or 0) == 0 else "pending",
+            paid_at=now if (registration.total_amount_paise or 0) == 0 else None,
+        ))
+        record_audit(db, actor_user_id=user_id, action="registration_created", resource_type="registration", resource_id=registration.id)
+    db.commit()
+    saved = _registrations_for_order(db, order.id)
+    return saved, confirmation_tokens, claim_codes
+
+
+def create_manual_registration(db: Session, user, payload, *, idempotency_key: str | None):
+    existing = _load_idempotent_registration(db, idempotency_key)
+    if existing is not None:
+        event = db.get(Event, existing.event_id)
+        return existing, event
+
+    event = db.scalar(
+        select(Event)
+        .options(selectinload(Event.payment_settings))
+        .where(Event.id == payload.event_id)
+        .with_for_update()
+    )
+    ticket = db.scalar(select(Ticket).where(Ticket.id == payload.ticket_id).with_for_update())
+    existing = _load_idempotent_registration(db, idempotency_key)
+    if existing is not None:
+        return existing, event
+    if event is None or ticket is None or ticket.event_id != payload.event_id:
+        raise ValueError("Event or ticket not found")
+    if event.status != "published" or event.archived_at is not None:
+        raise ValueError("Event is not available for registration")
+    if not ticket.is_active:
+        raise ValueError("Ticket is not available")
+    if ticket.available < 1:
+        raise ValueError("Ticket is sold out")
+
+    field_config, addon_config = normalize_event_configs(
+        event.field_config,
+        event.addon_config,
+        category_options=sorted({category.distance for category in event.categories if category.distance}),
+    )
+    responses, selections, computed_total = calculate_registration_total(
+        field_config,
+        addon_config,
+        payload.responses,
+        payload.selections,
+        base_fee_paise=ticket.price,
+    )
+    computed_total["fieldConfig"] = field_config
+    computed_total["addonConfig"] = addon_config
+    amount_paise = computed_total["totalPaise"]
+    is_free = amount_paise == 0
+    if payload.payment_received and not is_free and payload.received_amount_paise is None:
+        raise ValueError("Received payment amount is required for a paid registration")
+    if payload.payment_received and not is_free and payload.received_amount_paise <= 0:
+        raise ValueError("Received payment amount must be positive")
+
+    now = utc_now()
+    confirmation_token = _confirmation_token()
+    claim_code = _claim_code()
+    email_value = responses.get("email")
+    phone_value = responses.get("phone")
+    emergency_contact = " / ".join(str(value) for value in (
+        responses.get("emergency_contact_name"), responses.get("emergency_contact_phone")
+    ) if value) or None
+    date_of_birth = dt.date.fromisoformat(str(responses["date_of_birth"])) if responses.get("date_of_birth") else None
+    participant = Participant(
+        name=str(responses["full_name"]),
+        email=normalize_email(str(email_value)) if email_value else None,
+        normalized_email=normalize_email(str(email_value)) if email_value else None,
+        phone=str(phone_value).strip() if phone_value else None,
+        normalized_phone=normalize_phone(str(phone_value)) if phone_value else None,
+        date_of_birth=date_of_birth,
+        gender=str(responses["gender"]) if responses.get("gender") else None,
+        jersey_size=str(responses["jersey_size"]) if responses.get("jersey_size") else None,
+        emergency_contact=emergency_contact,
+        team_name=str(responses["team_name"]) if responses.get("team_name") else None,
+    )
+    db.add(participant)
+    db.flush()
+
+    confirmed = is_free or payload.payment_received
+    registration = Registration(
+        event_id=event.id,
+        participant_id=participant.id,
+        user_id=None,
+        ticket_id=ticket.id,
+        category_id=ticket.category_id,
+        status="confirmed" if confirmed else "awaiting_payment",
+        payment_status="not_required" if is_free else "approved" if payload.payment_received else "pending",
+        source="manual",
+        quantity=1,
+        unit_price_paise=amount_paise,
+        total_amount_paise=amount_paise,
+        responses=responses,
+        selections=selections,
+        computed_total=computed_total,
+        registration_reference=_human_reference(),
+        confirmation_token_hash=hash_opaque_token(confirmation_token),
+        claim_code_hash=hash_opaque_token(claim_code),
+        claim_code_expires_at=now + dt.timedelta(days=7),
+    )
+    ticket.quantity_reserved += 1
+    db.add(registration)
+    db.flush()
+    if confirmed:
+        _release_reservation(ticket, 1)
+        ticket.quantity_sold += 1
+        event.participants += 1
+        registration.ticket_token_hash = hash_opaque_token(ticket_token_for_registration(registration))
+
+    received_amount_paise = payload.received_amount_paise if payload.payment_received and not is_free else None
+    payment_amount_paise = received_amount_paise if received_amount_paise is not None else amount_paise
+    order = Order(
+        user_id=None,
+        total_amount=Decimal(amount_paise) / Decimal(100),
+        total_amount_paise=amount_paise,
+        currency="INR",
+        status="paid" if confirmed else "pending",
+        idempotency_key=idempotency_key,
+    )
+    db.add(order)
+    db.flush()
+    db.add(OrderItem(order_id=order.id, registration_id=registration.id, price=Decimal(amount_paise) / Decimal(100)))
+    db.add(Payment(
+        order_id=order.id,
+        registration_id=registration.id,
+        amount=Decimal(payment_amount_paise) / Decimal(100),
+        received_amount_paise=received_amount_paise,
+        expected_amount_paise=amount_paise,
+        currency="INR",
+        payment_gateway="manual_offline",
+        method="manual_offline",
+        status="not_required" if is_free else "approved" if payload.payment_received else "pending",
+        paid_at=now if confirmed else None,
+        reviewed_by=user.id if payload.payment_received and not is_free else None,
+        reviewed_at=now if payload.payment_received and not is_free else None,
+    ))
+    record_audit(
+        db,
+        actor_user_id=user.id,
+        action="manual_registration_created",
+        resource_type="registration",
+        resource_id=registration.id,
+        metadata={
+            "payment_received": bool(payload.payment_received),
+            "received_amount_paise": received_amount_paise,
+            "expected_amount_paise": amount_paise,
+        },
+    )
+    db.commit()
+    return _reload_organizer_registration(db, registration.id)
+
+
+def load_registration_batch(db: Session, registration: Registration) -> list[Registration]:
+    order = db.scalar(
+        select(Order)
+        .join(OrderItem, OrderItem.order_id == Order.id)
+        .where(OrderItem.registration_id == registration.id)
+    )
+    return _registrations_for_order(db, order.id) if order is not None else [registration]

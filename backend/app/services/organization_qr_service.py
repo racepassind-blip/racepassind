@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.services.audit_service import record_audit
 from app.services.image_validation import ImageValidationError, validate_qr_image
-from app.services.storage_service import StorageMetadata, StorageService
+from app.services.storage_service import StorageError, StorageMetadata, StorageService
 from models import Event, EventPaymentSettings
 
 
@@ -57,7 +57,10 @@ def upload_organization_qr(
         height=validated.height,
     )
     old_object_key = settings.qr_image_object_key
-    new_object_key = storage.put_private(io.BytesIO(payload), metadata)
+    try:
+        new_object_key = storage.put_private(io.BytesIO(payload), metadata)
+    except Exception as exc:
+        raise StorageError("QR image storage is unavailable") from exc
     try:
         settings.qr_image_object_key = new_object_key
         settings.qr_image_url = None

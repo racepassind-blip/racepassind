@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.services.payment_service import normalize_upi_id
+from app.services.registration_config_service import normalize_addon_config, normalize_field_config
 
 
 class TicketCreateIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     description: str = Field(default="", max_length=1000)
-    price_rupees: Decimal = Field(gt=Decimal("0"), max_digits=10, decimal_places=2)
+    price_rupees: Decimal = Field(ge=Decimal("0"), max_digits=10, decimal_places=2)
     quantity: int = Field(gt=0, le=1000000)
     sale_start: dt.datetime | None = None
     sale_end: dt.datetime | None = None
@@ -27,6 +29,13 @@ class RaceCategoryCreateIn(BaseModel):
     age_max: int | None = Field(default=None, ge=0, le=120)
     gender: str | None = Field(default=None, max_length=40)
     tickets: list[TicketCreateIn] = Field(min_length=1, max_length=20)
+
+
+class EventScheduleItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    time: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=1, max_length=240)
 
 
 class OrganizerEventCreateV1(BaseModel):
@@ -45,9 +54,101 @@ class OrganizerEventCreateV1(BaseModel):
     state: str | None = Field(default=None, max_length=120)
     country: str = Field(default="India", min_length=2, max_length=120)
     banner_url: str | None = Field(default=None, max_length=2000)
+    whatsapp_group_url: str | None = Field(default=None, max_length=2000)
     max_participants: int = Field(gt=0, le=1000000)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
     rules: list[str] = Field(default_factory=list, max_length=50)
+    schedule: list[EventScheduleItem] = Field(default_factory=list, max_length=50)
+    field_config: dict[str, Any] = Field(default_factory=lambda: normalize_field_config(None))
+    addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
     categories: list[RaceCategoryCreateIn] = Field(min_length=1, max_length=20)
+
+    @field_validator("field_config")
+    @classmethod
+    def validate_field_config(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return normalize_field_config(value)
+
+    @field_validator("addon_config")
+    @classmethod
+    def validate_addon_config(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return normalize_addon_config(value)
+
+    @model_validator(mode="after")
+    def validate_coordinates(self):
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Latitude and longitude must be provided together")
+        return self
+
+
+class OrganizerTicketUpdateIn(BaseModel):
+    id: UUID | None = None
+    name: str = Field(min_length=2, max_length=120)
+    description: str = Field(default="", max_length=1000)
+    price_rupees: Decimal = Field(ge=Decimal("0"), max_digits=10, decimal_places=2)
+    quantity: int = Field(gt=0, le=1000000)
+    sale_start: dt.datetime | None = None
+    sale_end: dt.datetime | None = None
+    max_per_user: int = Field(default=1, ge=1, le=10)
+
+
+class OrganizerCategoryUpdateIn(BaseModel):
+    id: UUID | None = None
+    name: str = Field(min_length=2, max_length=120)
+    distance: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=1000)
+    age_min: int | None = Field(default=None, ge=0, le=120)
+    age_max: int | None = Field(default=None, ge=0, le=120)
+    gender: str | None = Field(default=None, max_length=40)
+    tickets: list[OrganizerTicketUpdateIn] = Field(min_length=1, max_length=20)
+
+
+class OrganizerEventUpdateV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=2, max_length=200)
+    description: str = Field(min_length=1, max_length=10000)
+    sport: str = Field(min_length=2, max_length=40)
+    event_date: dt.date
+    location_name: str = Field(min_length=2, max_length=240)
+    address: str | None = Field(default=None, max_length=500)
+    city: str | None = Field(default=None, max_length=120)
+    state: str | None = Field(default=None, max_length=120)
+    country: str = Field(default="India", min_length=2, max_length=120)
+    banner_url: str | None = Field(default=None, max_length=2000)
+    whatsapp_group_url: str | None = Field(default=None, max_length=2000)
+    max_participants: int = Field(gt=0, le=1000000)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    rules: list[str] = Field(default_factory=list, max_length=50)
+    schedule: list[EventScheduleItem] = Field(default_factory=list, max_length=50)
+    registration_open: dt.datetime | None = None
+    registration_close: dt.datetime | None = None
+    field_config: dict[str, Any] = Field(default_factory=lambda: normalize_field_config(None))
+    addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
+    categories: list[OrganizerCategoryUpdateIn] = Field(min_length=1, max_length=20)
+
+    @field_validator("field_config")
+    @classmethod
+    def validate_field_config(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return normalize_field_config(value)
+
+    @field_validator("addon_config")
+    @classmethod
+    def validate_addon_config(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return normalize_addon_config(value)
+
+    @model_validator(mode="after")
+    def validate_coordinates(self):
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Latitude and longitude must be provided together")
+        return self
+
+
+class RegistrationStatusIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["open", "closed"]
 
 
 class PaymentSettingsIn(BaseModel):

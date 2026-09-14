@@ -26,7 +26,7 @@ class S3CompatibleStorageAdapter(StorageService):
         )
 
     def put_private(self, file: BinaryIO, metadata: StorageMetadata) -> str:
-        object_key = f"private/qr/{uuid4().hex}.{metadata.extension}"
+        object_key = f"private/{metadata.purpose}/{uuid4().hex}.{metadata.extension}"
         self.client.upload_fileobj(
             file,
             self.bucket,

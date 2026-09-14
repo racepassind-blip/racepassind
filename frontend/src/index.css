@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    --background: 220 14% 96%;
+    --background: 220 20% 97%;
     --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
@@ -13,8 +13,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    --primary: 217 91% 53%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 25 95% 50%;
+    --primary-foreground: 222 47% 11%;
 
     --secondary: 220 14% 92%;
     --secondary-foreground: 222 47% 11%;
@@ -30,7 +30,7 @@
 
     --border: 220 13% 87%;
     --input: 220 13% 87%;
-    --ring: 217 91% 53%;
+    --ring: 25 95% 50%;
 
     --radius: 0.75rem;
 
@@ -51,8 +51,8 @@
     --card-foreground: 210 40% 98%;
     --popover: 222 47% 9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217 91% 53%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 25 95% 50%;
+    --primary-foreground: 222 47% 11%;
     --secondary: 217 33% 17%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217 33% 17%;
@@ -63,7 +63,7 @@
     --destructive-foreground: 210 40% 98%;
     --border: 217 33% 17%;
     --input: 217 33% 17%;
-    --ring: 217 91% 53%;
+    --ring: 25 95% 50%;
     --sidebar-background: 222 47% 6%;
     --sidebar-foreground: 210 40% 98%;
     --sidebar-primary: 217 91% 53%;
@@ -87,5 +87,25 @@
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+@keyframes racepass-ride {
+  0%,
+  100% {
+    transform: translateX(0) translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateX(1.75rem) translateY(-2px) rotate(2deg);
+  }
+}
+
+.racepass-ride {
+  animation: racepass-ride 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .racepass-ride {
+    animation: none;
   }
 }

@@ -3,6 +3,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from functools import lru_cache
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+_LOCAL_ENV_FILE = Path(__file__).resolve().parents[1] / ".env.local"
+if os.getenv("ENVIRONMENT", "development").strip().lower() != "production":
+    load_dotenv(_LOCAL_ENV_FILE, override=False)
 
 
 _DEFAULT_FRONTEND_ORIGINS = (
@@ -19,6 +27,13 @@ def _as_bool(value: str | None, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _required_database_url() -> str:
+    value = os.getenv("DATABASE_URL", "").strip()
+    if not value:
+        raise RuntimeError("DATABASE_URL must be set; the local SQLite fallback is disabled")
+    return value
+
+
 def _origins(value: str | None) -> tuple[str, ...]:
     if not value:
         return _DEFAULT_FRONTEND_ORIGINS
@@ -31,7 +46,7 @@ def _origins(value: str | None) -> tuple[str, ...]:
 @dataclass(frozen=True)
 class Settings:
     environment: str = "development"
-    database_url: str = field(default="sqlite:///./app.db", repr=False)
+    database_url: str = field(default="", repr=False)
     auto_migrate: bool = True
     frontend_origins: tuple[str, ...] = _DEFAULT_FRONTEND_ORIGINS
     frontend_origins_configured: bool = True
@@ -41,7 +56,7 @@ class Settings:
     google_client_secret: str | None = field(default=None, repr=False)
     google_redirect_uri: str | None = None
     ticket_signing_secret: str | None = field(default=None, repr=False)
-    storage_mode: str = "local"
+    storage_mode: str = "s3"
     storage_endpoint: str | None = field(default=None, repr=False)
     storage_bucket: str | None = None
     storage_region: str = "auto"
@@ -58,7 +73,7 @@ class Settings:
         raw_origins = os.getenv("FRONTEND_ORIGINS")
         return cls(
             environment=os.getenv("ENVIRONMENT", "development").strip().lower(),
-            database_url=os.getenv("DATABASE_URL", "sqlite:///./app.db"),
+            database_url=_required_database_url(),
             auto_migrate=_as_bool(os.getenv("AUTO_MIGRATE"), default=True),
             frontend_origins=_origins(raw_origins),
             frontend_origins_configured=bool(raw_origins and _origins(raw_origins)),
@@ -68,7 +83,7 @@ class Settings:
             google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
             google_redirect_uri=os.getenv("GOOGLE_REDIRECT_URI"),
             ticket_signing_secret=os.getenv("TICKET_SIGNING_SECRET"),
-            storage_mode=os.getenv("STORAGE_MODE", "local").strip().lower(),
+            storage_mode=os.getenv("STORAGE_MODE", "s3").strip().lower(),
             storage_endpoint=os.getenv("STORAGE_ENDPOINT"),
             storage_bucket=os.getenv("STORAGE_BUCKET"),
             storage_region=os.getenv("STORAGE_REGION", "auto").strip(),
@@ -93,6 +108,21 @@ class Settings:
             raise RuntimeError("STORAGE_SIGNED_URL_TTL_SECONDS must be between 60 and 86400")
         if self.storage_max_upload_bytes <= 0 or self.storage_max_dimension < 32:
             raise RuntimeError("Storage upload limits are invalid")
+
+        if self.storage_mode == "s3":
+            missing_storage = [
+                name
+                for name, value in (
+                    ("STORAGE_ENDPOINT", self.storage_endpoint),
+                    ("STORAGE_BUCKET", self.storage_bucket),
+                    ("STORAGE_REGION", self.storage_region),
+                    ("STORAGE_ACCESS_KEY", self.storage_access_key),
+                    ("STORAGE_SECRET_KEY", self.storage_secret_key),
+                )
+                if not value
+            ]
+            if missing_storage:
+                raise RuntimeError(f"Missing required S3 storage configuration: {', '.join(missing_storage)}")
 
         if not self.is_production:
             return

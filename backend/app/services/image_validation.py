@@ -68,7 +68,7 @@ def _dimensions(payload: bytes, content_type: str) -> tuple[int, int]:
     raise ImageValidationError("The uploaded image dimensions could not be read")
 
 
-def validate_qr_image(
+def validate_image(
     payload: bytes,
     *,
     filename: str | None,
@@ -89,3 +89,21 @@ def validate_qr_image(
     if width < 32 or height < 32 or width > max_dimension or height > max_dimension:
         raise ImageValidationError(f"Image dimensions must be between 32 and {max_dimension} pixels")
     return ValidatedImage(normalized_type, extension, len(payload), width, height)
+
+
+def validate_qr_image(
+    payload: bytes,
+    *,
+    filename: str | None,
+    content_type: str | None,
+    max_upload_bytes: int,
+    max_dimension: int,
+) -> ValidatedImage:
+    """Backward-compatible name for the shared image validator."""
+    return validate_image(
+        payload,
+        filename=filename,
+        content_type=content_type,
+        max_upload_bytes=max_upload_bytes,
+        max_dimension=max_dimension,
+    )

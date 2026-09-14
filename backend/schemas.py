@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -23,6 +24,7 @@ class EventOut(BaseModel):
     title: str
     date: str
     location: str
+    locationDetails: dict[str, str | float | None]
     category: str
     image: str
     description: str
@@ -31,6 +33,12 @@ class EventOut(BaseModel):
     maxParticipants: int
     organizer: str
     rules: list[str]
+    schedule: list[dict[str, str]]
+    fieldConfig: dict
+    addonConfig: dict
+    registrationOpen: str | None = None
+    registrationClose: str | None = None
+    registrationStatus: Literal["open", "closed"] = "open"
     tiers: list[TicketTierOut]
 
 

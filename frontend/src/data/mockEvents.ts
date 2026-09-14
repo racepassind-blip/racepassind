@@ -11,11 +11,58 @@ export interface TicketTier {
   available: number;
 }
 
+export type ParticipantFieldType = "text" | "email" | "phone" | "date" | "select" | "number" | "dropdown" | "yes_no";
+
+export interface ParticipantFieldConfig {
+  id: string;
+  label: string;
+  type: ParticipantFieldType;
+  required: boolean;
+  predefined: boolean;
+  order: number;
+  options?: string[];
+}
+
+export interface AddonDefinition {
+  id: string;
+  name: string;
+  price_paise: number;
+  type: "single_select" | "quantity";
+  required: boolean;
+  order: number;
+  options?: string[];
+  max_qty?: number | null;
+}
+
+export interface EventFieldConfig {
+  fields: ParticipantFieldConfig[];
+}
+
+export interface EventAddonConfig {
+  addons: AddonDefinition[];
+}
+
+export interface EventScheduleItem {
+  time: string;
+  label: string;
+}
+
+export interface EventLocationDetails {
+  name: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
 export interface SportEvent {
   id: string;
   title: string;
   date: string;
   location: string;
+  locationDetails?: EventLocationDetails;
   category: string;
   image: string;
   description: string;
@@ -24,6 +71,12 @@ export interface SportEvent {
   maxParticipants: number;
   organizer: string;
   rules: string[];
+  registrationOpen?: string | null;
+  registrationClose?: string | null;
+  registrationStatus?: "open" | "closed";
+  schedule?: EventScheduleItem[];
+  fieldConfig?: EventFieldConfig;
+  addonConfig?: EventAddonConfig;
   tiers: TicketTier[];
 }
 

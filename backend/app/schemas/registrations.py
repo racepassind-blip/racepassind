@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -13,7 +14,7 @@ class RegistrationCreateIn(BaseModel):
 
     event_id: UUID
     ticket_id: UUID
-    full_name: str = Field(min_length=2, max_length=160)
+    full_name: str | None = Field(default=None, max_length=160)
     email: str | None = Field(default=None, max_length=320)
     phone: str | None = Field(default=None, max_length=32)
     date_of_birth: dt.date | None = None
@@ -21,11 +22,61 @@ class RegistrationCreateIn(BaseModel):
     jersey_size: str | None = Field(default=None, max_length=20)
     emergency_contact: str | None = Field(default=None, max_length=160)
     team_name: str | None = Field(default=None, max_length=160)
+    responses: dict[str, Any] = Field(default_factory=dict)
+    selections: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def require_contact(self) -> "RegistrationCreateIn":
-        if not (self.email and self.email.strip()) and not (self.phone and self.phone.strip()):
+        full_name = self.full_name or self.responses.get("full_name")
+        if not isinstance(full_name, str) or not full_name.strip():
+            raise ValueError("Full name is required")
+        email = self.email or self.responses.get("email")
+        phone = self.phone or self.responses.get("phone")
+        if not (isinstance(email, str) and email.strip()) and not (isinstance(phone, str) and phone.strip()):
             raise ValueError("At least one of email or phone is required")
+        return self
+
+
+class RiderRegistrationIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: UUID
+    responses: dict[str, Any] = Field(default_factory=dict)
+    selections: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def require_contact(self) -> "RiderRegistrationIn":
+        full_name = self.responses.get("full_name")
+        if not isinstance(full_name, str) or not full_name.strip():
+            raise ValueError("Full name is required")
+        email = self.responses.get("email")
+        phone = self.responses.get("phone")
+        if not (isinstance(email, str) and email.strip()) and not (isinstance(phone, str) and phone.strip()):
+            raise ValueError("At least one of email or phone is required")
+        return self
+
+
+class BatchRegistrationCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: UUID
+    riders: list[RiderRegistrationIn] = Field(min_length=1, max_length=10)
+
+
+class ManualRegistrationCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: UUID
+    ticket_id: UUID
+    responses: dict[str, Any] = Field(default_factory=dict)
+    selections: dict[str, Any] = Field(default_factory=dict)
+    payment_received: bool = False
+    received_amount_paise: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_payment(self) -> "ManualRegistrationCreateIn":
+        if not self.payment_received and self.received_amount_paise is not None:
+            raise ValueError("Received payment amount requires payment to be marked received")
         return self
 
 

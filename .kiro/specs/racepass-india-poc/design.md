@@ -307,7 +307,7 @@ Because the UTR is optional, an organizer may approve a payment without a refere
 1. Validate event status and registration window.
 2. Load the selected ticket row with a PostgreSQL `FOR UPDATE` lock.
 3. Validate category/ticket ownership, price, quantity (`1` in the POC), and available capacity.
-4. Increment a reservation counter or create a reservation with `reserved_until = now + 30 minutes`.
+4. Increment the ticket reservation counter. The reservation remains held while the paid registration is awaiting payment verification.
 5. Create participant snapshot, registration, order, and pending manual-UPI payment.
 6. Generate a random confirmation token and claim code; store only hashes.
 7. Write `registration_created` audit record.
@@ -348,7 +348,7 @@ For approval:
 
 For rejection, record the reason, change the registration to `rejected`, and release the reservation. Repeating an approval or rejection returns the current state without changing inventory a second time.
 
-A scheduled cleanup job or a protected maintenance endpoint expires reservations after 30 minutes. The design must make this a safe, repeatable operation.
+The reservation remains held until the organizer approves or rejects the registration. There is no automatic payment-window expiry in the manual UPI review flow; approval can happen whenever the organizer completes verification. Approval converts the reservation to sold inventory, while rejection releases it.
 
 ## 8. API design
 
@@ -408,8 +408,8 @@ Guest confirmation/payment-reference requests require the opaque confirmation cr
 
 ```text
 GET  /api/v1/organizer/registrations?event_id=&status=&q=&cursor=
-POST /api/v1/organizer/registrations/{registration_id}/approve
-POST /api/v1/organizer/registrations/{registration_id}/reject
+POST /api/v1/organizer/events/{event_id}/registrations/{registration_id}/approve
+POST /api/v1/organizer/events/{event_id}/registrations/{registration_id}/reject
 GET  /api/v1/organizer/events/{event_id}/registrations.csv
 POST /api/v1/organizer/checkins/scan
 ```

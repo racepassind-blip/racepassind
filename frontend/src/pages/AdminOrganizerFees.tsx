@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { RefreshCw, Save, ShieldCheck } from "lucide-react";
 
-import { Layout } from "@/components/Layout";
+import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -133,7 +133,7 @@ const AdminOrganizerFees = () => {
   };
 
   return (
-    <Layout>
+    <AdminDashboardLayout>
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -176,7 +176,7 @@ const AdminOrganizerFees = () => {
           </div>
         )}
       </div>
-    </Layout>
+    </AdminDashboardLayout>
   );
 };
 

@@ -36,13 +36,19 @@ def ticket_qr_payload(ticket_token: str) -> str:
     return "racepass://ticket?" + urlencode({"v": _TICKET_VERSION, "t": ticket_token})
 
 
-def serialize_ticket(registration: Registration) -> dict | None:
+def verified_ticket_qr_payload(registration: Registration) -> str | None:
     if registration.status not in {"confirmed", "checked_in"} or not registration.ticket_token_hash:
         return None
     ticket_token = ticket_token_for_registration(registration)
     if not hmac.compare_digest(hash_opaque_token(ticket_token), registration.ticket_token_hash):
         return None
-    payload = ticket_qr_payload(ticket_token)
+    return ticket_qr_payload(ticket_token)
+
+
+def serialize_ticket(registration: Registration) -> dict | None:
+    payload = verified_ticket_qr_payload(registration)
+    if payload is None:
+        return None
     return {
         "version": int(_TICKET_VERSION),
         "format": "svg-data-url",

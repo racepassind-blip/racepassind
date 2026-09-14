@@ -17,18 +17,19 @@ const categories = [
 
 export function CategoriesSection() {
   return (
-    <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
-      <div className="text-center mb-10">
-        <h2 className="text-3xl font-extrabold tracking-tight">Browse by Category</h2>
-        <p className="mt-2 text-muted-foreground">Find the perfect event for your sport</p>
+    <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+      <div className="mb-10 text-center">
+        <p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-primary">Find your discipline</p>
+        <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Choose your way to move</h2>
+        <p className="mt-2 text-muted-foreground">From city streets to hill roads, find your next Indian adventure.</p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {categories.map((cat) => (
           <Link
             key={cat.slug}
             to={`/?category=${cat.slug}`}
-            className="group relative rounded-xl overflow-hidden aspect-[3/4] cursor-pointer"
+            className="group relative aspect-[3/4] cursor-pointer overflow-hidden rounded-2xl border border-border/20 shadow-sm transition-shadow hover:shadow-xl"
           >
             <img
               src={cat.image}
