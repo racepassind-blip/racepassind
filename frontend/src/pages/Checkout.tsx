@@ -269,6 +269,13 @@ const Checkout = () => {
   };
 
   const totalRupees = (registration?.amountPaise ?? totalPaise) / 100;
+
+  // Temporary: log the exact UPI URI so we can verify the am= amount is in rupees (not paise).
+  // Remove once confirmed correct.
+  if (registration?.paymentSettings?.upiUri) {
+    console.log("[SportPass] UPI URI:", registration.paymentSettings.upiUri);
+  }
+
   const copyUpi = async () => {
     if (registration?.paymentSettings?.upiId) {
       await navigator.clipboard.writeText(registration.paymentSettings.upiId);
