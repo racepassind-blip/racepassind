@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
 import { OrganizerWorkspaceTabs } from "@/components/OrganizerWorkspaceTabs";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/api";
 
