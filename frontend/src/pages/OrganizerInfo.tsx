@@ -157,7 +157,7 @@ function formatINR(paise: number) {
 }
 
 function formatRange(plan: PublicPlan) {
-  return plan.maxConfirmedRegistrations === null ? `${plan.minConfirmedRegistrations}+ confirmed registrations` : `${plan.minConfirmedRegistrations}–${plan.maxConfirmedRegistrations} confirmed registrations`;
+  return plan.maxConfirmedRegistrations === null ? `${plan.minConfirmedRegistrations}+ registrations` : `${plan.minConfirmedRegistrations}–${plan.maxConfirmedRegistrations} registrations`;
 }
 
 function formatRate(plan: PublicPlan) {
@@ -171,7 +171,7 @@ function PlanCard({ plan }: { plan: PublicPlan }) {
   return <Card className={`relative flex h-full flex-col overflow-hidden transition-transform duration-200 hover:-translate-y-1 hover:shadow-lg ${featured ? "border-primary shadow-md ring-1 ring-primary/20" : "border-border/80"}`}>
     {featured && <Badge className="absolute right-5 top-5 bg-primary text-primary-foreground">Popular for growing events</Badge>}
     <CardHeader className="min-h-[185px] border-b bg-muted/20 pb-6"><div className="flex items-center gap-2"><CardTitle className="text-xl">{plan.name}</CardTitle>{plan.code === "community" && <Badge variant="secondary">Start here</Badge>}</div><CardDescription className="pt-1">{formatRange(plan)}</CardDescription><div className="mt-auto pt-7"><span className="text-4xl font-black tracking-tight">{rate.amount}</span><span className="ml-1 text-sm font-medium text-muted-foreground">{rate.suffix}</span></div></CardHeader>
-    <CardContent className="flex flex-1 flex-col justify-between p-6"><ul className="space-y-3 text-sm text-muted-foreground"><li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" /> No monthly subscription</li><li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" /> Confirmed means form complete and payment approved</li><li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" /> Participant payments stay with you</li></ul>{plan.billingUnit === "per_registration" && <p className="mt-6 rounded-xl bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">For larger events, the fee scales with confirmed registrations: {formatINR(plan.pricePaise)} for each registration.</p>}</CardContent>
+    <CardContent className="flex flex-1 flex-col justify-between p-6"><ul className="space-y-3 text-sm text-muted-foreground"><li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" /> No monthly subscription</li><li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" /> Participant payments stay with you</li></ul>{plan.billingUnit === "per_registration" && <p className="mt-6 rounded-xl bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">For larger events, the fee scales with registrations: {formatINR(plan.pricePaise)} per registration.</p>}</CardContent>
   </Card>;
 }
 
