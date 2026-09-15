@@ -1,5 +1,5 @@
 const API_ORIGIN = (import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8010").replace(/\/$/, "");
-const API_BASE = `${API_ORIGIN}/api/v1`;
+export const API_BASE = `${API_ORIGIN}/api/v1`;
 const API_REQUEST_TIMEOUT_MS = 15_000;
 
 let unauthorizedHandler: (() => void) | null = null;
@@ -70,7 +70,7 @@ function readCookie(name: string): string | null {
 
 // Resolve a usable CSRF token: prefer the cookie (same-site/localhost), fall
 // back to the in-memory token, and finally fetch one from the backend.
-async function resolveCsrfToken(): Promise<string | null> {
+export async function resolveCsrfToken(): Promise<string | null> {
   const cookieToken = readCookie("racepass_csrf");
   if (cookieToken) return cookieToken;
   if (inMemoryCsrfToken) return inMemoryCsrfToken;

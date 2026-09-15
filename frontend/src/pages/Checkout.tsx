@@ -11,10 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useEvent } from "@/hooks/useEvents";
 import { useAuth } from "@/contexts/AuthContext";
 import type { AddonDefinition, ParticipantFieldConfig } from "@/data/mockEvents";
-import { trackApiRequest } from "@/lib/api";
+import { apiRequest } from "@/lib/api";
+import { scrollToTop } from "@/lib/scroll";
 
-const API_ORIGIN = (import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8010").replace(/\/$/, "");
-const API_BASE = `${API_ORIGIN}/api/v1`;
 const CONFIRMATION_TOKEN_KEY = "sportpass_confirmation_token";
 type ResponseValue = string | boolean;
 type CartLine = { ticketId: string; quantity: number };
@@ -67,10 +66,6 @@ const FALLBACK_FIELDS: ParticipantFieldConfig[] = [
   { id: "team_name", label: "Team name", type: "text", required: false, predefined: true, order: 7 },
 ];
 
-function csrfToken(): string | undefined {
-  return document.cookie.split("; ").find((cookie) => cookie.startsWith("racepass_csrf="))?.split("=")[1];
-}
-
 function readCart(eventId: string | undefined, tierId: string | undefined): CartLine[] {
   if (eventId) {
     try {
@@ -81,19 +76,6 @@ function readCart(eventId: string | undefined, tierId: string | undefined): Cart
     }
   }
   return tierId ? [{ ticketId: tierId, quantity: 1 }] : [];
-}
-
-async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  headers.set("Content-Type", "application/json");
-  const csrf = csrfToken();
-  if (csrf && init.method && init.method !== "GET") headers.set("X-CSRF-Token", decodeURIComponent(csrf));
-  const response = await trackApiRequest(() => fetch(`${API_BASE}${path}`, { ...init, headers, credentials: "include" }));
-  if (!response.ok) {
-    const body = await response.json().catch(() => null) as { detail?: string } | null;
-    throw new Error(body?.detail ?? `Request failed: ${response.status}`);
-  }
-  return response.json() as Promise<T>;
 }
 
 const Checkout = () => {
@@ -112,6 +94,13 @@ const Checkout = () => {
   const [registration, setRegistration] = useState<BatchRegistrationResponse | null>(null);
   const [utrReference, setUtrReference] = useState("");
   const [registrationMode, setRegistrationMode] = useState<RegistrationMode | null>(null);
+
+  // Advancing a checkout step (or switching participant) can leave mobile users
+  // scrolled at the bottom of the previous section. Reset to the top so the new
+  // step's heading is visible.
+  useEffect(() => {
+    scrollToTop();
+  }, [currentStep, activeRiderIndex]);
 
   const checkoutReturnPath = `${location.pathname}${location.search}`;
   const effectiveRegistrationMode = isParticipant ? "account" : registrationMode;

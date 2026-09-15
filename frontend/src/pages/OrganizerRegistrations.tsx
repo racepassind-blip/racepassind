@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiRequest } from "@/lib/api";
+import { scrollToTop } from "@/lib/scroll";
 import type { OrganizerVisibility } from "@/hooks/useEvents";
 
 interface OrganizerEventOption {
@@ -272,6 +273,7 @@ const OrganizerRegistrations = () => {
     if (!nextCursor) return;
     setCursorHistory((history) => [...history, cursor ?? ""]);
     setCursor(nextCursor);
+    scrollToTop();
   };
 
   const goPrevious = () => {
@@ -279,6 +281,7 @@ const OrganizerRegistrations = () => {
     if (previous === undefined) return;
     setCursorHistory((history) => history.slice(0, -1));
     setCursor(previous || null);
+    scrollToTop();
   };
 
   const exportCsv = async () => {

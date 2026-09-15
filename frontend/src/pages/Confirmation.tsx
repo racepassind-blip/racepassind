@@ -4,16 +4,9 @@ import { ArrowLeft, CheckCircle2, Clock3, Copy, FileDown, KeyRound, LayoutDashbo
 
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { trackApiRequest } from "@/lib/api";
+import { apiRequest, ApiError, API_BASE, resolveCsrfToken, trackApiRequest } from "@/lib/api";
 
-const API_ORIGIN = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
-const API_BASE = `${API_ORIGIN}/api/v1`;
 const CONFIRMATION_TOKEN_KEY = "sportpass_confirmation_token";
-
-function csrfToken(): string | null {
-  const cookie = document.cookie.split("; ").find((entry) => entry.startsWith("racepass_csrf="));
-  return cookie ? decodeURIComponent(cookie.slice("racepass_csrf=".length)) : null;
-}
 
 interface ConfirmationRegistration {
   confirmationToken?: string;
@@ -105,22 +98,11 @@ const Confirmation = () => {
     const controller = new AbortController();
     const loadConfirmation = async () => {
       try {
-        const response = await trackApiRequest(() => fetch(`${API_BASE}/registrations/confirmation`, {
+        const result = await apiRequest<Omit<ConfirmationState, "confirmationToken">>("/registrations/confirmation", {
           method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-            ...(csrfToken() ? { "X-CSRF-Token": csrfToken() as string } : {}),
-          },
           signal: controller.signal,
           body: JSON.stringify({ confirmation_token: token }),
-        }));
-        if (!response.ok) {
-          if (response.status === 404) sessionStorage.removeItem(CONFIRMATION_TOKEN_KEY);
-          const body = await response.json().catch(() => null) as { detail?: string } | null;
-          throw new Error(body?.detail ?? "Could not load this registration");
-        }
-        const result = await response.json() as Omit<ConfirmationState, "confirmationToken">;
+        });
         setConfirmation((current) => ({
           ...result,
           confirmationToken: token,
@@ -133,6 +115,7 @@ const Confirmation = () => {
         }));
         setError(null);
       } catch (loadError) {
+        if (loadError instanceof ApiError && loadError.status === 404) sessionStorage.removeItem(CONFIRMATION_TOKEN_KEY);
         if (!controller.signal.aborted) setError(loadError instanceof Error ? loadError.message : "Could not load this registration");
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -160,12 +143,13 @@ const Confirmation = () => {
     setDownloadingPdf(true);
     setPdfError(null);
     try {
+      const csrf = await resolveCsrfToken();
       const response = await trackApiRequest(() => fetch(`${API_BASE}/registrations/confirmation/ticket.pdf`, {
         method: "POST",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          ...(csrfToken() ? { "X-CSRF-Token": csrfToken() as string } : {}),
+          ...(csrf ? { "X-CSRF-Token": csrf } : {}),
         },
         body: JSON.stringify({ confirmation_token: ticketToken }),
       }));
