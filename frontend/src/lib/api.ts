@@ -54,10 +54,39 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
   unauthorizedHandler = handler;
 }
 
+// In-memory CSRF token. Used for cross-site deployments where the CSRF cookie
+// is set by a different origin and cannot be read from document.cookie.
+let inMemoryCsrfToken: string | null = null;
+
+export function setCsrfToken(token: string | null | undefined): void {
+  if (token) inMemoryCsrfToken = token;
+}
+
 function readCookie(name: string): string | null {
   const prefix = `${name}=`;
   const cookie = document.cookie.split("; ").find((entry) => entry.startsWith(prefix));
   return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : null;
+}
+
+// Resolve a usable CSRF token: prefer the cookie (same-site/localhost), fall
+// back to the in-memory token, and finally fetch one from the backend.
+async function resolveCsrfToken(): Promise<string | null> {
+  const cookieToken = readCookie("racepass_csrf");
+  if (cookieToken) return cookieToken;
+  if (inMemoryCsrfToken) return inMemoryCsrfToken;
+  try {
+    const response = await fetch(`${API_BASE}/auth/csrf`, { credentials: "include" });
+    if (response.ok) {
+      const data = (await response.json()) as { csrfToken?: string };
+      if (data.csrfToken) {
+        inMemoryCsrfToken = data.csrfToken;
+        return inMemoryCsrfToken;
+      }
+    }
+  } catch {
+    // fall through; request will fail CSRF validation and surface a 403
+  }
+  return null;
 }
 
 async function readResponseBody(response: Response): Promise<unknown> {
@@ -91,7 +120,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   if (options.body && !isFormData && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 
   if (!["GET", "HEAD", "OPTIONS"].includes(method) && !headers.has("X-CSRF-Token")) {
-    const csrfToken = readCookie("racepass_csrf");
+    const csrfToken = await resolveCsrfToken();
     if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
   }
   if (!headers.has("X-Request-ID")) headers.set("X-Request-ID", crypto.randomUUID());
@@ -114,6 +143,10 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
       signal: requestController.signal,
     });
     const body = await readResponseBody(response);
+
+    if (typeof body === "object" && body !== null && "csrfToken" in body) {
+      setCsrfToken((body as { csrfToken?: string }).csrfToken);
+    }
 
     if (response.status === 401) unauthorizedHandler?.();
     if (!response.ok) {

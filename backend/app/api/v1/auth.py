@@ -26,6 +26,31 @@ from models import OrganizerApplication, User
 router = APIRouter()
 
 
+@router.get("/csrf")
+def csrf_token(request: Request, response: Response) -> dict:
+    """Return a CSRF token the SPA can echo back in the X-CSRF-Token header.
+
+    Needed for cross-site deployments where the frontend and backend are on
+    different origins and the CSRF cookie is not readable by frontend JS.
+    """
+    from app.config import get_settings
+
+    settings = get_settings()
+    token = request.cookies.get(CSRF_COOKIE)
+    if not token:
+        token = secrets.token_urlsafe(32)
+        response.set_cookie(
+            CSRF_COOKIE,
+            token,
+            httponly=False,
+            secure=settings.is_production,
+            samesite="none" if settings.is_production else "lax",
+            max_age=7 * 24 * 60 * 60,
+            path="/",
+        )
+    return {"csrfToken": token}
+
+
 class RegisterIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=3, max_length=320)
@@ -122,7 +147,7 @@ def register(
         raise HTTPException(status_code=409, detail="An account with that email already exists") from exc
 
     _set_session_cookies(response, raw_session, csrf_token)
-    return {"user": public_user(user)}
+    return {"user": public_user(user), "csrfToken": csrf_token}
 
 
 @router.post("/organizer-applications", status_code=status.HTTP_201_CREATED)
@@ -232,12 +257,12 @@ def login(
     record_audit(db, actor_user_id=user.id, action="login_succeeded", resource_type="user", resource_id=user.id)
     db.commit()
     _set_session_cookies(response, raw_session, csrf_token)
-    return {"user": public_user(user)}
+    return {"user": public_user(user), "csrfToken": csrf_token}
 
 
 @router.get("/me")
-def me(user: User = Depends(get_current_user)) -> dict:
-    return {"user": public_user(user)}
+def me(request: Request, user: User = Depends(get_current_user)) -> dict:
+    return {"user": public_user(user), "csrfToken": request.cookies.get(CSRF_COOKIE)}
 
 
 @router.post("/logout")

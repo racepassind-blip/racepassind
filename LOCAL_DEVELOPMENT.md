@@ -1,6 +1,6 @@
 # SportPass local development
 
-This guide runs the frontend and backend locally while using the Neon PostgreSQL database as the development source of truth. The backend requires an explicitly loaded Neon `DATABASE_URL`; it will not fall back to the local SQLite database.
+This guide runs the frontend and backend locally while using the Neon PostgreSQL database as the development source of truth. The backend requires a Neon `DATABASE_URL`; it will not fall back to a local SQLite database.
 
 ## Prerequisites
 
@@ -20,21 +20,48 @@ cd /Users/work/Desktop/race_pass/frontend
 npm ci
 ```
 
+## Configure `backend/.env.local`
+
+The backend automatically loads `backend/.env.local` when `ENVIRONMENT` is not `production`
+(see `app/config.py`). Put the development configuration there and do not commit the file — it is
+gitignored.
+
+Required keys:
+
+```text
+ENVIRONMENT=development
+AUTO_MIGRATE=true
+PORT=8010
+
+# Neon connection URL. If Neon shows postgresql://, rewrite it to postgresql+psycopg://
+DATABASE_URL=postgresql+psycopg://USER:PASSWORD@ep-xxxx-pooler.<region>.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+
+FRONTEND_ORIGINS=http://127.0.0.1:8080
+
+# Cloudflare R2 / S3-compatible private object storage
+STORAGE_MODE=s3
+STORAGE_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+STORAGE_BUCKET=<your-bucket>
+STORAGE_REGION=auto
+STORAGE_ACCESS_KEY=<r2-access-key>
+STORAGE_SECRET_KEY=<r2-secret-key>
+STORAGE_SIGNED_URL_TTL_SECONDS=900
+STORAGE_MAX_UPLOAD_BYTES=2000000
+STORAGE_MAX_DIMENSION=4096
+```
+
+> Do not manually `export DATABASE_URL` in your shell. A shell-exported value overrides
+> `.env.local` (config loads with `override=False`), which can silently pin the app to the wrong
+> database. If a previous session exported it, run `unset DATABASE_URL` or open a fresh terminal.
+
 ## Start the backend with Neon
 
-Open Terminal 1. This explicitly loads `DATABASE_URL` from `backend/.env.local`; the application does not load that file automatically.
+Open Terminal 1. The app reads `backend/.env.local` on its own, so no manual exports are needed:
 
 ```sh
 cd /Users/work/Desktop/race_pass/backend
-export DATABASE_URL="$(./.venv/bin/python -c 'from dotenv import dotenv_values; url = dotenv_values(".env.local").get("DATABASE_URL"); assert url and "neon.tech" in url, "backend/.env.local must contain a Neon DATABASE_URL"; print(url)')"
-export ENVIRONMENT=development
-export AUTO_MIGRATE=false
-
-# Put real R2 values in backend/.env.local. Never commit or share those values.
-# Uvicorn loads the database and R2 environment from that file below.
-
-./.venv/bin/python -m alembic upgrade head
-./.venv/bin/python -m uvicorn app.main:app --env-file .env.local --host 127.0.0.1 --port 8010
+unset DATABASE_URL            # clear any stale export from a previous session
+./.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
 ```
 
 The backend runs at:
@@ -43,7 +70,26 @@ The backend runs at:
 http://127.0.0.1:8010
 ```
 
-This setup uses the Neon database configured in `backend/.env.local`. Run the Alembic command after pulling schema changes; keep `AUTO_MIGRATE=false` so the app does not silently migrate a remote database at startup.
+To confirm which database the app resolves before starting the server:
+
+```sh
+cd /Users/work/Desktop/race_pass/backend
+unset DATABASE_URL
+./.venv/bin/python -c "from app.config import get_settings; print(get_settings().database_url)"
+```
+
+### Applying migrations
+
+Migrations are managed with Alembic. To apply the latest schema to the Neon database:
+
+```sh
+cd /Users/work/Desktop/race_pass/backend
+./.venv/bin/python -m alembic upgrade head
+./.venv/bin/python -m alembic current   # should print: 0028_event_checkpoints (head)
+```
+
+Run this after pulling schema changes. In production keep `AUTO_MIGRATE=false` and run migrations
+as an explicit release step; `AUTO_MIGRATE=true` is convenient for local development only.
 
 ## Start the frontend
 
@@ -61,7 +107,8 @@ Open the application at:
 http://127.0.0.1:8080
 ```
 
-The frontend must point to the backend on port `8010`. If Vite selects a different port, use the URL printed in the terminal.
+The frontend must point to the backend on port `8010`. If Vite selects a different port, use the
+URL printed in the terminal.
 
 ## Check that the backend is working
 
@@ -71,7 +118,7 @@ curl http://127.0.0.1:8010/ready
 curl http://127.0.0.1:8010/api/v1/events
 ```
 
-Expected health responses include:
+Expected health responses:
 
 ```json
 {"status":"ok"}
@@ -83,29 +130,32 @@ and:
 {"status":"ready"}
 ```
 
+`/ready` returns 200 only when the app can reach the Neon database.
+
 ## Stop the services
 
 Press `Control+C` in each terminal running the backend or frontend.
 
 ## Important database note
 
-Do not put a Neon password or other secret in this file or commit a `.env` file. Normal development for this project uses the Neon database configured in `backend/.env.local`; the local `backend/app.db` file is retained but is no longer used by the application. Neon PostgreSQL is the source of truth for development data.
+Do not put a Neon password or other secret in this file or commit a `.env` file. Real secrets live
+only in `backend/.env.local` (gitignored) and in the deployment platform's secret manager. Neon
+PostgreSQL is the source of truth for development data; the local `backend/app.db` file is retained
+but no longer used by the application.
 
-Public preview URLs:
+## Deployed environments (Render)
 
-- Frontend: https://sportpass-frontend-preview.onrender.com
-- Backend: https://sportpass-backend-preview.onrender.com
+- Frontend: https://sportpassindia-frontend.onrender.com
+- Backend: https://sportpassindia.onrender.com
 
-## Neon development admin
-
-> Local development reference only. Do not commit or share these credentials.
-
-```text
-Email: suhrp@sportpassind.com
-Password: Sourav0211$Race
-Database: Neon development database
+The backend requires a SPA rewrite rule on the static site (`/*` -> `/index.html`, action
+Rewrite) so client-side routes resolve on direct load and refresh.
 
 
-MDACA Organizer:
-lokisport@gmail.com
-```
+BE:
+unset DATABASE_URL
+./.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+
+Name: Suhruth MV
+Email: suhruth.mv@sportpassind.com
+Role: admin
