@@ -89,9 +89,15 @@ def build_upi_payment_details(settings: EventPaymentSettings, *, amount_paise: i
     payee_name = settings.payee_name.strip()
     amount = _amount_rupees(amount_paise)
     transaction_note = f"SportPass {registration_reference}"
-    # Field order follows NPCI UPI deep-link spec.
-    # mam (minimum amount) is intentionally omitted so the amount is non-editable.
-    uri = "upi://pay?" + urlencode(
+    # Minimal UPI deep-link: only pa, pn, am, cu.
+    # Extra fields (tr, tn, mc, mam, mode) are known to trigger bank-limit
+    # errors on some UPI apps even when the amount is within limits.
+    # The full URI (with tr/tn) is used for the QR code only.
+    minimal_uri = "upi://pay?" + urlencode(
+        {"pa": upi_id, "pn": payee_name, "am": amount, "cu": "INR"},
+        quote_via=quote,
+    )
+    full_uri = "upi://pay?" + urlencode(
         {
             "pa": upi_id,
             "pn": payee_name,
@@ -108,8 +114,8 @@ def build_upi_payment_details(settings: EventPaymentSettings, *, amount_paise: i
         "payeeName": payee_name,
         "instructions": settings.instructions.strip(),
         "qrImageUrl": normalize_qr_image_url(settings.qr_image_url),
-        "upiUri": uri,
-        "qrDataUrl": generate_qr_data_url(uri),
+        "upiUri": minimal_uri,
+        "qrDataUrl": generate_qr_data_url(full_uri),
         "currency": "INR",
         "amountPaise": amount_paise,
     }
