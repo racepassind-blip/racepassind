@@ -1,25 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="mark-title">
   <title id="mark-title">SportPass India</title>
 
-  <!-- rounded square background -->
-  <rect width="64" height="64" rx="14" fill="#101b35"/>
+  <!-- outer orange ring -->
+  <rect width="64" height="64" rx="16" fill="#F26522"/>
 
-  <!-- ticket body -->
-  <rect x="10" y="22" width="44" height="20" rx="3" fill="#ff9933"/>
+  <!-- inner navy background -->
+  <rect x="3" y="3" width="58" height="58" rx="13" fill="#1B2A4A"/>
 
-  <!-- left notch cutout -->
-  <circle cx="10" cy="32" r="4" fill="#101b35"/>
+  <!-- stylised S mark -->
+  <!-- upper white arm of the S -->
+  <path d="M38 15 C45 15 48 19 46 24 L40 24 C41 22 40 20 37 20 L28 20 C25 20 23 22 23 25 C23 27 24 28 27 29 L38 31 C43 32 47 35 47 40 C47 46 43 50 36 50 L26 50 C19 50 16 46 17 41 L23 41 C22 43 24 45 27 45 L37 45 C40 45 41 43 41 40 C41 38 40 37 37 36 L26 34 C21 33 17 30 17 24 C17 19 21 15 28 15 Z"
+        fill="url(#s-gradient)"/>
 
-  <!-- right notch cutout -->
-  <circle cx="54" cy="32" r="4" fill="#101b35"/>
+  <!-- speed lines to the left of the S -->
+  <rect x="10" y="26" width="8" height="2.5" rx="1.25" fill="#F26522" opacity="0.9"/>
+  <rect x="12" y="30.5" width="5" height="2" rx="1" fill="#F26522" opacity="0.6"/>
 
-  <!-- dashed centre divider -->
-  <line x1="19" y1="32" x2="45" y2="32"
-        stroke="#101b35" stroke-width="1.5"
-        stroke-dasharray="3 2.5" stroke-linecap="round"/>
-
-  <!-- three lines suggesting text on the ticket stub -->
-  <rect x="22" y="25.5" width="10" height="2" rx="1" fill="#101b35" opacity="0.5"/>
-  <rect x="22" y="35.5" width="14" height="2" rx="1" fill="#101b35" opacity="0.7"/>
-  <rect x="22" y="38.5" width="9"  height="2" rx="1" fill="#101b35" opacity="0.4"/>
+  <defs>
+    <linearGradient id="s-gradient" x1="17" y1="15" x2="47" y2="50" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="45%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#F26522"/>
+    </linearGradient>
+  </defs>
 </svg>
