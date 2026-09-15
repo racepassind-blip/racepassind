@@ -1,0 +1,80 @@
+# Render blueprint for SportPass India.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# This provisions two services:
+#   1. sportpass-api      - the FastAPI backend (Docker image from backend/Dockerfile)
+#   2. sportpass-frontend - the Vite/React static site
+#
+# Secrets marked `sync: false` are NOT stored in git. Render will prompt you
+# to enter them in the dashboard the first time you apply this blueprint.
+services:
+  # ---------------------------------------------------------------------------
+  # Backend API (Docker)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: sportpass-api
+    runtime: docker
+    plan: starter
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      # Production migrations run as an explicit release step, never on startup.
+      - key: AUTO_MIGRATE
+        value: "false"
+      # Render supplies PORT automatically; the app reads it.
+      # --- Database (Neon) ---
+      - key: DATABASE_URL
+        sync: false
+      # --- Frontend origin for CORS. Set to the deployed frontend URL. ---
+      - key: FRONTEND_ORIGINS
+        sync: false
+      # --- App secrets (generate long random values) ---
+      - key: SESSION_SECRET
+        sync: false
+      - key: CSRF_SECRET
+        sync: false
+      - key: TICKET_SIGNING_SECRET
+        sync: false
+      # --- S3-compatible object storage (Cloudflare R2) ---
+      - key: STORAGE_MODE
+        value: s3
+      - key: STORAGE_ENDPOINT
+        sync: false
+      - key: STORAGE_BUCKET
+        sync: false
+      - key: STORAGE_REGION
+        value: auto
+      - key: STORAGE_ACCESS_KEY
+        sync: false
+      - key: STORAGE_SECRET_KEY
+        sync: false
+      - key: STORAGE_SIGNED_URL_TTL_SECONDS
+        value: "900"
+      - key: STORAGE_MAX_UPLOAD_BYTES
+        value: "2000000"
+      - key: STORAGE_MAX_DIMENSION
+        value: "4096"
+
+  # ---------------------------------------------------------------------------
+  # Frontend static site (Vite/React)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: sportpass-frontend
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: frontend/dist
+    rootDir: frontend
+    autoDeploy: true
+    envVars:
+      # Public API origin only (no /api/v1 suffix). Set to the backend URL.
+      - key: VITE_API_URL
+        sync: false
+    routes:
+      # SPA fallback so client-side routes serve index.html.
+      - type: rewrite
+        source: /*
+        destination: /index.html
