@@ -55,7 +55,7 @@ const Dashboard = () => {
 
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <div><p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Your race pass</p><h2 className="mt-1 text-2xl font-black tracking-tight">My tickets</h2><p className="mt-1 text-sm text-muted-foreground">Open a ticket to review its QR code, payment status, and check-in details.</p></div>
+            <div><p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Your SportPass</p><h2 className="mt-1 text-2xl font-black tracking-tight">My tickets</h2><p className="mt-1 text-sm text-muted-foreground">Open a ticket to review its QR code, payment status, and check-in details.</p></div>
             {registrations.length > 0 && <Button asChild variant="ghost" className="gap-2"><Link to="/dashboard/registrations">View all registrations <ArrowRight className="h-4 w-4" /></Link></Button>}
           </div>
 

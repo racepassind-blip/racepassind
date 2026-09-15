@@ -89,7 +89,17 @@ async def security_and_observability_middleware(request: Request, call_next):
             detail = f"{type(exc).__name__}: {exc}"
         response = JSONResponse(status_code=500, content={"detail": detail})
 
-    if not request.cookies.get(CSRF_COOKIE):
+    # Only issue a CSRF cookie when the request arrived without one AND the
+    # response is not already setting it (e.g. /auth/csrf, /auth/login,
+    # /auth/register set their own). Setting a second cookie with the same name
+    # produces two conflicting Set-Cookie headers, so the header token and the
+    # stored cookie can diverge and CSRF validation fails intermittently.
+    response_sets_csrf = any(
+        key.decode("latin-1").lower() == "set-cookie"
+        and value.decode("latin-1").startswith(f"{CSRF_COOKIE}=")
+        for key, value in response.raw_headers
+    )
+    if not request.cookies.get(CSRF_COOKIE) and not response_sets_csrf:
         response.set_cookie(
             CSRF_COOKIE,
             secrets.token_urlsafe(32),

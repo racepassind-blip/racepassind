@@ -85,7 +85,10 @@ def require_csrf(
     csrf_header: str | None = Header(default=None, alias="X-CSRF-Token"),
 ) -> None:
     if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your session has expired. Please refresh the page and try again.",
+        )
 
 
 def require_roles(*roles: str) -> Callable:
