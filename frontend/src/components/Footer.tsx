@@ -15,7 +15,9 @@ export function Footer() {
               SportPass <span className="text-primary">India</span>
             </Link>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              India&apos;s home for race day. Discover, register, and show up for your next finish line — proudly built in Mysuru.
+              Discover sports. Register simply. Show up ready.
+              <br />
+              Proudly built in Mysuru.
             </p>
           </div>
 
@@ -35,7 +37,7 @@ export function Footer() {
             <h4 className="font-semibold text-sm">Contact</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li><span className="hover:text-foreground cursor-pointer transition-colors">Support</span></li>
-              <li><span className="hover:text-foreground cursor-pointer transition-colors">hello@sportpass.com</span></li>
+              <li><span className="hover:text-foreground cursor-pointer transition-colors">hello@sportpass.in</span></li>
               <li><span className="hover:text-foreground cursor-pointer transition-colors">Partner with us</span></li>
             </ul>
           </div>
