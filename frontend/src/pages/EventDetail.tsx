@@ -202,7 +202,7 @@ const EventDetail = () => {
                     Select Tickets
                   </h2>
                   <p className="text-sm text-primary-foreground/70">
-                    {event.participants.toLocaleString()} / {event.maxParticipants.toLocaleString()} registered
+                    {event.participants.toLocaleString()} registered
                   </p>
                 </div>
 

@@ -12,7 +12,7 @@ interface OrganizerWorkspaceTabsProps {
 export function OrganizerWorkspaceTabs({ organizationEmbedded = false, onOrganizationSelect, onEventsSelect }: OrganizerWorkspaceTabsProps) {
   const location = useLocation();
   const eventsActive = location.pathname === "/organizer";
-  const pricingActive = location.pathname === "/organizer/pricing";
+  const billingActive = location.pathname === "/organizer/pricing";
   const organizationActive = onOrganizationSelect ? organizationEmbedded : location.pathname === "/organizer/setup";
 
   return (
@@ -20,8 +20,8 @@ export function OrganizerWorkspaceTabs({ organizationEmbedded = false, onOrganiz
       <Button asChild variant="ghost" className={`shrink-0 gap-2 rounded-b-none border-b-2 px-4 ${eventsActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
         <Link to="/organizer" onClick={onEventsSelect}><Calendar className="h-4 w-4" /> Events</Link>
       </Button>
-      <Button asChild variant="ghost" className={`shrink-0 gap-2 rounded-b-none border-b-2 px-4 ${pricingActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-        <Link to="/organizer/pricing"><CreditCard className="h-4 w-4" /> Plans &amp; pricing</Link>
+      <Button asChild variant="ghost" className={`shrink-0 gap-2 rounded-b-none border-b-2 px-4 ${billingActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+        <Link to="/organizer/pricing"><CreditCard className="h-4 w-4" /> Billing</Link>
       </Button>
       {onOrganizationSelect ? (
         <Button type="button" variant="ghost" className={`shrink-0 gap-2 rounded-b-none border-b-2 px-4 ${organizationActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`} onClick={onOrganizationSelect}>
