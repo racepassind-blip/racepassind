@@ -46,6 +46,7 @@ class TicketPdfServiceTests(unittest.TestCase):
             total_amount_paise=10000,
             payment_status="approved",
             participant=participant,
+            participant_memberships=[],
             ticket=ticket,
         )
         return registration, event

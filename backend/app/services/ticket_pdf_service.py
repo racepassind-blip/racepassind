@@ -146,7 +146,7 @@ def build_ticket_pdf(registration: Registration, event: Event, qr_payload: str) 
         fontName="Helvetica-Bold",
         fontSize=8,
         leading=10,
-        textColor=_RACEPASS_NAVY,
+        textColor=_SPORTPASS_NAVY,
         alignment=TA_CENTER,
     ))
     styles.add(ParagraphStyle(
@@ -155,7 +155,7 @@ def build_ticket_pdf(registration: Registration, event: Event, qr_payload: str) 
         fontName="Helvetica-Bold",
         fontSize=20,
         leading=24,
-        textColor=_RACEPASS_NAVY,
+        textColor=_SPORTPASS_NAVY,
         spaceAfter=5,
     ))
     styles.add(ParagraphStyle(
@@ -171,7 +171,7 @@ def build_ticket_pdf(registration: Registration, event: Event, qr_payload: str) 
         fontName="Helvetica-Bold",
         fontSize=11,
         leading=14,
-        textColor=_RACEPASS_NAVY,
+        textColor=_SPORTPASS_NAVY,
         alignment=TA_RIGHT,
     ))
     styles.add(ParagraphStyle(
@@ -180,7 +180,7 @@ def build_ticket_pdf(registration: Registration, event: Event, qr_payload: str) 
         fontName="Helvetica-Bold",
         fontSize=7,
         leading=9,
-        textColor=_RACEPASS_TEAL,
+        textColor=_SPORTPASS_TEAL,
         alignment=TA_RIGHT,
     ))
     styles.add(ParagraphStyle(
@@ -189,7 +189,7 @@ def build_ticket_pdf(registration: Registration, event: Event, qr_payload: str) 
         fontName="Helvetica-Bold",
         fontSize=8,
         leading=10,
-        textColor=_RACEPASS_TEAL,
+        textColor=_SPORTPASS_TEAL,
         spaceBefore=7,
         spaceAfter=5,
         tracking=0.8,
@@ -218,7 +218,7 @@ def build_ticket_pdf(registration: Registration, event: Event, qr_payload: str) 
         fontName="Helvetica-Bold",
         fontSize=9.2,
         leading=12,
-        textColor=_RACEPASS_NAVY,
+        textColor=_SPORTPASS_NAVY,
     ))
     styles.add(ParagraphStyle(
         name="body",
@@ -395,7 +395,7 @@ def build_ticket_pdf(registration: Registration, event: Event, qr_payload: str) 
 
     story.extend([
         Spacer(1, 4 * mm),
-        HRFlowable(width="100%", thickness=0.7, color=_RACEPASS_ORANGE, spaceAfter=3 * mm),
+        HRFlowable(width="100%", thickness=0.7, color=_SPORTPASS_ORANGE, spaceAfter=3 * mm),
         Paragraph(
             "Present this ticket at the event. If event details change, follow the organizer's latest instructions.",
             ParagraphStyle(

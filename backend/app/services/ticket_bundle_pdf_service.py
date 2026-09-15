@@ -57,7 +57,7 @@ def _ticket_styles():
         fontName="Helvetica-Bold",
         fontSize=8,
         leading=10,
-        textColor=_RACEPASS_NAVY,
+        textColor=_SPORTPASS_NAVY,
         alignment=TA_CENTER,
     ))
     styles.add(ParagraphStyle(
@@ -66,7 +66,7 @@ def _ticket_styles():
         fontName="Helvetica-Bold",
         fontSize=20,
         leading=24,
-        textColor=_RACEPASS_NAVY,
+        textColor=_SPORTPASS_NAVY,
         spaceAfter=5,
     ))
     styles.add(ParagraphStyle(
@@ -82,7 +82,7 @@ def _ticket_styles():
         fontName="Helvetica-Bold",
         fontSize=11,
         leading=14,
-        textColor=_RACEPASS_NAVY,
+        textColor=_SPORTPASS_NAVY,
         alignment=TA_RIGHT,
     ))
     styles.add(ParagraphStyle(
@@ -91,7 +91,7 @@ def _ticket_styles():
         fontName="Helvetica-Bold",
         fontSize=7,
         leading=9,
-        textColor=_RACEPASS_TEAL,
+        textColor=_SPORTPASS_TEAL,
         alignment=TA_RIGHT,
     ))
     styles.add(ParagraphStyle(
@@ -100,7 +100,7 @@ def _ticket_styles():
         fontName="Helvetica-Bold",
         fontSize=8,
         leading=10,
-        textColor=_RACEPASS_TEAL,
+        textColor=_SPORTPASS_TEAL,
         spaceBefore=7,
         spaceAfter=5,
         tracking=0.8,
@@ -129,7 +129,7 @@ def _ticket_styles():
         fontName="Helvetica-Bold",
         fontSize=9.2,
         leading=12,
-        textColor=_RACEPASS_NAVY,
+        textColor=_SPORTPASS_NAVY,
     ))
     styles.add(ParagraphStyle(
         name="bundle_body",
