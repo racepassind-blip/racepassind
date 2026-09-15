@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArrowUpRight, Calendar, CalendarDays, DollarSign, LayoutDashboard, MapPin, Plus, Search, TrendingUp, Users } from "lucide-react";
+import { Archive, ArrowUpRight, Calendar, CalendarDays, DollarSign, LayoutDashboard, MapPin, Plus, Search, Shield, TrendingUp, Users } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -97,6 +97,14 @@ const OrganizerDashboard = () => {
           <section className="flex flex-col gap-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
             <div><p className="font-semibold">{lockedParticipants.toLocaleString()} registrations are waiting for your upgrade</p><p className="mt-1 text-sm text-amber-900/75 dark:text-amber-100/75">Registrations keep flowing and participants may have paid you directly. Upgrade to view their details, confirm payments, and manage them for race day.</p></div>
             <Button className="w-fit shrink-0" onClick={() => navigate("/organizer/pricing")}>Review pricing</Button>
+          </section>
+        )}
+        {user?.role === "admin" && (
+          <section className="flex flex-col gap-4 rounded-xl border border-blue-300 bg-blue-50 p-4 text-blue-950 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-100">
+            <div><p className="font-semibold">Admin Console Access</p><p className="mt-1 text-sm text-blue-900/75 dark:text-blue-100/75">Switch to admin dashboard to manage all organizers and view system-wide billing.</p></div>
+            <Button className="w-fit shrink-0 gap-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500" onClick={() => navigate("/admin")}>
+              <Shield className="h-4 w-4" /> Admin Console
+            </Button>
           </section>
         )}
         <section className="rounded-2xl border bg-card p-6 shadow-sm sm:p-8">

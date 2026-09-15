@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { CheckCircle2 } from "lucide-react";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
 import OrganizerMatchScoring from "@/components/OrganizerMatchScoring";
@@ -8,13 +9,33 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useOrganizerEventDashboard } from "@/hooks/useEvents";
+import { useOrganizerMatches } from "@/hooks/useEvents";
 import { getSportConfig } from "@/data/sportConfig";
+import type { OrganizerMatch } from "@/hooks/useEvents";
+
+function winnerName(match: OrganizerMatch): string {
+  if (!match.winner) return "—";
+  return match.winner === "entry_a" ? match.entryA.displayName : match.entryB.displayName;
+}
+
+function scoresSummary(match: OrganizerMatch): string {
+  if (!match.games.length) return "No scores recorded";
+  return match.games
+    .map((g) => `${g.scoreA}–${g.scoreB}`)
+    .join(", ");
+}
 
 const OrganizerEventTournamentScoring = () => {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const { data: dashboard, isLoading, isError } = useOrganizerEventDashboard(eventId);
+  const { data: matches = [] } = useOrganizerMatches(eventId);
   const supportsTournament = getSportConfig(dashboard?.event.sport).supports_tournament;
+
+  const completedMatches = useMemo(
+    () => matches.filter((m) => m.status === "completed"),
+    [matches],
+  );
 
   if (isLoading) {
     return <OrganizerDashboardLayout eventId={eventId}><div className="px-4 py-20 text-center text-sm text-muted-foreground">Loading scoring workspace…</div></OrganizerDashboardLayout>;
@@ -51,7 +72,39 @@ const OrganizerEventTournamentScoring = () => {
             <OrganizerMatchScoring eventId={event.id} showCompletedSection={false} />
           </TabsContent>
           <TabsContent value="completed" className="space-y-4">
-            <OrganizerMatchScoring eventId={event.id} showCompletedSection={true} />
+            <Card>
+              <CardHeader>
+                <CardTitle>Completed matches</CardTitle>
+                <CardDescription>Results recorded for this tournament. See all finished matches with scores and winners.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {completedMatches.length === 0 ? (
+                  <div className="py-12 text-center">
+                    <CheckCircle2 className="mx-auto h-12 w-12 text-muted-foreground" />
+                    <p className="mt-4 text-sm text-muted-foreground">No completed matches yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {completedMatches.map((match) => (
+                      <div key={match.id} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{match.roundLabel} · {match.category.name}</p>
+                          <p className="mt-0.5 text-sm font-medium">{match.entryA.displayName} vs {match.entryB.displayName}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Scores</p>
+                          <p className="mt-0.5 text-sm font-mono">{scoresSummary(match)}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                          <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">{winnerName(match)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
