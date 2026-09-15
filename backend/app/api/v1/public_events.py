@@ -55,7 +55,7 @@ def _public_event(event: Event, storage=None) -> dict:
         "image": resolve_media_url(event.banner_url, storage, get_settings().storage_signed_url_ttl_seconds) or "/placeholder.svg",
         "description": event.description,
         "distance": event.distance,
-        "participants": event.participants,
+        "participants": sum(ticket.quantity_sold for ticket in event.tickets),
         "maxParticipants": event.maxParticipants,
         "organizer": event.organizer,
         "registrationOpen": event.registration_open.isoformat() if event.registration_open else None,
