@@ -1,10 +1,12 @@
 import { useNavigate, useParams } from "react-router-dom";
+import { useState } from "react";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
 import OrganizerMatchScoring from "@/components/OrganizerMatchScoring";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useOrganizerEventDashboard } from "@/hooks/useEvents";
 import { getSportConfig } from "@/data/sportConfig";
 
@@ -34,12 +36,24 @@ const OrganizerEventTournamentScoring = () => {
           <div>
             <Button variant="ghost" className="mb-3 -ml-3 gap-2 px-3 text-muted-foreground" onClick={() => navigate(`/organizer/events/${event.id}`)}>Back to event</Button>
             <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-primary">Tournament operations</p><Badge variant="outline" className="capitalize">{event.sport.replaceAll("_", " ")}</Badge></div>
-            <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Live scoring</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">Select a scheduled match, enter game scores, and publish the result when the match is complete.</p>
+            <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Tournament scoring</h1>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">Record match scores and review completed results.</p>
           </div>
           <Button variant="outline" onClick={() => navigate(`/organizer/events/${event.id}/tournament/matches`)}>View matches</Button>
         </div>
-        <OrganizerMatchScoring eventId={event.id} />
+        
+        <Tabs defaultValue="scoring" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="scoring">Match scoring</TabsTrigger>
+            <TabsTrigger value="completed">Completed matches</TabsTrigger>
+          </TabsList>
+          <TabsContent value="scoring" className="space-y-4">
+            <OrganizerMatchScoring eventId={event.id} showCompletedSection={false} />
+          </TabsContent>
+          <TabsContent value="completed" className="space-y-4">
+            <OrganizerMatchScoring eventId={event.id} showCompletedSection={true} />
+          </TabsContent>
+        </Tabs>
       </div>
     </OrganizerDashboardLayout>
   );

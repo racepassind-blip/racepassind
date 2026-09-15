@@ -14,6 +14,7 @@ import { apiRequest } from "@/lib/api";
 
 interface OrganizerMatchScoringProps {
   eventId: string;
+  showCompletedSection?: boolean;
 }
 
 type ScoreRow = { gameNumber: number; scoreA: string; scoreB: string };
@@ -33,7 +34,7 @@ function scoresSummary(match: OrganizerMatch): string {
     .join(", ");
 }
 
-const OrganizerMatchScoring = ({ eventId }: OrganizerMatchScoringProps) => {
+const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: OrganizerMatchScoringProps) => {
   const queryClient = useQueryClient();
   const { data: matches = [] } = useOrganizerMatches(eventId);
 
@@ -235,7 +236,7 @@ const OrganizerMatchScoring = ({ eventId }: OrganizerMatchScoringProps) => {
       </Card>
 
       {/* Completed matches section */}
-      {completedMatches.length > 0 && (
+      {showCompletedSection && completedMatches.length > 0 && (
         <Card>
           <CardHeader className="cursor-pointer select-none" onClick={() => setCompletedOpen((o) => !o)}>
             <div className="flex items-center justify-between">
