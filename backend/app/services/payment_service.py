@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import re
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 import qrcode
 from qrcode.constants import ERROR_CORRECT_M
@@ -89,15 +89,18 @@ def build_upi_payment_details(settings: EventPaymentSettings, *, amount_paise: i
     payee_name = settings.payee_name.strip()
     amount = _amount_rupees(amount_paise)
     transaction_note = f"SportPass {registration_reference}"
+    # Field order follows NPCI UPI deep-link spec.
+    # mam (minimum amount) is intentionally omitted so the amount is non-editable.
     uri = "upi://pay?" + urlencode(
         {
             "pa": upi_id,
             "pn": payee_name,
             "am": amount,
             "cu": "INR",
-            "tn": transaction_note,
             "tr": registration_reference,
-        }
+            "tn": transaction_note,
+        },
+        quote_via=quote,
     )
     return {
         "method": settings.method,
