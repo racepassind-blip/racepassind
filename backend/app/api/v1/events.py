@@ -28,7 +28,7 @@ from app.services.registration_config_service import normalize_event_configs
 from app.services.storage_service import StorageError, StorageService
 from app.config import get_settings
 from db import get_db
-from models import Event, EventCategory, EventPaymentSettings, OrganizationMember, Registration, Ticket, User
+from models import Event, EventCategory, EventCheckpoint, EventPaymentSettings, OrganizationMember, Registration, Ticket, User
 
 router = APIRouter()
 
@@ -105,6 +105,8 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
                 "ageMin": category.age_min,
                 "ageMax": category.age_max,
                 "gender": category.gender,
+                "entryType": category.entry_type,
+                "participantsPerEntry": category.participants_per_entry,
                 "tickets": [
                     {
                         "id": str(ticket.id),
@@ -138,6 +140,20 @@ def _validate_registration_window(payload: OrganizerEventCreateV1 | OrganizerEve
         for ticket in category.tickets:
             if ticket.sale_start and ticket.sale_end and ticket.sale_end <= ticket.sale_start:
                 raise HTTPException(status_code=422, detail="Ticket sale_end must be after sale_start")
+
+
+def _category_distance(value: str | None) -> str | None:
+    normalized = value.strip() if value else ""
+    return normalized or None
+
+
+def _category_distances(payload: OrganizerEventCreateV1 | OrganizerEventUpdateV1) -> list[str]:
+    return [distance for category in payload.categories if (distance := _category_distance(category.distance))]
+
+
+def _legacy_event_distance(payload: OrganizerEventCreateV1 | OrganizerEventUpdateV1) -> str:
+    distances = _category_distances(payload)
+    return distances[0] if distances else "badminton"
 
 
 @router.get("/events")
@@ -192,7 +208,7 @@ def create_event(
     field_config, addon_config = normalize_event_configs(
         payload.field_config,
         payload.addon_config,
-        category_options=[category.distance.strip() for category in payload.categories],
+        category_options=_category_distances(payload),
     )
     event = Event(
         organization_id=organization.id,
@@ -214,7 +230,7 @@ def create_event(
         latitude=payload.latitude,
         longitude=payload.longitude,
         status="draft",
-        distance=payload.categories[0].distance,
+        distance=_legacy_event_distance(payload),
         participants=0,
         rules=payload.rules,
         schedule=[item.model_dump() for item in payload.schedule],
@@ -223,16 +239,19 @@ def create_event(
     )
     db.add(event)
     db.flush()
+    db.add(EventCheckpoint(event_id=event.id, name="Check-In", position=1))
 
     for category_payload in payload.categories:
         category = EventCategory(
             event_id=event.id,
             name=category_payload.name.strip(),
-            distance=category_payload.distance.strip(),
+            distance=_category_distance(category_payload.distance),
             description=category_payload.description.strip(),
             age_min=category_payload.age_min,
             age_max=category_payload.age_max,
             gender=category_payload.gender,
+            entry_type=category_payload.entry_type,
+            participants_per_entry=category_payload.participants_per_entry,
         )
         db.add(category)
         db.flush()
@@ -306,6 +325,10 @@ def get_event_dashboard(
 
 def _ticket_has_registrations(db: Session, ticket_id: UUID) -> bool:
     return db.scalar(select(Registration.id).where(Registration.ticket_id == ticket_id).limit(1)) is not None
+
+
+def _category_has_registrations(db: Session, category: EventCategory) -> bool:
+    return any(_ticket_has_registrations(db, ticket.id) for ticket in category.tickets)
 
 
 @router.post("/events/{event_id}/registration-status")
@@ -409,7 +432,7 @@ def update_event(
     field_config, addon_config = normalize_event_configs(
         payload.field_config,
         payload.addon_config,
-        category_options=[category.distance.strip() for category in payload.categories],
+        category_options=_category_distances(payload),
     )
 
     existing_categories = {category.id: category for category in event.categories}
@@ -436,7 +459,7 @@ def update_event(
     event.addon_config = addon_config
     event.registration_open = payload.registration_open
     event.registration_close = payload.registration_close
-    event.distance = payload.categories[0].distance.strip()
+    event.distance = _legacy_event_distance(payload)
 
     for category_payload in payload.categories:
         category = existing_categories.get(category_payload.id) if category_payload.id else None
@@ -446,21 +469,33 @@ def update_event(
             category = EventCategory(
                 event_id=event.id,
                 name=category_payload.name.strip(),
-                distance=category_payload.distance.strip(),
+                distance=_category_distance(category_payload.distance),
                 description=category_payload.description.strip(),
                 age_min=category_payload.age_min,
                 age_max=category_payload.age_max,
                 gender=category_payload.gender,
+                entry_type=category_payload.entry_type,
+                participants_per_entry=category_payload.participants_per_entry,
             )
             db.add(category)
             db.flush()
         submitted_category_ids.add(category.id)
+        if (
+            category.entry_type != category_payload.entry_type
+            or category.participants_per_entry != category_payload.participants_per_entry
+        ) and _category_has_registrations(db, category):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Category '{category.name}' entry format cannot change after registrations exist",
+            )
         category.name = category_payload.name.strip()
-        category.distance = category_payload.distance.strip()
+        category.distance = _category_distance(category_payload.distance)
         category.description = category_payload.description.strip()
         category.age_min = category_payload.age_min
         category.age_max = category_payload.age_max
         category.gender = category_payload.gender
+        category.entry_type = category_payload.entry_type
+        category.participants_per_entry = category_payload.participants_per_entry
 
         existing_tickets = {ticket.id: ticket for ticket in category.tickets}
         submitted_ticket_ids: set[UUID] = set()

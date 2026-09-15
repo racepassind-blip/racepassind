@@ -48,6 +48,37 @@ def get_current_user(
     return user
 
 
+def get_optional_current_user(
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> User | None:
+    if not session_token:
+        return None
+
+    session = db.scalar(
+        select(AuthSession)
+        .options(joinedload(AuthSession.user))
+        .where(
+            AuthSession.token_hash == hash_opaque_token(session_token),
+            AuthSession.revoked_at.is_(None),
+        )
+    )
+    if session is None:
+        return None
+
+    now = utc_now()
+    expires_at = session.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=dt.timezone.utc)
+    if expires_at <= now:
+        session.revoked_at = now
+        db.commit()
+        return None
+
+    user = session.user
+    return user if user is not None and user.is_active else None
+
+
 def require_csrf(
     request: Request,
     csrf_cookie: str | None = Cookie(default=None, alias=CSRF_COOKIE),

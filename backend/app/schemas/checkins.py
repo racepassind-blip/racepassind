@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -8,6 +10,7 @@ class CheckinScanIn(BaseModel):
 
     credential: str | None = Field(default=None, min_length=1, max_length=300)
     registration_reference: str | None = Field(default=None, min_length=4, max_length=80)
+    checkpoint_id: UUID | None = None
 
     @model_validator(mode="after")
     def require_one_credential(self) -> "CheckinScanIn":
@@ -18,3 +21,18 @@ class CheckinScanIn(BaseModel):
         self.credential = credential
         self.registration_reference = reference
         return self
+
+
+class CheckpointCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=160)
+    position: int | None = Field(default=None, ge=1)
+    addon_id: str | None = Field(default=None, min_length=1, max_length=60)
+
+
+class CheckpointUpdateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=160)
+    position: int = Field(ge=1)

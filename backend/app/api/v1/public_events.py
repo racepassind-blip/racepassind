@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
 from app.services.registration_config_service import normalize_event_configs
 from app.services.media_service import resolve_media_url
+from app.services.match_service import list_public_match_results
 
 router = APIRouter()
 
@@ -23,9 +24,9 @@ def _public_event(event: Event, storage=None) -> dict:
         ordered_tickets = []
         for category in event.categories:
             for ticket in category.tickets:
-                ordered_tickets.append((category.name, ticket))
+                ordered_tickets.append((category.name, category, ticket))
     else:
-        ordered_tickets = [(event.distance, ticket) for ticket in tickets]
+        ordered_tickets = [(event.distance, None, ticket) for ticket in tickets]
 
     tiers = [
         {
@@ -34,8 +35,10 @@ def _public_event(event: Event, storage=None) -> dict:
             "price": ticket.price // 100 if ticket.currency == "INR" else ticket.price,
             "description": ticket.description,
             "available": ticket.available,
+            "entryType": category.entry_type if category is not None else "singles",
+            "participantsPerEntry": category.participants_per_entry if category is not None else 1,
         }
-        for category_name, ticket in ordered_tickets
+        for category_name, category, ticket in ordered_tickets
     ]
     field_config, addon_config = normalize_event_configs(
         event.field_config,
@@ -95,6 +98,34 @@ def list_public_events(
         query = query.where(or_(Event.name.ilike(term), Event.location_name.ilike(term), Event.description.ilike(term)))
     events = db.scalars(query.order_by(Event.start_date).offset(offset).limit(limit)).unique().all()
     return [_public_event(event, storage) for event in events]
+
+
+@router.get("/events/{event_id}/results")
+def get_public_results(
+    event_id: UUID,
+    category_id: UUID | None = None,
+    match_status: str | None = Query(default=None, alias="status", max_length=30),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = db.scalar(
+        select(Event)
+        .options(selectinload(Event.categories))
+        .where(Event.id == event_id, Event.status == "published", Event.archived_at.is_(None))
+    )
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if category_id is not None and not any(category.id == category_id for category in event.categories):
+        raise HTTPException(status_code=404, detail="Category not found")
+    if match_status is not None and match_status not in {"scheduled", "in_progress", "completed"}:
+        raise HTTPException(status_code=422, detail="Unsupported match status")
+    return {
+        "event": {"id": str(event.id), "title": event.title, "date": event.date, "category": event.category},
+        "categories": [
+            {"id": str(category.id), "name": category.name, "distance": category.distance}
+            for category in event.categories
+        ],
+        "matches": list_public_match_results(db, event.id, category_id=category_id, status=match_status),
+    }
 
 
 @router.get("/events/{event_id}", response_model=EventOut)

@@ -1,1 +1,1 @@
-"""RacePass backend application modules."""
+"""SportPass backend application modules."""

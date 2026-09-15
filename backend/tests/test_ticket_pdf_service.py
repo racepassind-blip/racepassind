@@ -53,7 +53,7 @@ class TicketPdfServiceTests(unittest.TestCase):
     def test_confirmed_pdf_contains_branded_document_header(self) -> None:
         registration, event = self._registration()
 
-        pdf = build_ticket_pdf(registration, event, "racepass://ticket?v=1&t=opaque")
+        pdf = build_ticket_pdf(registration, event, "sportpass://ticket?v=1&t=opaque")
 
         self.assertTrue(pdf.startswith(b"%PDF-"))
         self.assertGreater(len(pdf), 1000)
@@ -64,7 +64,7 @@ class TicketPdfServiceTests(unittest.TestCase):
     def test_checked_in_registration_can_download_pdf(self) -> None:
         registration, event = self._registration("checked_in")
 
-        pdf = build_ticket_pdf(registration, event, "racepass://ticket?v=1&t=opaque")
+        pdf = build_ticket_pdf(registration, event, "sportpass://ticket?v=1&t=opaque")
 
         self.assertTrue(pdf.startswith(b"%PDF-"))
 
@@ -72,7 +72,7 @@ class TicketPdfServiceTests(unittest.TestCase):
         registration, event = self._registration("pending_verification")
 
         with self.assertRaisesRegex(ValueError, "confirmed registrations"):
-            build_ticket_pdf(registration, event, "racepass://ticket?v=1&t=opaque")
+            build_ticket_pdf(registration, event, "sportpass://ticket?v=1&t=opaque")
 
 
 if __name__ == "__main__":

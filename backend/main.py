@@ -19,10 +19,13 @@ from app.api.deps import CSRF_COOKIE
 from app.api.v1.admin import router as admin_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.checkins import router as checkins_router
+from app.api.v1.courts import router as courts_router
 from app.api.v1.events import router as events_router
+from app.api.v1.matches import router as matches_router
 from app.api.v1.organizer import router as organizer_router
 from app.api.v1.public_events import _public_event, router as public_events_router
 from app.api.v1.storage import router as storage_router
+from app.api.v1.tournament_rounds import router as tournament_rounds_router
 from app.api.v1.registrations import router as registrations_router
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
@@ -31,15 +34,18 @@ from models import Event, EventCategory, EventPaymentSettings, Organization, Tic
 from schemas import EventOut
 
 settings = get_settings()
-logger = logging.getLogger("racepass.api")
+logger = logging.getLogger("sportpass.api")
 
-app = FastAPI(title="Race Pass API", version="0.1.0")
+app = FastAPI(title="Sport Pass API", version="0.1.0")
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(public_events_router, prefix="/api/v1", tags=["public-events"])
 app.include_router(storage_router, prefix="/api/v1/storage", tags=["storage"])
 app.include_router(registrations_router, prefix="/api/v1", tags=["registrations"])
 app.include_router(checkins_router, prefix="/api/v1/organizer/checkins", tags=["organizer-checkins"])
+app.include_router(courts_router, prefix="/api/v1/organizer", tags=["organizer-courts"])
+app.include_router(matches_router, prefix="/api/v1/organizer", tags=["organizer-matches"])
+app.include_router(tournament_rounds_router, prefix="/api/v1/organizer", tags=["organizer-tournament-rounds"])
 app.include_router(organizer_router, prefix="/api/v1/organizer", tags=["organizer"])
 app.include_router(events_router, prefix="/api/v1/organizer", tags=["organizer-events"])
 
@@ -125,9 +131,9 @@ def _events_seed() -> list[dict[str, Any]]:
             "distance": "10 km",
             "participants": 0,
             "maxParticipants": 1500,
-            "organizer": "RacePass Bengaluru Community",
+            "organizer": "SportPass Bengaluru Community",
             "rules": ["Bib must be visible during the race.", "Follow marshal instructions and stay on the marked course."],
-            "upi": {"id": "racepass.bengaluru@upi", "payee": "RacePass Bengaluru Community"},
+            "upi": {"id": "sportpass.bengaluru@upi", "payee": "SportPass Bengaluru Community"},
             "categories": [
                 {
                     "name": "10K Open",
@@ -151,7 +157,7 @@ def _events_seed() -> list[dict[str, Any]]:
             "maxParticipants": 1000,
             "organizer": "Pune Pedal Collective",
             "rules": ["Approved helmet required at all times.", "Carry a mobile phone and basic repair kit."],
-            "upi": {"id": "racepass.pune@upi", "payee": "Pune Pedal Collective"},
+            "upi": {"id": "sportpass.pune@upi", "payee": "Pune Pedal Collective"},
             "categories": [
                 {
                     "name": "50K Ride",

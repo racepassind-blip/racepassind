@@ -11,8 +11,17 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_authorized_event, get_authorized_organization, get_current_user, require_csrf, require_roles
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
+from app.schemas.checkins import CheckpointCreateIn, CheckpointUpdateIn
 from app.schemas.registrations import ManualRegistrationCreateIn, PaymentDecisionIn
 from app.services.auth_service import utc_now
+from app.services.checkpoint_service import (
+    create_event_checkpoint,
+    delete_event_checkpoint,
+    get_event_checkin_matrix,
+    get_registration_checkin_timeline,
+    list_event_checkpoints,
+    update_event_checkpoint,
+)
 from app.services.pricing_service import get_organizer_pricing
 from app.services.rate_limit_service import RateLimitExceeded, enforce_payment_decision_limit
 from app.services.registration_service import (
@@ -151,7 +160,98 @@ def organizer_me(user: User = Depends(get_current_user)) -> dict:
     return {"id": str(user.id), "name": user.name, "email": user.email, "role": user.role}
 
 
-@router.post("/events/{event_id}/registrations/manual", status_code=status.HTTP_201_CREATED)
+@router.get("/events/{event_id}/checkpoints")
+def event_checkpoints(
+    event_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        return list_event_checkpoints(db, user, event_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post("/events/{event_id}/checkpoints", status_code=status.HTTP_201_CREATED)
+def create_checkpoint(
+    event_id: UUID,
+    payload: CheckpointCreateIn,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        checkpoint = create_event_checkpoint(
+            db, user, event_id, name=payload.name, position=payload.position, addon_id=payload.addon_id
+        )
+        db.commit()
+        return checkpoint
+    except ValueError as exc:
+        db.rollback()
+        code = status.HTTP_404_NOT_FOUND if str(exc) == "Event not found" else status.HTTP_409_CONFLICT if "already exists" in str(exc) else status.HTTP_422_UNPROCESSABLE_ENTITY
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+
+@router.put("/events/{event_id}/checkpoints/{checkpoint_id}")
+def update_checkpoint(
+    event_id: UUID,
+    checkpoint_id: UUID,
+    payload: CheckpointUpdateIn,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        checkpoint = update_event_checkpoint(db, user, event_id, checkpoint_id, name=payload.name, position=payload.position)
+        db.commit()
+        return checkpoint
+    except ValueError as exc:
+        db.rollback()
+        code = status.HTTP_404_NOT_FOUND if str(exc) in {"Event not found", "Checkpoint not found"} else status.HTTP_409_CONFLICT if "already exists" in str(exc) else status.HTTP_422_UNPROCESSABLE_ENTITY
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+
+@router.delete("/events/{event_id}/checkpoints/{checkpoint_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_checkpoint(
+    event_id: UUID,
+    checkpoint_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> None:
+    try:
+        delete_event_checkpoint(db, user, event_id, checkpoint_id)
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        code = status.HTTP_404_NOT_FOUND if str(exc) in {"Event not found", "Checkpoint not found"} else status.HTTP_409_CONFLICT
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+
+@router.get("/events/{event_id}/check-in-matrix")
+def event_checkin_matrix(
+    event_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        return get_event_checkin_matrix(db, user, event_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/registrations/{registration_id}/check-in-timeline")
+def registration_checkin_timeline(
+    registration_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        return get_registration_checkin_timeline(db, user, registration_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
 def create_manual_event_registration(
     event_id: UUID,
     payload: ManualRegistrationCreateIn,

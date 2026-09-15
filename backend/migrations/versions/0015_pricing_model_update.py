@@ -1,4 +1,4 @@
-"""Update organizer pricing to the event-based RacePass model."""
+"""Update organizer pricing to the event-based SportPass model."""
 
 from typing import Sequence, Union
 import uuid

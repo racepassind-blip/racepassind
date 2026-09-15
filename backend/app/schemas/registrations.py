@@ -37,6 +37,29 @@ class RegistrationCreateIn(BaseModel):
         return self
 
 
+def _contact_value(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _has_contact(responses: dict[str, Any], *, email: str | None = None, phone: str | None = None) -> bool:
+    return bool(_contact_value(email) or _contact_value(phone) or _contact_value(responses.get("email")) or _contact_value(responses.get("phone")))
+
+
+class EntryParticipantIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    responses: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def require_name(self) -> "EntryParticipantIn":
+        full_name = self.responses.get("full_name")
+        if not isinstance(full_name, str) or not full_name.strip():
+            raise ValueError("Full name is required")
+        return self
+
+
 class RiderRegistrationIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -46,13 +69,25 @@ class RiderRegistrationIn(BaseModel):
 
     @model_validator(mode="after")
     def require_contact(self) -> "RiderRegistrationIn":
-        full_name = self.responses.get("full_name")
-        if not isinstance(full_name, str) or not full_name.strip():
-            raise ValueError("Full name is required")
-        email = self.responses.get("email")
-        phone = self.responses.get("phone")
-        if not (isinstance(email, str) and email.strip()) and not (isinstance(phone, str) and phone.strip()):
+        EntryParticipantIn(responses=self.responses)
+        if not _has_contact(self.responses):
             raise ValueError("At least one of email or phone is required")
+        return self
+
+
+class EntryRegistrationIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: UUID
+    participants: list[EntryParticipantIn] = Field(min_length=1, max_length=5)
+    email: str | None = Field(default=None, max_length=320)
+    phone: str | None = Field(default=None, max_length=32)
+    selections: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def require_contact(self) -> "EntryRegistrationIn":
+        if not _has_contact(self.participants[0].responses, email=self.email, phone=self.phone):
+            raise ValueError("At least one of email or phone is required for the entry")
         return self
 
 
@@ -60,7 +95,29 @@ class BatchRegistrationCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_id: UUID
-    riders: list[RiderRegistrationIn] = Field(min_length=1, max_length=10)
+    entries: list[EntryRegistrationIn] | None = Field(default=None, min_length=1, max_length=10)
+    riders: list[RiderRegistrationIn] | None = Field(default=None, min_length=1, max_length=10)
+
+    @model_validator(mode="after")
+    def require_one_payload(self) -> "BatchRegistrationCreateIn":
+        if bool(self.entries) == bool(self.riders):
+            raise ValueError("Provide either entries or riders")
+        return self
+
+    @property
+    def effective_entries(self) -> list[EntryRegistrationIn]:
+        if self.entries is not None:
+            return self.entries
+        return [
+            EntryRegistrationIn(
+                ticket_id=rider.ticket_id,
+                email=rider.responses.get("email"),
+                phone=rider.responses.get("phone"),
+                participants=[EntryParticipantIn(responses=rider.responses)],
+                selections=rider.selections,
+            )
+            for rider in (self.riders or [])
+        ]
 
 
 class ManualRegistrationCreateIn(BaseModel):
@@ -70,6 +127,9 @@ class ManualRegistrationCreateIn(BaseModel):
     ticket_id: UUID
     responses: dict[str, Any] = Field(default_factory=dict)
     selections: dict[str, Any] = Field(default_factory=dict)
+    participants: list[EntryParticipantIn] | None = Field(default=None, min_length=1, max_length=5)
+    email: str | None = Field(default=None, max_length=320)
+    phone: str | None = Field(default=None, max_length=32)
     payment_received: bool = False
     received_amount_paise: int | None = Field(default=None, ge=0)
 
@@ -77,6 +137,9 @@ class ManualRegistrationCreateIn(BaseModel):
     def validate_payment(self) -> "ManualRegistrationCreateIn":
         if not self.payment_received and self.received_amount_paise is not None:
             raise ValueError("Received payment amount requires payment to be marked received")
+        contact_responses = self.participants[0].responses if self.participants else self.responses
+        if not _has_contact(contact_responses, email=self.email, phone=self.phone):
+            raise ValueError("At least one of email or phone is required for the entry")
         return self
 
 

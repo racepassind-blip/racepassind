@@ -35,8 +35,8 @@ def normalize_phone(value: str | None) -> str | None:
 
 
 def hash_password(password: str) -> str:
-    if len(password) < 12:
-        raise ValueError("Password must be at least 12 characters")
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters")
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(
         password.encode("utf-8"),

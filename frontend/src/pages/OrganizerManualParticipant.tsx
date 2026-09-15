@@ -17,6 +17,7 @@ import { apiRequest } from "@/lib/api";
 
 type ResponseValue = string | boolean;
 type Selection = { selected?: string; qty?: number };
+type MemberDraft = { responses: Record<string, ResponseValue> };
 
 const FALLBACK_FIELDS: ParticipantFieldConfig[] = [
   { id: "full_name", label: "Full name", type: "text", required: true, predefined: true, order: 1 },
@@ -33,7 +34,7 @@ const OrganizerManualParticipant = () => {
   const navigate = useNavigate();
   const { data, isLoading, isError } = useOrganizerEventDashboard(eventId);
   const [ticketId, setTicketId] = useState("");
-  const [responses, setResponses] = useState<Record<string, ResponseValue>>({});
+  const [members, setMembers] = useState<MemberDraft[]>([{ responses: {} }]);
   const [selections, setSelections] = useState<Record<string, Selection>>({});
   const [paymentReceived, setPaymentReceived] = useState(false);
   const [receivedAmount, setReceivedAmount] = useState("");
@@ -42,8 +43,15 @@ const OrganizerManualParticipant = () => {
   const event = data?.event;
   const fields = useMemo(() => event?.fieldConfig?.fields?.length ? [...event.fieldConfig.fields].sort((a, b) => a.order - b.order) : FALLBACK_FIELDS, [event]);
   const addons = useMemo<AddonDefinition[]>(() => event?.addonConfig?.addons ?? [], [event]);
-  const tickets = useMemo(() => event?.categories.flatMap((category) => category.tickets.map((ticket) => ({ ...ticket, categoryName: category.name }))) ?? [], [event]);
+  const tickets = useMemo(() => event?.categories.flatMap((category) => category.tickets.map((ticket) => ({
+    ...ticket,
+    categoryName: category.name,
+    entryType: category.entryType,
+    participantsPerEntry: category.participantsPerEntry,
+  }))) ?? [], [event]);
   const selectedTicket = tickets.find((ticket) => ticket.id === ticketId);
+  const selectedTicketId = selectedTicket?.id;
+  const selectedParticipantsPerEntry = selectedTicket?.participantsPerEntry ?? 1;
   const totalPaise = useMemo(() => {
     if (!selectedTicket) return 0;
     return selectedTicket.pricePaise + addons.reduce((total, addon) => {
@@ -57,13 +65,19 @@ const OrganizerManualParticipant = () => {
     if (!ticketId && tickets[0]) setTicketId(tickets[0].id);
   }, [ticketId, tickets]);
 
-  const updateResponse = (field: ParticipantFieldConfig, value: ResponseValue) => {
-    setResponses((current) => {
-      const next = { ...current };
-      if (value === "") delete next[field.id];
-      else next[field.id] = value;
-      return next;
-    });
+  useEffect(() => {
+    if (!selectedTicketId) return;
+    setMembers((current) => Array.from({ length: selectedParticipantsPerEntry }, (_, index) => current[index] ?? { responses: {} }));
+  }, [selectedTicketId, selectedParticipantsPerEntry]);
+
+  const updateResponse = (memberIndex: number, field: ParticipantFieldConfig, value: ResponseValue) => {
+    setMembers((current) => current.map((member, index) => {
+      if (index !== memberIndex) return member;
+      const responses = { ...member.responses };
+      if (value === "") delete responses[field.id];
+      else responses[field.id] = value;
+      return { ...member, responses };
+    }));
   };
 
   const updateAddon = (addon: AddonDefinition, value: string) => {
@@ -79,25 +93,40 @@ const OrganizerManualParticipant = () => {
     });
   };
 
-  const fieldInput = (field: ParticipantFieldConfig) => {
-    const value = responses[field.id];
+  const fieldInput = (memberIndex: number, field: ParticipantFieldConfig) => {
+    const value = members[memberIndex]?.responses[field.id];
     if (field.type === "select" || field.type === "dropdown" || field.type === "yes_no") {
       const options = field.type === "yes_no" ? ["Yes", "No"] : field.options ?? [];
       const selectValue = value === undefined ? "" : field.type === "yes_no" ? value === true ? "Yes" : "No" : String(value);
-      return <Select value={selectValue} onValueChange={(next) => updateResponse(field, field.type === "yes_no" ? next === "Yes" : next)}><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>;
+      return <Select value={selectValue} onValueChange={(next) => updateResponse(memberIndex, field, field.type === "yes_no" ? next === "Yes" : next)}><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>;
     }
-    return <Input type={field.type === "email" ? "email" : field.type === "date" ? "date" : field.type === "number" ? "number" : "text"} value={value === undefined ? "" : String(value)} onChange={(event) => updateResponse(field, event.target.value)} placeholder={field.type === "phone" ? "+91 98765 43210" : undefined} />;
+    return <Input type={field.type === "email" ? "email" : field.type === "date" ? "date" : field.type === "number" ? "number" : "text"} value={value === undefined ? "" : String(value)} onChange={(event) => updateResponse(memberIndex, field, event.target.value)} placeholder={field.type === "phone" ? "+91 98765 43210" : undefined} />;
   };
 
   const submit = async () => {
-    if (!eventId || !ticketId) return;
-    const missing = fields.find((field) => field.required && (responses[field.id] === undefined || String(responses[field.id]).trim() === ""));
-    if (missing) {
-      toast.error(`${missing.label} is required.`);
+    if (!eventId || !ticketId || !selectedTicket) return;
+    const sharedContactFields = new Set(["email", "phone"]);
+    for (const [memberIndex, member] of members.entries()) {
+      const missing = fields.find((field) => {
+        if (memberIndex > 0 && sharedContactFields.has(field.id)) return false;
+        const value = member.responses[field.id];
+        return field.required && (value === undefined || String(value).trim() === "");
+      });
+      if (missing) {
+        toast.error(`Participant ${memberIndex + 1}: ${missing.label} is required.`);
+        return;
+      }
+    }
+    const primaryResponses = members[0]?.responses ?? {};
+    if (!["email", "phone"].some((fieldId) => {
+      const value = primaryResponses[fieldId];
+      return value !== undefined && String(value).trim() !== "";
+    })) {
+      toast.error("Enter an email or phone number for this entry.");
       return;
     }
     if (paymentReceived && totalPaise > 0 && (!receivedAmount || Number(receivedAmount) <= 0)) {
-      toast.error("Enter the amount received from the participant.");
+      toast.error("Enter the amount received from the participant entry.");
       return;
     }
     setSaving(true);
@@ -108,16 +137,20 @@ const OrganizerManualParticipant = () => {
         body: JSON.stringify({
           event_id: eventId,
           ticket_id: ticketId,
-          responses,
+          email: primaryResponses.email,
+          phone: primaryResponses.phone,
+          participants: members.map((member) => ({
+            responses: Object.fromEntries(Object.entries(member.responses).filter(([fieldId]) => !sharedContactFields.has(fieldId))),
+          })),
           selections,
           payment_received: paymentReceived,
           received_amount_paise: paymentReceived && totalPaise > 0 ? Math.round(Number(receivedAmount) * 100) : null,
         }),
       });
-      toast.success(paymentReceived || totalPaise === 0 ? "Participant added and confirmed." : "Participant added. Payment is pending review.");
+      toast.success(paymentReceived || totalPaise === 0 ? "Participant entry added and confirmed." : "Participant entry added. Payment is pending review.");
       navigate(`/organizer/registrations?event_id=${eventId}&status=all`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not add participant.");
+      toast.error(error instanceof Error ? error.message : "Could not add participant entry.");
     } finally {
       setSaving(false);
     }
@@ -132,8 +165,8 @@ const OrganizerManualParticipant = () => {
         <div className="flex items-start gap-3"><Button variant="ghost" size="icon" onClick={() => navigate(`/organizer/events/${event.id}`)} aria-label="Back to event dashboard"><ArrowLeft className="h-4 w-4" /></Button><div><p className="text-sm font-semibold uppercase tracking-wider text-primary">Offline registration</p><h1 className="mt-1 text-3xl font-extrabold tracking-tight">Add participant</h1><p className="mt-2 text-muted-foreground">Use the same participant fields configured for {event.name}. This record will be marked as a manual entry.</p></div></div>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
           <Card><CardHeader><CardTitle>Participant details</CardTitle><CardDescription>Enter the details from the offline registration form.</CardDescription></CardHeader><CardContent className="space-y-6">
-            <div className="space-y-2"><Label>Ticket / category *</Label><Select value={ticketId} onValueChange={setTicketId}><SelectTrigger><SelectValue placeholder="Select a ticket" /></SelectTrigger><SelectContent>{tickets.map((ticket) => <SelectItem key={ticket.id} value={ticket.id}>{ticket.categoryName} · {ticket.name} · ₹{(ticket.pricePaise / 100).toLocaleString("en-IN")}{ticket.available < 1 ? " · Sold out" : ""}</SelectItem>)}</SelectContent></Select>{selectedTicket && <p className="text-xs text-muted-foreground">{selectedTicket.available} spots available</p>}</div>
-            <div className="grid gap-5 sm:grid-cols-2">{fields.map((field) => <div key={field.id} className={`space-y-2 ${field.id === "full_name" || field.id.startsWith("custom_") ? "sm:col-span-2" : ""}`}><Label>{field.label}{field.required ? " *" : ""}</Label>{fieldInput(field)}</div>)}</div>
+            <div className="space-y-2"><Label>Ticket / category *</Label><Select value={ticketId} onValueChange={setTicketId}><SelectTrigger><SelectValue placeholder="Select a ticket" /></SelectTrigger><SelectContent>{tickets.map((ticket) => <SelectItem key={ticket.id} value={ticket.id}>{ticket.categoryName} · {ticket.name} · {ticket.participantsPerEntry} participant{ticket.participantsPerEntry === 1 ? "" : "s"} · ₹{(ticket.pricePaise / 100).toLocaleString("en-IN")}{ticket.available < 1 ? " · Sold out" : ""}</SelectItem>)}</SelectContent></Select>{selectedTicket && <p className="text-xs text-muted-foreground">{selectedTicket.available} spots available · {selectedTicket.participantsPerEntry} participant{selectedTicket.participantsPerEntry === 1 ? "" : "s"} per entry</p>}</div>
+            <div className="space-y-5">{members.map((member, memberIndex) => <section key={memberIndex} className="space-y-4 rounded-lg border p-4"><div><h3 className="font-bold">Participant {memberIndex + 1}</h3><p className="text-xs text-muted-foreground">Personal details for this member. Email and phone are collected once on Participant 1.</p></div><div className="grid gap-5 sm:grid-cols-2">{fields.filter((field) => memberIndex === 0 || (field.id !== "email" && field.id !== "phone")).map((field) => <div key={field.id} className={`space-y-2 ${field.id === "full_name" || field.id.startsWith("custom_") ? "sm:col-span-2" : ""}`}><Label>{field.label}{field.required ? " *" : ""}</Label>{fieldInput(memberIndex, field)}</div>)}</div></section>)}</div>
             {addons.length > 0 && <section className="space-y-4 border-t pt-6"><div><h3 className="font-bold">Add-ons</h3><p className="text-sm text-muted-foreground">Apply the same add-ons available in public checkout.</p></div><div className="grid gap-4 sm:grid-cols-2">{addons.map((addon) => <div key={addon.id} className="space-y-2"><Label>{addon.name}{addon.required ? " *" : ""} <span className="text-muted-foreground">(+₹{(addon.price_paise / 100).toFixed(2)}{addon.type === "quantity" ? " each" : ""})</span></Label>{addon.type === "quantity" ? <Input type="number" min={addon.required ? 1 : 0} max={addon.max_qty ?? undefined} value={selections[addon.id]?.qty ?? 0} onChange={(event) => updateAddon(addon, event.target.value)} /> : <Select value={selections[addon.id]?.selected ?? ""} onValueChange={(value) => updateAddon(addon, value)}><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{(addon.options ?? []).map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>}</div>)}</div></section>}
           </CardContent></Card>
 

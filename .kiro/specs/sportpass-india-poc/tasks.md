@@ -1,4 +1,4 @@
-# RacePass India POC — Implementation Tasks
+# SportPass India POC — Implementation Tasks
 
 **Requirements:** `requirements.md`  
 **Design:** `design.md`  

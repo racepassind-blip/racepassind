@@ -12,7 +12,7 @@ const DashboardProfile = () => {
       <div className="max-w-2xl space-y-6 p-6 lg:p-10">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight">Profile</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Account details from your authenticated RacePass session.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Account details from your authenticated SportPass session.</p>
         </div>
         <Card>
           <CardHeader>

@@ -1,18 +1,18 @@
-# RacePass India POC — Requirements
+# SportPass India POC — Requirements
 
 **Status:** Ready for technical design
 **Version:** 0.2
-**Purpose:** Define the smallest public, multi-organizer RacePass product that proves real race discovery, registration, manual UPI payment, organizer verification, ticket generation, and race-day check-in without integrating a payment gateway.
+**Purpose:** Define the smallest public, multi-organizer SportPass product that proves real race discovery, registration, manual UPI payment, organizer verification, ticket generation, and race-day check-in without integrating a payment gateway.
 
 ---
 
 # 1. Product Outcome
 
-RacePass is a race-registration platform for Indian running and cycling communities.
+SportPass is a race-registration platform for Indian running and cycling communities.
 
 Organizers create and manage races.
 
-Participants discover races, register, pay the organizer directly through UPI, submit their payment reference, and receive a RacePass registration record.
+Participants discover races, register, pay the organizer directly through UPI, submit their payment reference, and receive a SportPass registration record.
 
 Organizers verify payments and manage participants.
 

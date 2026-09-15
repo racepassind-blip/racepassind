@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Shield, Ticket, User } from "lucide-react";
 import { toast } from "sonner";
 
@@ -9,26 +9,30 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEvent } from "@/hooks/useEvents";
+import { useAuth } from "@/contexts/AuthContext";
 import type { AddonDefinition, ParticipantFieldConfig } from "@/data/mockEvents";
 import { trackApiRequest } from "@/lib/api";
 
-const STEPS = ["Tickets", "Rider details", "UPI Payment"];
 const API_ORIGIN = (import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8010").replace(/\/$/, "");
 const API_BASE = `${API_ORIGIN}/api/v1`;
-const CONFIRMATION_TOKEN_KEY = "racepass_confirmation_token";
+const CONFIRMATION_TOKEN_KEY = "sportpass_confirmation_token";
 type ResponseValue = string | boolean;
 type CartLine = { ticketId: string; quantity: number };
 type RiderDraft = {
   key: string;
+  entryKey: string;
+  participantIndex: number;
   ticketId: string;
   responses: Record<string, ResponseValue>;
   selections: Record<string, { selected?: string; qty?: number }>;
 };
 
+type RegistrationMode = "account" | "guest";
+
 type RegistrationResponse = {
   registrationReference: string;
   confirmationToken: string;
-  claimCode: string;
+  claimCode?: string | null;
   amountPaise: number;
   quantity?: number;
   status: string;
@@ -52,7 +56,6 @@ type RegistrationResponse = {
 
 type BatchRegistrationResponse = RegistrationResponse & { registrations: RegistrationResponse[] };
 
-const SHARED_RIDER_FIELD_IDS = ["email", "phone", "emergency_contact_name", "emergency_contact_phone"] as const;
 const EMERGENCY_RIDER_FIELD_IDS = ["emergency_contact_name", "emergency_contact_phone"] as const;
 const FALLBACK_FIELDS: ParticipantFieldConfig[] = [
   { id: "full_name", label: "Full name", type: "text", required: true, predefined: true, order: 1 },
@@ -71,7 +74,7 @@ function csrfToken(): string | undefined {
 function readCart(eventId: string | undefined, tierId: string | undefined): CartLine[] {
   if (eventId) {
     try {
-      const stored = JSON.parse(sessionStorage.getItem(`racepass_cart_${eventId}`) ?? "null") as CartLine[] | null;
+      const stored = JSON.parse(sessionStorage.getItem(`sportpass_cart_${eventId}`) ?? "null") as CartLine[] | null;
       if (Array.isArray(stored) && stored.length > 0) return stored.filter((line) => line?.ticketId && line.quantity > 0);
     } catch {
       // Fall back to the legacy single-tier route below.
@@ -95,8 +98,12 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 const Checkout = () => {
   const { eventId, tierId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
+  const { user, isParticipant, isInitialized } = useAuth();
   const { data: event, isLoading, isError } = useEvent(eventId);
+  const participantLabel = "Participant";
+  const steps = ["Tickets", `${participantLabel} details`, "UPI Payment"];
   const [cart] = useState<CartLine[]>(() => readCart(eventId, tierId));
   const [riders, setRiders] = useState<RiderDraft[]>([]);
   const [activeRiderIndex, setActiveRiderIndex] = useState(0);
@@ -104,27 +111,42 @@ const Checkout = () => {
   const [loading, setLoading] = useState(false);
   const [registration, setRegistration] = useState<BatchRegistrationResponse | null>(null);
   const [utrReference, setUtrReference] = useState("");
+  const [registrationMode, setRegistrationMode] = useState<RegistrationMode | null>(null);
 
+  const checkoutReturnPath = `${location.pathname}${location.search}`;
+  const effectiveRegistrationMode = isParticipant ? "account" : registrationMode;
   const fields = useMemo(() => event?.fieldConfig?.fields?.length ? [...event.fieldConfig.fields].sort((a, b) => a.order - b.order) : FALLBACK_FIELDS, [event]);
   const addons = useMemo(() => event?.addonConfig?.addons ?? [], [event]);
   const selectedTiers = useMemo(() => (event?.tiers ?? []).filter((tier) => cart.some((line) => line.ticketId === tier.id)), [cart, event]);
-  const totalTickets = riders.length;
-  const totalPaise = useMemo(() => riders.reduce((total, rider) => {
-    const tier = event?.tiers.find((candidate) => candidate.id === rider.ticketId);
+  const entryGroups = useMemo(() => {
+    const groups = new Map<string, RiderDraft[]>();
+    riders.forEach((rider) => groups.set(rider.entryKey, [...(groups.get(rider.entryKey) ?? []), rider]));
+    return [...groups.values()];
+  }, [riders]);
+  const totalTickets = entryGroups.length;
+  const totalParticipants = riders.length;
+  const totalPaise = useMemo(() => entryGroups.reduce((total, group) => {
+    const entry = group[0];
+    const tier = event?.tiers.find((candidate) => candidate.id === entry?.ticketId);
     const addonTotal = addons.reduce((addonSum, addon) => {
-      const selection = rider.selections[addon.id];
+      const selection = entry?.selections[addon.id];
       if (!selection) return addonSum;
       return addonSum + addon.price_paise * (addon.type === "quantity" ? (selection.qty ?? 0) : selection.selected ? 1 : 0);
     }, 0);
     return total + (tier?.price ?? 0) * 100 + addonTotal;
-  }, 0), [addons, event, riders]);
+  }, 0), [addons, entryGroups, event]);
 
   useEffect(() => {
     if (!event || riders.length > 0) return;
     const nextRiders: RiderDraft[] = [];
-    cart.forEach((line) => {
-      for (let index = 0; index < line.quantity; index += 1) {
-        nextRiders.push({ key: `${line.ticketId}-${index}`, ticketId: line.ticketId, responses: {}, selections: {} });
+    cart.forEach((line, lineIndex) => {
+      const tier = event.tiers.find((candidate) => candidate.id === line.ticketId);
+      const participantsPerEntry = tier?.participantsPerEntry ?? 1;
+      for (let entryIndex = 0; entryIndex < line.quantity; entryIndex += 1) {
+        const entryKey = `${lineIndex}-${line.ticketId}-entry-${entryIndex}`;
+        for (let participantIndex = 0; participantIndex < participantsPerEntry; participantIndex += 1) {
+          nextRiders.push({ key: `${entryKey}-member-${participantIndex}`, entryKey, participantIndex, ticketId: line.ticketId, responses: {}, selections: {} });
+        }
       }
     });
     setRiders(nextRiders);
@@ -140,42 +162,31 @@ const Checkout = () => {
     }));
   };
 
-  const copySharedDetails = (targetRiderKey: string) => {
-    setRiders((previous) => {
-      const source = previous[0];
-      if (!source || source.key === targetRiderKey) return previous;
-      return previous.map((rider) => {
-        if (rider.key !== targetRiderKey) return rider;
-        const responses = { ...rider.responses };
-        SHARED_RIDER_FIELD_IDS.forEach((fieldId) => {
-          const value = source.responses[fieldId];
-          if (value === undefined) delete responses[fieldId];
-          else responses[fieldId] = value;
-        });
-        return { ...rider, responses };
-      });
-    });
-    toast.success("Copied email, phone, and emergency contact details from Rider 1.");
-  };
-
   const updateAddon = (riderKey: string, addon: AddonDefinition, value: string) => {
-    setRiders((previous) => previous.map((rider) => {
-      if (rider.key !== riderKey) return rider;
-      const selections = { ...rider.selections };
+    setRiders((previous) => {
+      const target = previous.find((rider) => rider.key === riderKey);
+      if (!target) return previous;
+      const selections = { ...target.selections };
       if (addon.type === "quantity") {
         const qty = Math.max(0, Number(value) || 0);
         if (qty === 0) delete selections[addon.id];
         else selections[addon.id] = { qty };
       } else if (!value) delete selections[addon.id];
       else selections[addon.id] = { selected: value };
-      return { ...rider, selections };
-    }));
+      return previous.map((rider) => rider.entryKey === target.entryKey ? { ...rider, selections } : rider);
+    });
   };
 
   const riderReady = (rider: RiderDraft) => {
+    const isEntryPrimary = rider.participantIndex === 0;
     const fieldsReady = fields.every((field) => {
-      if (!field.required) return true;
+      const isSharedContact = field.id === "email" || field.id === "phone";
+      if (!field.required || (isSharedContact && !isEntryPrimary)) return true;
       const value = rider.responses[field.id];
+      return value !== undefined && String(value).trim() !== "";
+    });
+    const sharedContactReady = !isEntryPrimary || ["email", "phone"].some((fieldId) => {
+      const value = rider.responses[fieldId];
       return value !== undefined && String(value).trim() !== "";
     });
     const addonsReady = addons.every((addon) => {
@@ -185,15 +196,16 @@ const Checkout = () => {
         ? (selection?.qty ?? 0) >= 1
         : Boolean(selection?.selected);
     });
-    return fieldsReady && addonsReady;
+    return fieldsReady && sharedContactReady && addonsReady;
   };
   const participantReady = riders.length > 0 && riders.every(riderReady);
   const completedRiders = riders.filter(riderReady).length;
   const activeRider = riders[activeRiderIndex] ?? riders[0];
   const activeTier = event?.tiers.find((tier) => tier.id === activeRider?.ticketId);
-  const identityFields = fields.filter((field) => ["full_name", "email", "phone"].includes(field.id));
+  const identityFields = fields.filter((field) => field.id === "full_name");
+  const contactFields = fields.filter((field) => field.id === "email" || field.id === "phone");
   const emergencyFields = fields.filter((field) => EMERGENCY_RIDER_FIELD_IDS.includes(field.id as typeof EMERGENCY_RIDER_FIELD_IDS[number]));
-  const otherFields = fields.filter((field) => !identityFields.includes(field) && !emergencyFields.includes(field));
+  const otherFields = fields.filter((field) => !identityFields.includes(field) && !contactFields.includes(field) && !emergencyFields.includes(field));
 
   if (isLoading) return <Layout><div className="py-20 text-center text-muted-foreground">Loading event…</div></Layout>;
   if (isError || !event || selectedTiers.length === 0) return <Layout><div className="py-20 text-center text-muted-foreground">Event or ticket selection not found.</div></Layout>;
@@ -201,7 +213,11 @@ const Checkout = () => {
 
   const createRegistration = async () => {
     if (!participantReady || !eventId) {
-      toast.error("Complete all required rider fields before continuing.");
+      toast.error(`Complete all required ${participantLabel.toLowerCase()} fields before continuing.`);
+      return;
+    }
+    if (!effectiveRegistrationMode) {
+      toast.error("Choose whether to use a participant account or continue as a guest.");
       return;
     }
     setLoading(true);
@@ -211,14 +227,25 @@ const Checkout = () => {
         headers: { "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({
           event_id: eventId,
-          riders: riders.map(({ ticketId, responses, selections }) => ({ ticket_id: ticketId, responses, selections })),
+          entries: entryGroups.map((group) => {
+            const primaryResponses = group[0].responses;
+            return {
+              ticket_id: group[0].ticketId,
+              email: primaryResponses.email,
+              phone: primaryResponses.phone,
+              participants: group.map(({ responses }) => ({
+                responses: Object.fromEntries(Object.entries(responses).filter(([fieldId]) => fieldId !== "email" && fieldId !== "phone")),
+              })),
+              selections: group[0].selections,
+            };
+          }),
         }),
       });
       setRegistration(result);
       if (result.confirmationToken) sessionStorage.setItem(CONFIRMATION_TOKEN_KEY, result.confirmationToken);
       const allFree = result.registrations.every((child) => child.paymentStatus === "not_required");
       if (allFree) {
-        toast.success("All rider registrations confirmed.");
+        toast.success(`All ${participantLabel.toLowerCase()} registrations confirmed.`);
         navigate("/confirmation", { state: result });
         return;
       }
@@ -243,7 +270,7 @@ const Checkout = () => {
         confirmationToken: child.confirmationToken,
         claimCode: child.claimCode,
       }));
-      toast.success(utrReference.trim() ? "Reference submitted for all riders. The organizer will verify your payment." : "Registration saved. Pay by UPI and submit your reference when ready.");
+      toast.success(utrReference.trim() ? `Reference submitted for all ${participantLabel.toLowerCase()}s. The organizer will verify your payment.` : "Registration saved. Pay by UPI and submit your reference when ready.");
       navigate("/confirmation", { state: { ...result, registrations: childTokens } });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not submit payment reference");
@@ -274,19 +301,19 @@ const Checkout = () => {
     <Layout>
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
         <button onClick={() => (currentStep > 0 && !registration ? setCurrentStep(currentStep - 1) : navigate(-1))} className="mb-6 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /> {currentStep > 0 && !registration ? "Previous step" : "Back to event"}</button>
-        <div className="mb-8 flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><p className="mb-2 text-sm font-semibold uppercase tracking-wider text-primary">Registration checkout</p><h1 className="text-3xl font-extrabold tracking-tight">Register your race team</h1><p className="mt-2 text-muted-foreground">{event.title} · {event.date}</p></div><p className="text-sm text-muted-foreground">{totalTickets} ticket{totalTickets !== 1 ? "s" : ""} selected</p></div>
-        <div className="mb-8 flex items-center justify-center gap-2">{(totalPaise === 0 ? STEPS.slice(0, 2) : STEPS).map((label, index) => <div key={label} className="flex items-center gap-2"><div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${index <= currentStep ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"}`}>{index < currentStep ? <CheckCircle2 className="h-4 w-4" /> : index + 1}</div><span className={`hidden text-sm sm:inline ${index === currentStep ? "font-medium text-foreground" : "text-muted-foreground"}`}>{label}</span>{index < (totalPaise === 0 ? 1 : STEPS.length - 1) && <div className="h-px w-8 bg-border sm:w-12" />}</div>)}</div>
+        <div className="mb-8 flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><p className="mb-2 text-sm font-semibold uppercase tracking-wider text-primary">Registration checkout</p><h1 className="text-3xl font-extrabold tracking-tight">Register for this event</h1><p className="mt-2 text-muted-foreground">{event.title} · {event.date}</p></div><p className="text-sm text-muted-foreground">{totalTickets} {totalTickets === 1 ? "entry" : "entries"} selected</p></div>
+        <div className="mb-8 flex items-center justify-center gap-2">{(totalPaise === 0 ? steps.slice(0, 2) : steps).map((label, index) => <div key={label} className="flex items-center gap-2"><div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${index <= currentStep ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"}`}>{index < currentStep ? <CheckCircle2 className="h-4 w-4" /> : index + 1}</div><span className={`hidden text-sm sm:inline ${index === currentStep ? "font-medium text-foreground" : "text-muted-foreground"}`}>{label}</span>{index < (totalPaise === 0 ? 1 : steps.length - 1) && <div className="h-px w-8 bg-border sm:w-12" />}</div>)}</div>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
           <main className="min-w-0">
-            {currentStep === 0 && <section className="space-y-5"><div><h2 className="text-xl font-bold">Review your tickets</h2><p className="mt-1 text-sm text-muted-foreground">We’ll collect one separate rider profile for every ticket below.</p></div><div className="space-y-3">{selectedTiers.map((tier) => { const quantity = cart.find((line) => line.ticketId === tier.id)?.quantity ?? 0; return <div key={tier.id} className="flex items-center justify-between rounded-2xl border bg-card p-5 shadow-sm"><div><p className="font-bold">{tier.name} <span className="font-normal text-muted-foreground">× {quantity}</span></p><p className="mt-1 text-sm text-muted-foreground">{tier.description}</p></div><p className="text-lg font-bold text-primary">₹{(tier.price * quantity).toLocaleString("en-IN")}</p></div>; })}</div><div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground"><p className="font-semibold text-foreground">What happens next?</p><p className="mt-1">You’ll enter each rider one at a time, review the order, then make one payment for the paid tickets.</p></div><Button onClick={() => setCurrentStep(1)} size="lg" className="w-full">Start rider details <ArrowRight className="ml-2 h-4 w-4" /></Button></section>}
+            {currentStep === 0 && <section className="space-y-5"><div><h2 className="text-xl font-bold">Review your tickets</h2><p className="mt-1 text-sm text-muted-foreground">We’ll collect the required participant profiles for every entry below.</p></div><div className="space-y-3">{selectedTiers.map((tier) => { const quantity = cart.find((line) => line.ticketId === tier.id)?.quantity ?? 0; return <div key={tier.id} className="flex items-center justify-between rounded-2xl border bg-card p-5 shadow-sm"><div><p className="font-bold">{tier.name} <span className="font-normal text-muted-foreground">× {quantity}</span></p><p className="mt-1 text-sm text-muted-foreground">{tier.description}</p></div><p className="text-lg font-bold text-primary">₹{(tier.price * quantity).toLocaleString("en-IN")}</p></div>; })}</div><div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground"><p className="font-semibold text-foreground">What happens next?</p><p className="mt-1">We’ll collect member details for each entry, then make one payment for the paid entries.</p></div><div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground"><p className="font-semibold text-foreground">Save your registration</p>{!isInitialized ? <p className="mt-1">Checking your account session…</p> : isParticipant ? <p className="mt-1">You are signed in as <span className="font-semibold text-foreground">{user?.email}</span>. This registration will be linked to your participant account so you can easily access your records, tickets, and results.</p> : <div className="mt-3 space-y-3"><p>Create a free participant account to keep your registrations, tickets, and results together. You can also continue as a guest. Guest checkout gives you a private claim code on the confirmation page; save it with your registration reference so you can link this registration to an account later.</p><div className="flex flex-col gap-2 sm:flex-row"><Button type="button" onClick={() => setRegistrationMode("guest")}>Continue as guest</Button><Button type="button" variant="outline" onClick={() => navigate("/login", { state: { from: checkoutReturnPath } })}>I have an account — sign in</Button><Button type="button" variant="ghost" onClick={() => navigate("/signup?type=participant", { state: { from: checkoutReturnPath } })}>Create participant account</Button></div>{registrationMode === "guest" && <p className="font-medium text-foreground">Guest checkout selected. After registration, your confirmation page will show a private one-time claim code. Save it with your registration reference; use both in your participant dashboard to link this registration later. This is separate from your event ticket QR.</p>}</div>}</div><Button onClick={() => setCurrentStep(1)} disabled={!isInitialized || !effectiveRegistrationMode} size="lg" className="w-full">Start {participantLabel.toLowerCase()} details <ArrowRight className="ml-2 h-4 w-4" /></Button></section>}
 
-            {currentStep === 1 && activeRider && <section className="space-y-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-xl font-bold">Rider details</h2><p className="mt-1 text-sm text-muted-foreground">Complete one rider at a time. You can return to any rider before submitting.</p></div><p className="text-sm font-medium text-muted-foreground">{completedRiders} of {totalTickets} complete</p></div><div className="h-2 overflow-hidden rounded-full bg-secondary"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${totalTickets ? (completedRiders / totalTickets) * 100 : 0}%` }} /></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{riders.map((rider, index) => { const tier = event.tiers.find((candidate) => candidate.id === rider.ticketId); const complete = riderReady(rider); const active = index === activeRiderIndex; return <button key={rider.key} type="button" onClick={() => setActiveRiderIndex(index)} className={`rounded-xl border p-3 text-left transition-colors ${active ? "border-primary bg-primary/10 shadow-sm" : "border-border bg-card hover:border-primary/40"}`}><span className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rider {index + 1}{complete && <CheckCircle2 className="h-4 w-4 text-accent" />}</span><span className="mt-1 block truncate text-sm font-semibold">{tier?.name}</span><span className="mt-1 block text-xs text-muted-foreground">{complete ? "Ready" : "Needs details"}</span></button>; })}</div><div className="overflow-hidden rounded-2xl border-2 border-primary/30 bg-card shadow-sm"><div className="flex items-start justify-between gap-4 bg-primary/5 px-5 py-4 sm:px-6"><div><p className="text-xs font-semibold uppercase tracking-wider text-primary">Rider {activeRiderIndex + 1} of {totalTickets}</p><h3 className="mt-1 text-xl font-bold">{activeTier?.name}</h3><p className="mt-1 text-sm text-muted-foreground">{activeTier?.description}</p></div><div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center"><p className="whitespace-nowrap text-lg font-bold text-primary">₹{activeTier?.price.toLocaleString("en-IN")}</p>{activeRiderIndex > 0 && <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => copySharedDetails(activeRider.key)}><Copy className="h-4 w-4" /> Copy email, phone & emergency contact</Button>}</div></div><div className="space-y-6 p-5 sm:p-6"><section className="space-y-4"><div><h4 className="font-bold">Rider identity</h4><p className="text-sm text-muted-foreground">Use the person who will participate in this category.</p></div>{renderFieldGrid(activeRider, identityFields)}</section>{otherFields.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Race details</h4><p className="text-sm text-muted-foreground">These details can be different for every rider.</p></div>{renderFieldGrid(activeRider, otherFields)}</section>}{emergencyFields.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Emergency contact</h4><p className="text-sm text-muted-foreground">Who should we contact if this rider needs help?</p></div>{renderFieldGrid(activeRider, emergencyFields)}</section>}{addons.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Add-ons for this rider</h4><p className="text-sm text-muted-foreground">Add-ons are optional and saved separately for each ticket. Leave the quantity at 0 if you do not need one.</p></div><div className="grid gap-4 sm:grid-cols-2">{addons.map((addon) => <div key={addon.id} className="space-y-2"><Label>{addon.name}{addon.required ? " *" : ""} {addon.price_paise > 0 && <span className="text-muted-foreground">(+₹{(addon.price_paise / 100).toFixed(2)}{addon.type === "quantity" ? " each" : ""})</span>}</Label>{addon.type === "quantity" ? <Input type="number" min={addon.required ? 1 : 0} max={addon.max_qty ?? undefined} value={activeRider.selections[addon.id]?.qty ?? 0} onChange={(e) => updateAddon(activeRider.key, addon, e.target.value)} placeholder="0" /> : <Select value={activeRider.selections[addon.id]?.selected ?? ""} onValueChange={(value) => updateAddon(activeRider.key, addon, value)}><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{(addon.options ?? []).map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>}</div>)}</div></section>}</div></div><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><Button type="button" variant="outline" onClick={() => activeRiderIndex > 0 ? setActiveRiderIndex(activeRiderIndex - 1) : setCurrentStep(0)}><ArrowLeft className="mr-2 h-4 w-4" /> Previous</Button>{activeRiderIndex < totalTickets - 1 ? <Button type="button" onClick={() => { if (!riderReady(activeRider)) { toast.error("Complete the required rider fields for this rider."); return; } setActiveRiderIndex(activeRiderIndex + 1); }}>Save rider & continue <ArrowRight className="ml-2 h-4 w-4" /></Button> : <Button type="button" onClick={createRegistration} disabled={!participantReady || loading}>{loading ? "Creating registrations…" : totalPaise === 0 ? "Complete free registrations" : "Continue to payment"}<ArrowRight className="ml-2 h-4 w-4" /></Button>}</div>{!participantReady && activeRiderIndex === totalTickets - 1 && <p className="text-right text-sm text-muted-foreground">Complete the required rider fields for every rider before continuing.</p>}</section>}
+            {currentStep === 1 && activeRider && <section className="space-y-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-xl font-bold">{participantLabel} details</h2><p className="mt-1 text-sm text-muted-foreground">Complete one {participantLabel.toLowerCase()} at a time. You can return to any {participantLabel.toLowerCase()} before submitting.</p></div><p className="text-sm font-medium text-muted-foreground">{completedRiders} of {totalParticipants} complete</p></div><div className="h-2 overflow-hidden rounded-full bg-secondary"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${totalParticipants ? (completedRiders / totalParticipants) * 100 : 0}%` }} /></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{riders.map((rider, index) => { const tier = event.tiers.find((candidate) => candidate.id === rider.ticketId); const complete = riderReady(rider); const active = index === activeRiderIndex; return <button key={rider.key} type="button" onClick={() => setActiveRiderIndex(index)} className={`rounded-xl border p-3 text-left transition-colors ${active ? "border-primary bg-primary/10 shadow-sm" : "border-border bg-card hover:border-primary/40"}`}><span className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">{participantLabel} {index + 1}{complete && <CheckCircle2 className="h-4 w-4 text-accent" />}</span><span className="mt-1 block truncate text-sm font-semibold">{tier?.name}</span><span className="mt-1 block text-xs text-muted-foreground">{complete ? "Ready" : "Needs details"}</span></button>; })}</div><div className="overflow-hidden rounded-2xl border-2 border-primary/30 bg-card shadow-sm"><div className="flex items-start justify-between gap-4 bg-primary/5 px-5 py-4 sm:px-6"><div><p className="text-xs font-semibold uppercase tracking-wider text-primary">{participantLabel} {activeRiderIndex + 1} of {totalParticipants}</p><h3 className="mt-1 text-xl font-bold">{activeTier?.name}</h3><p className="mt-1 text-sm text-muted-foreground">{activeTier?.description}</p></div><div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center"><p className="whitespace-nowrap text-lg font-bold text-primary">₹{activeTier?.price.toLocaleString("en-IN")}</p></div></div><div className="space-y-6 p-5 sm:p-6"><section className="space-y-4"><div><h4 className="font-bold">Participant identity</h4><p className="text-sm text-muted-foreground">Use the person who will participate in this event.</p></div>{renderFieldGrid(activeRider, identityFields)}</section>{activeRider.participantIndex === 0 && contactFields.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Entry contact</h4><p className="text-sm text-muted-foreground">One email or phone number is used for this entire entry.</p></div>{renderFieldGrid(activeRider, contactFields)}</section>}{otherFields.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Event details</h4><p className="text-sm text-muted-foreground">These details can be different for every participant.</p></div>{renderFieldGrid(activeRider, otherFields)}</section>}{emergencyFields.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Emergency contact</h4><p className="text-sm text-muted-foreground">Who should we contact if this {participantLabel.toLowerCase()} needs help?</p></div>{renderFieldGrid(activeRider, emergencyFields)}</section>}{addons.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Add-ons for this entry</h4><p className="text-sm text-muted-foreground">Add-ons are optional and saved once for this entry. Leave the quantity at 0 if you do not need one.</p></div><div className="grid gap-4 sm:grid-cols-2">{addons.map((addon) => <div key={addon.id} className="space-y-2"><Label>{addon.name}{addon.required ? " *" : ""} {addon.price_paise > 0 && <span className="text-muted-foreground">(+₹{(addon.price_paise / 100).toFixed(2)}{addon.type === "quantity" ? " each" : ""})</span>}</Label>{addon.type === "quantity" ? <Input type="number" min={addon.required ? 1 : 0} max={addon.max_qty ?? undefined} value={activeRider.selections[addon.id]?.qty ?? 0} onChange={(e) => updateAddon(activeRider.key, addon, e.target.value)} placeholder="0" /> : <Select value={activeRider.selections[addon.id]?.selected ?? ""} onValueChange={(value) => updateAddon(activeRider.key, addon, value)}><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{(addon.options ?? []).map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>}</div>)}</div></section>}</div></div><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><Button type="button" variant="outline" onClick={() => activeRiderIndex > 0 ? setActiveRiderIndex(activeRiderIndex - 1) : setCurrentStep(0)}><ArrowLeft className="mr-2 h-4 w-4" /> Previous</Button>{activeRiderIndex < totalParticipants - 1 ? <Button type="button" onClick={() => { if (!riderReady(activeRider)) { toast.error(`Complete the required ${participantLabel.toLowerCase()} fields for this ${participantLabel.toLowerCase()}.`); return; } setActiveRiderIndex(activeRiderIndex + 1); }}>Save {participantLabel.toLowerCase()} & continue <ArrowRight className="ml-2 h-4 w-4" /></Button> : <Button type="button" onClick={createRegistration} disabled={!participantReady || loading}>{loading ? "Creating registrations…" : totalPaise === 0 ? "Complete free registrations" : "Continue to payment"}<ArrowRight className="ml-2 h-4 w-4" /></Button>}</div>{!participantReady && activeRiderIndex === totalParticipants - 1 && <p className="text-right text-sm text-muted-foreground">Complete the required {participantLabel.toLowerCase()} fields for every {participantLabel.toLowerCase()} before continuing.</p>}</section>}
 
-            {currentStep === 2 && registration && <section className="space-y-5"><div><h2 className="text-xl font-bold">Pay for all riders</h2><p className="mt-1 text-sm text-muted-foreground">One payment covers all paid tickets in this order.</p></div><div className="rounded-2xl border bg-card p-5"><p className="text-sm text-muted-foreground">{registration.registrations.length} rider registrations</p><p className="mt-2 text-sm font-bold tracking-wide">{registration.registrations.map((child) => child.registrationReference).join(" · ")}</p><p className="mt-5 text-sm text-muted-foreground">Total amount to pay</p><p className="text-3xl font-extrabold text-primary">₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings && <div className="space-y-4 rounded-2xl border bg-primary/5 p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">UPI ID</p><p className="font-bold">{registration.paymentSettings.upiId}</p><p className="text-xs text-muted-foreground">Payee: {registration.paymentSettings.payeeName}</p></div><Button variant="outline" size="sm" onClick={copyUpi}><Copy className="mr-2 h-4 w-4" /> Copy</Button></div><p className="text-sm text-muted-foreground">{registration.paymentSettings.instructions}</p><div className="flex flex-col items-center gap-3 rounded-lg bg-white p-3"><img src={registration.paymentSettings.qrDataUrl} alt="Generated UPI payment QR" className="h-56 w-56" /><p className="text-xs text-muted-foreground">Scan to pay ₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings.qrImageUrl && <div><p className="mb-2 text-xs font-medium text-muted-foreground">Organizer-provided QR</p><img src={registration.paymentSettings.qrImageUrl} alt="Organizer UPI QR" className="mx-auto max-h-56 rounded-lg" /></div>}<a href={registration.paymentSettings.upiUri} className="block text-center text-sm font-semibold text-primary underline-offset-4 hover:underline">Open in a UPI app</a></div>}<div className="space-y-2"><Label>UTR / transaction reference (optional)</Label><Input value={utrReference} onChange={(e) => setUtrReference(e.target.value)} placeholder="Enter it after paying in your UPI app" /><p className="text-xs text-muted-foreground">One reference will be submitted for the complete rider group.</p></div><Button onClick={submitUtr} disabled={loading} size="lg" className="w-full">{loading ? "Saving…" : "Submit reference / continue"}</Button><p className="flex items-center justify-center gap-1 text-xs text-muted-foreground"><Shield className="h-3 w-3" /> Do not enter card details on RacePass.</p></section>}
+            {currentStep === 2 && registration && <section className="space-y-5"><div><h2 className="text-xl font-bold">Pay for all {participantLabel.toLowerCase()}s</h2><p className="mt-1 text-sm text-muted-foreground">One payment covers all paid entries in this order.</p></div><div className="rounded-2xl border bg-card p-5"><p className="text-sm text-muted-foreground">{registration.registrations.length} {registration.registrations.length === 1 ? "entry" : "entries"}</p><p className="mt-2 text-sm font-bold tracking-wide">{registration.registrations.map((child) => child.registrationReference).join(" · ")}</p><p className="mt-5 text-sm text-muted-foreground">Total amount to pay</p><p className="text-3xl font-extrabold text-primary">₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings && <div className="space-y-4 rounded-2xl border bg-primary/5 p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">UPI ID</p><p className="font-bold">{registration.paymentSettings.upiId}</p><p className="text-xs text-muted-foreground">Payee: {registration.paymentSettings.payeeName}</p></div><Button variant="outline" size="sm" onClick={copyUpi}><Copy className="mr-2 h-4 w-4" /> Copy</Button></div><p className="text-sm text-muted-foreground">{registration.paymentSettings.instructions}</p><div className="flex flex-col items-center gap-3 rounded-lg bg-white p-3"><img src={registration.paymentSettings.qrDataUrl} alt="Generated UPI payment QR" className="h-56 w-56" /><p className="text-xs text-muted-foreground">Scan to pay ₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings.qrImageUrl && <div><p className="mb-2 text-xs font-medium text-muted-foreground">Organizer-provided QR</p><img src={registration.paymentSettings.qrImageUrl} alt="Organizer UPI QR" className="mx-auto max-h-56 rounded-lg" /></div>}<a href={registration.paymentSettings.upiUri} className="block text-center text-sm font-semibold text-primary underline-offset-4 hover:underline">Open in a UPI app</a></div>}<div className="space-y-2"><Label>UTR / transaction reference (optional)</Label><Input value={utrReference} onChange={(e) => setUtrReference(e.target.value)} placeholder="Enter it after paying in your UPI app" /><p className="text-xs text-muted-foreground">One reference will be submitted for the complete {participantLabel.toLowerCase()} group.</p></div><Button onClick={submitUtr} disabled={loading} size="lg" className="w-full">{loading ? "Saving…" : "Submit reference / continue"}</Button><p className="flex items-center justify-center gap-1 text-xs text-muted-foreground"><Shield className="h-3 w-3" /> Do not enter card details on SportPass.</p></section>}
           </main>
 
-          <aside className="lg:col-span-1"><div className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm lg:sticky lg:top-24"><div><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Order summary</p><p className="mt-1 text-lg font-bold">{event.title}</p><p className="text-sm text-muted-foreground">{event.location}</p></div><div className="space-y-3 border-t pt-4">{selectedTiers.map((tier) => { const quantity = cart.find((line) => line.ticketId === tier.id)?.quantity ?? 0; return <div key={tier.id} className="flex items-center justify-between gap-3 text-sm"><span><span className="font-medium">{tier.name}</span><span className="ml-2 text-muted-foreground">× {quantity}</span></span><span className="font-semibold">₹{(tier.price * quantity).toLocaleString("en-IN")}</span></div>; })}<div className="flex items-center justify-between border-t pt-3"><span className="font-bold">Total</span><span className="text-xl font-extrabold text-primary">₹{(totalPaise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></div></div>{currentStep === 1 && <div className="border-t pt-4"><div className="mb-3 flex items-center justify-between text-sm"><span className="font-semibold">Rider progress</span><span className="text-muted-foreground">{completedRiders}/{totalTickets}</span></div><div className="space-y-2">{riders.map((rider, index) => { const tier = event.tiers.find((candidate) => candidate.id === rider.ticketId); return <button key={rider.key} type="button" onClick={() => setActiveRiderIndex(index)} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted"><span className={index === activeRiderIndex ? "font-semibold text-primary" : "text-muted-foreground"}>Rider {index + 1} · {tier?.name}</span>{riderReady(rider) ? <CheckCircle2 className="h-4 w-4 text-accent" /> : <span className="text-xs text-muted-foreground">Pending</span>}</button>; })}</div></div>}<div className="border-t pt-4 text-xs text-muted-foreground"><p className="font-semibold text-foreground">Secure registration</p><p className="mt-1">Each rider receives an independent race ticket and check-in QR.</p></div></div></aside>
+          <aside className="lg:col-span-1"><div className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm lg:sticky lg:top-24"><div><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Order summary</p><p className="mt-1 text-lg font-bold">{event.title}</p><p className="text-sm text-muted-foreground">{event.location}</p></div><div className="space-y-3 border-t pt-4">{selectedTiers.map((tier) => { const quantity = cart.find((line) => line.ticketId === tier.id)?.quantity ?? 0; return <div key={tier.id} className="flex items-center justify-between gap-3 text-sm"><span><span className="font-medium">{tier.name}</span><span className="ml-2 text-muted-foreground">× {quantity}</span></span><span className="font-semibold">₹{(tier.price * quantity).toLocaleString("en-IN")}</span></div>; })}<div className="flex items-center justify-between border-t pt-3"><span className="font-bold">Total</span><span className="text-xl font-extrabold text-primary">₹{(totalPaise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></div></div>{currentStep === 1 && <div className="border-t pt-4"><div className="mb-3 flex items-center justify-between text-sm"><span className="font-semibold">{participantLabel} progress</span><span className="text-muted-foreground">{completedRiders}/{totalParticipants}</span></div><div className="space-y-2">{riders.map((rider, index) => { const tier = event.tiers.find((candidate) => candidate.id === rider.ticketId); return <button key={rider.key} type="button" onClick={() => setActiveRiderIndex(index)} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted"><span className={index === activeRiderIndex ? "font-semibold text-primary" : "text-muted-foreground"}>{participantLabel} {index + 1} · {tier?.name}</span>{riderReady(rider) ? <CheckCircle2 className="h-4 w-4 text-accent" /> : <span className="text-xs text-muted-foreground">Pending</span>}</button>; })}</div></div>}<div className="border-t pt-4 text-xs text-muted-foreground"><p className="font-semibold text-foreground">Secure registration</p><p className="mt-1">Each entry receives one event ticket and check-in QR.</p></div></div></aside>
         </div>
       </div>
     </Layout>

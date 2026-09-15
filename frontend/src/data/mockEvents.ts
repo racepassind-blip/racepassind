@@ -9,6 +9,8 @@ export interface TicketTier {
   price: number;
   description: string;
   available: number;
+  entryType?: "singles" | "doubles" | "team";
+  participantsPerEntry?: number;
 }
 
 export type ParticipantFieldType = "text" | "email" | "phone" | "date" | "select" | "number" | "dropdown" | "yes_no";

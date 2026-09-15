@@ -12,7 +12,7 @@ export function Footer() {
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
                 <Ticket className="h-4 w-4 text-primary" />
               </span>
-              RacePass <span className="text-primary">India</span>
+              SportPass <span className="text-primary">India</span>
             </Link>
             <p className="text-sm leading-relaxed text-muted-foreground">
               India&apos;s home for race day. Discover, register, and show up for your next finish line — proudly built in Mysuru.
@@ -35,7 +35,7 @@ export function Footer() {
             <h4 className="font-semibold text-sm">Contact</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li><span className="hover:text-foreground cursor-pointer transition-colors">Support</span></li>
-              <li><span className="hover:text-foreground cursor-pointer transition-colors">hello@racepass.com</span></li>
+              <li><span className="hover:text-foreground cursor-pointer transition-colors">hello@sportpass.com</span></li>
               <li><span className="hover:text-foreground cursor-pointer transition-colors">Partner with us</span></li>
             </ul>
           </div>
@@ -52,7 +52,7 @@ export function Footer() {
         </div>
 
         <div className="mt-10 pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <span>© 2026 RacePass India. Built for India, built in Mysuru.</span>
+          <span>© 2026 SportPass India. Built for India, built in Mysuru.</span>
           <div className="flex gap-4">
             <span className="hover:text-foreground cursor-pointer">Twitter</span>
             <span className="hover:text-foreground cursor-pointer">Instagram</span>

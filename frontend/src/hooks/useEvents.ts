@@ -44,7 +44,92 @@ export interface OrganizerEventCategory {
   name: string;
   distance: string | null;
   description: string | null;
+  entryType: "singles" | "doubles" | "team";
+  participantsPerEntry: number;
   tickets: OrganizerEventTicket[];
+}
+
+export interface OrganizerTournamentRound {
+  id: string;
+  eventId: string;
+  categoryId: string;
+  name: string;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrganizerCourt {
+  id: string;
+  eventId: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface OrganizerMatchEntry {
+  registrationId: string;
+  registrationReference: string | null;
+  participantName: string;
+  participantNames?: string[];
+  participantCount?: number;
+  teamName: string | null;
+  displayName: string;
+  ticketName: string;
+  categoryId: string | null;
+}
+
+export interface OrganizerMatch {
+  id: string;
+  eventId: string;
+  category: { id: string; name: string };
+  entryA: OrganizerMatchEntry;
+  entryB: OrganizerMatchEntry;
+  court: { id: string; name: string };
+  roundId: string | null;
+  round: { id: string; name: string; position: number } | null;
+  roundLabel: string;
+  scheduledTime: string | null;
+  status: "scheduled" | "in_progress" | "completed";
+  winner: "entry_a" | "entry_b" | null;
+  createdAt: string;
+  updatedAt: string;
+  gamesToWin: number;
+  pointsPerGame: number;
+  games: Array<{ gameNumber: number; scoreA: number; scoreB: number }>;
+}
+
+export interface PublicMatchResult {
+  id: string;
+  category: { id: string; name: string };
+  roundId?: string | null;
+  round?: { id: string; name: string; position: number } | null;
+  roundLabel: string;
+  court: { name: string };
+  scheduledTime: string | null;
+  status: "scheduled" | "in_progress" | "completed";
+  winner: "entry_a" | "entry_b" | null;
+  entryA: { displayName: string };
+  entryB: { displayName: string };
+  gamesToWin: number;
+  pointsPerGame: number;
+  games: Array<{ gameNumber: number; scoreA: number; scoreB: number }>;
+}
+
+export interface PublicEventResults {
+  event: { id: string; title: string; date: string; category: string };
+  categories: Array<{ id: string; name: string; distance: string | null }>;
+  matches: PublicMatchResult[];
+}
+
+export interface OrganizerScoringConfig {
+  categoryId: string;
+  categoryName: string;
+  gamesToWin: number;
+  pointsPerGame: number;
+}
+
+export interface OrganizerScoringConfigResponse {
+  categories: OrganizerScoringConfig[];
 }
 
 export interface OrganizerEvent {
@@ -181,6 +266,14 @@ export function useEvent(eventId: string | undefined) {
   });
 }
 
+export function usePublicEventResults(eventId: string | undefined) {
+  return useQuery({
+    queryKey: ["public-event-results", eventId],
+    enabled: Boolean(eventId),
+    queryFn: () => apiRequest<PublicEventResults>(`/events/${eventId}/results`),
+  });
+}
+
 export function useOrganizerEvents() {
   return useQuery({
     queryKey: ["organizer-events"],
@@ -193,6 +286,46 @@ export function useOrganizerEventOptions() {
     queryKey: ["organizer-event-options"],
     staleTime: 30_000,
     queryFn: () => apiRequest<OrganizerEventOption[]>("/organizer/event-options"),
+  });
+}
+
+export function useOrganizerCourts(eventId: string | undefined, enabled = Boolean(eventId)) {
+  return useQuery({
+    queryKey: ["organizer-courts", eventId],
+    enabled: Boolean(eventId) && enabled,
+    queryFn: () => apiRequest<OrganizerCourt[]>(`/organizer/events/${eventId}/courts`),
+  });
+}
+
+export function useOrganizerScoringConfig(eventId: string | undefined, enabled = Boolean(eventId)) {
+  return useQuery({
+    queryKey: ["organizer-scoring-config", eventId],
+    enabled: Boolean(eventId) && enabled,
+    queryFn: () => apiRequest<OrganizerScoringConfigResponse>(`/organizer/events/${eventId}/scoring-config`),
+  });
+}
+
+export function useOrganizerMatchEntries(eventId: string | undefined, categoryId: string | undefined) {
+  return useQuery({
+    queryKey: ["organizer-match-entries", eventId, categoryId],
+    enabled: Boolean(eventId && categoryId),
+    queryFn: () => apiRequest<OrganizerMatchEntry[]>(`/organizer/events/${eventId}/match-entries?category_id=${categoryId}`),
+  });
+}
+
+export function useOrganizerTournamentRounds(eventId: string | undefined, categoryId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["organizer-tournament-rounds", eventId, categoryId],
+    enabled: enabled && Boolean(eventId && categoryId),
+    queryFn: () => apiRequest<OrganizerTournamentRound[]>(`/organizer/events/${eventId}/tournament-rounds?category_id=${categoryId}`),
+  });
+}
+
+export function useOrganizerMatches(eventId: string | undefined) {
+  return useQuery({
+    queryKey: ["organizer-matches", eventId],
+    enabled: Boolean(eventId),
+    queryFn: () => apiRequest<OrganizerMatch[]>(`/organizer/events/${eventId}/matches`),
   });
 }
 

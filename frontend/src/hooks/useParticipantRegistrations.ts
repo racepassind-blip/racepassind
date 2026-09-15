@@ -13,6 +13,8 @@ export interface ParticipantRegistration {
     whatsappGroupUrl: string | null;
   };
   participantName: string;
+  participants?: Array<{ index: number; participant: { name: string; email?: string | null; phone?: string | null } }>;
+  participantCount?: number;
   ticketType: {
     name: string;
     category: string | null;

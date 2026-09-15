@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import require_csrf, require_roles
+from app.api.deps import get_optional_current_user, require_csrf, require_roles
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
 from app.services.audit_service import record_audit
@@ -39,9 +39,13 @@ from app.schemas.registrations import (
     RegistrationCreateIn,
 )
 from db import get_db
-from models import Event
+from models import Event, User
 
 router = APIRouter()
+
+
+def _participant_user_id(user: User | None):
+    return user.id if user is not None and user.role in {"participant", "user"} else None
 
 
 def _confirmation_response(
@@ -118,7 +122,7 @@ def _batch_confirmation_response(
     registrations: list,
     *,
     confirmation_tokens: list[str] | None = None,
-    claim_codes: list[str] | None = None,
+    claim_codes: list[str | None] | None = None,
 ) -> dict:
     tokens = confirmation_tokens or []
     claims = claim_codes or []
@@ -150,6 +154,7 @@ def _batch_confirmation_response(
 def create_registration(
     payload: RegistrationCreateIn,
     request: Request,
+    user: User | None = Depends(get_optional_current_user),
     _: None = Depends(require_csrf),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
     db: Session = Depends(get_db),
@@ -172,7 +177,7 @@ def create_registration(
         ) from exc
     try:
         registration, confirmation_token, claim_code = create_guest_registration(
-            db, payload, idempotency_key=idempotency_key
+            db, payload, idempotency_key=idempotency_key, user_id=_participant_user_id(user)
         )
     except ValueError as exc:
         db.rollback()
@@ -184,17 +189,18 @@ def create_registration(
 def create_batch_registration(
     payload: BatchRegistrationCreateIn,
     request: Request,
+    user: User | None = Depends(get_optional_current_user),
     _: None = Depends(require_csrf),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
     db: Session = Depends(get_db),
 ) -> dict:
     client_ip = request.client.host if request.client else "unknown"
     try:
-        for rider in payload.riders:
+        for entry in payload.effective_entries:
             enforce_race_registration_limit(
                 db,
                 event_id=str(payload.event_id),
-                ticket_id=str(rider.ticket_id),
+                ticket_id=str(entry.ticket_id),
                 client_ip=client_ip,
             )
         db.commit()
@@ -207,7 +213,7 @@ def create_batch_registration(
         ) from exc
     try:
         registrations, confirmation_tokens, claim_codes = create_guest_batch_registration(
-            db, payload, idempotency_key=idempotency_key
+            db, payload, idempotency_key=idempotency_key, user_id=_participant_user_id(user)
         )
     except ValueError as exc:
         db.rollback()
@@ -377,11 +383,11 @@ def download_confirmation_ticket(
         )
     db.commit()
     if len(registrations) > 1:
-        filename = "racepass-tickets.pdf"
+        filename = "sportpass-tickets.pdf"
     else:
         reference = registrations[0].registration_reference or "registration"
         safe_reference = "".join(character if character.isalnum() or character in "-_." else "-" for character in reference)
-        filename = f"racepass-ticket-{safe_reference}.pdf"
+        filename = f"sportpass-ticket-{safe_reference}.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",

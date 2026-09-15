@@ -17,9 +17,9 @@ from models import Event, Registration
 
 _PAGE_MARGIN = 17 * mm
 _CONTENT_WIDTH = A4[0] - (2 * _PAGE_MARGIN)
-_RACEPASS_NAVY = colors.HexColor("#102A43")
-_RACEPASS_TEAL = colors.HexColor("#0F7185")
-_RACEPASS_ORANGE = colors.HexColor("#E9941A")
+_SPORTPASS_NAVY = colors.HexColor("#102A43")
+_SPORTPASS_TEAL = colors.HexColor("#0F7185")
+_SPORTPASS_ORANGE = colors.HexColor("#E9941A")
 _TEXT = colors.HexColor("#1F3445")
 _MUTED = colors.HexColor("#657786")
 _BORDER = colors.HexColor("#D9E3EA")
@@ -99,7 +99,7 @@ def _draw_page_footer(canvas, document) -> None:
     canvas.line(_PAGE_MARGIN, 10 * mm, A4[0] - _PAGE_MARGIN, 10 * mm)
     canvas.setFillColor(_MUTED)
     canvas.setFont("Helvetica", 7.5)
-    canvas.drawString(_PAGE_MARGIN, 6 * mm, "RacePass India · Participant ticket")
+    canvas.drawString(_PAGE_MARGIN, 6 * mm, "SportPass India · Participant ticket")
     canvas.drawRightString(A4[0] - _PAGE_MARGIN, 6 * mm, f"Page {document.page}")
     canvas.restoreState()
 
@@ -114,6 +114,7 @@ def build_ticket_pdf(registration: Registration, event: Event, qr_payload: str) 
     organization = event.organization
     ticket = registration.ticket
     participant = registration.participant
+    member_names = [member.participant.name for member in registration.participant_memberships] or [participant.name]
     currency = (ticket.currency if ticket is not None and ticket.currency else "INR").upper()
     category = ticket.category.name if ticket is not None and ticket.category else None
     location = event.location or "Location to be announced"
@@ -260,19 +261,19 @@ def build_ticket_pdf(registration: Registration, event: Event, qr_payload: str) 
         leftMargin=_PAGE_MARGIN,
         topMargin=13 * mm,
         bottomMargin=16 * mm,
-        title=f"RacePass ticket {registration.registration_reference}",
-        author="RacePass India",
+        title=f"SportPass ticket {registration.registration_reference}",
+        author="SportPass India",
         subject="Participant event ticket",
     )
     story: list[object] = []
 
     header = Table([[
-        [Paragraph("RacePass India", styles["brand"]), Paragraph("SECURE EVENT ACCESS", styles["brand_kicker"])],
+        [Paragraph("SportPass India", styles["brand"]), Paragraph("SECURE EVENT ACCESS", styles["brand_kicker"])],
         [Paragraph("PARTICIPANT TICKET", styles["brand_badge"]), Paragraph("Keep this ticket ready at check-in", styles["brand_badge"])],
     ]], colWidths=[125 * mm, 43 * mm])
     header.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _RACEPASS_NAVY),
-        ("BACKGROUND", (1, 0), (1, 0), _RACEPASS_ORANGE),
+        ("BACKGROUND", (0, 0), (-1, -1), _SPORTPASS_NAVY),
+        ("BACKGROUND", (1, 0), (1, 0), _SPORTPASS_ORANGE),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (1, 0), (1, 0), "CENTER"),
         ("LEFTPADDING", (0, 0), (-1, -1), 12),
@@ -315,6 +316,7 @@ def build_ticket_pdf(registration: Registration, event: Event, qr_payload: str) 
     participant_contact = " · ".join(value for value in [participant.email, participant.phone] if value)
     detail_fields = [
         _field("Participant", participant.name, styles, accent=True),
+        *([_field("Members", " / ".join(member_names), styles)] if len(member_names) > 1 else []),
         _field("Ticket", ticket.name if ticket else None, styles),
         _field("Category", category, styles),
         _field("Quantity", registration.quantity, styles),

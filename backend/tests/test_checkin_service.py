@@ -127,7 +127,7 @@ class CheckinServiceTests(unittest.TestCase):
             with self.assertRaises(CheckinCredentialError):
                 check_in_registration(db, other, credential=token)
             with self.assertRaises(CheckinCredentialError):
-                check_in_registration(db, organizer, credential="racepass://ticket?v=1&t=not-a-valid-token")
+                check_in_registration(db, organizer, credential="sportpass://ticket?v=1&t=not-a-valid-token")
             current = db.get(Registration, registration.id)
             self.assertEqual(current.status, "confirmed")
             self.assertFalse(current.checked_in)
@@ -147,9 +147,9 @@ class CheckinServiceTests(unittest.TestCase):
 
     def test_parser_rejects_wrong_version_duplicate_or_malformed_qr(self) -> None:
         invalid_values = [
-            "racepass://ticket?v=2&t=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-            "racepass://ticket?v=1&t=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&t=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-            "racepass://other?v=1&t=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "sportpass://ticket?v=2&t=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "sportpass://ticket?v=1&t=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&t=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+            "sportpass://other?v=1&t=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             "not-a-token",
         ]
         for value in invalid_values:

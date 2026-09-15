@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.services.auth_service import hash_opaque_token, utc_now
 from app.services.audit_service import record_audit
-from models import Checkin, Event, Organization, OrganizationMember, Registration, Ticket
+from app.services.checkpoint_service import ensure_default_checkpoint
+from models import Checkin, Event, EventCheckpoint, Organization, OrganizationMember, Registration, RegistrationParticipant, Ticket
 
 _TICKET_VERSION = "1"
 _RAW_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{20,200}$")
@@ -31,9 +32,9 @@ def parse_ticket_credential(value: str) -> str:
     if not credential or len(credential) > 300:
         raise CheckinCredentialError("Invalid check-in credential")
 
-    if credential.startswith("racepass://"):
+    if credential.startswith("sportpass://"):
         parsed = urlparse(credential)
-        if parsed.scheme != "racepass" or parsed.netloc != "ticket" or parsed.path not in {"", "/"}:
+        if parsed.scheme != "sportpass" or parsed.netloc != "ticket" or parsed.path not in {"", "/"}:
             raise CheckinCredentialError("Invalid check-in credential")
         parameters = parse_qs(parsed.query, keep_blank_values=True)
         if set(parameters) != {"v", "t"} or any(len(values) != 1 for values in parameters.values()):
@@ -80,6 +81,7 @@ def _scoped_registration_query(user):
         .where(Organization.status == "active")
         .options(
             selectinload(Registration.participant),
+            selectinload(Registration.participant_memberships).selectinload(RegistrationParticipant.participant),
             selectinload(Registration.ticket).selectinload(Ticket.category),
         )
     )
@@ -117,16 +119,24 @@ def _safe_device_info(device_info: str | None) -> str | None:
     return sanitized.strip()[:_MAX_DEVICE_INFO_LENGTH] or None
 
 
-def _checkin_response(registration: Registration, event: Event, *, already_checked_in: bool) -> dict:
+def _checkin_response(registration: Registration, event: Event, checkpoint: EventCheckpoint, scan: Checkin, *, already_scanned: bool) -> dict:
+    participant_names = [member.participant.name for member in registration.participant_memberships] or [registration.participant.name]
+    scanned_at = scan.checked_in_at
+    time_text = scanned_at.strftime("%I:%M %p").lstrip("0") if scanned_at else ""
     return {
         "registrationReference": registration.registration_reference,
         "event": {"id": str(event.id), "name": event.name, "location": event.location},
         "participantName": registration.participant.name,
+        "participantNames": participant_names,
+        "participantCount": registration.participant_count,
         "ticketName": registration.ticket.name,
+        "checkpoint": {"id": str(checkpoint.id), "name": checkpoint.name, "position": checkpoint.position},
         "status": "checked_in",
-        "alreadyCheckedIn": already_checked_in,
-        "checkedInAt": registration.checked_in_at,
-        "message": "Already checked in" if already_checked_in else "Participant checked in",
+        "alreadyCheckedIn": already_scanned,
+        "alreadyScanned": already_scanned,
+        "checkedInAt": scanned_at,
+        "scannedAt": scanned_at,
+        "message": f"Already scanned for {checkpoint.name} at {time_text}" if already_scanned else f"{checkpoint.name} served — {participant_names[0]}",
     }
 
 
@@ -136,6 +146,7 @@ def check_in_registration(
     *,
     credential: str | None = None,
     registration_reference: str | None = None,
+    checkpoint_id: UUID | None = None,
     device_info: str | None = None,
 ) -> dict:
     if bool(credential) == bool(registration_reference):
@@ -155,67 +166,77 @@ def check_in_registration(
     event = db.get(Event, registration.event_id)
     if event is None:
         raise CheckinCredentialError("Check-in credential invalid or not authorized")
+    checkpoint = db.scalar(
+        select(EventCheckpoint).where(
+            EventCheckpoint.event_id == event.id,
+            EventCheckpoint.id == checkpoint_id if checkpoint_id else True,
+        ).order_by(EventCheckpoint.position).limit(1)
+    ) if checkpoint_id else ensure_default_checkpoint(db, event.id)
+    if checkpoint is None:
+        raise CheckinCredentialError("Checkpoint not found for this event")
 
     existing_checkin = db.scalar(
         select(Checkin)
-        .where(Checkin.registration_id == registration.id)
+        .where(Checkin.registration_id == registration.id, Checkin.checkpoint_id == checkpoint.id)
         .order_by(Checkin.checked_in_at.asc())
     )
-    if existing_checkin is not None or registration.checked_in or registration.status == "checked_in":
-        checked_in_at = existing_checkin.checked_in_at if existing_checkin is not None else registration.checked_in_at or utc_now()
-        if existing_checkin is None:
-            existing_checkin = Checkin(
-                registration_id=registration.id,
-                checked_in_by=user.id,
-                checked_in_at=checked_in_at,
-                device_info=_safe_device_info(device_info),
-            )
-            db.add(existing_checkin)
+    # A pre-checkpoint deployment could have a legacy row without a checkpoint id.
+    # Associate it with the default checkpoint when the compatibility flag says it was already scanned.
+    if existing_checkin is None and checkpoint.position == 1 and (registration.checked_in or registration.status == "checked_in"):
+        existing_checkin = db.scalar(
+            select(Checkin).where(Checkin.registration_id == registration.id, Checkin.checkpoint_id.is_(None)).order_by(Checkin.checked_in_at.asc())
+        )
+        if existing_checkin is not None:
+            existing_checkin.checkpoint_id = checkpoint.id
+
+    if existing_checkin is not None:
         registration.checked_in = True
         registration.status = "checked_in"
-        registration.checked_in_at = checked_in_at
+        if registration.checked_in_at is None:
+            registration.checked_in_at = existing_checkin.checked_in_at
         record_audit(
             db,
             actor_user_id=user.id,
             action="participant_check_in_duplicate",
             resource_type="registration",
             resource_id=registration.id,
-            metadata={"source": source, "alreadyCheckedIn": True},
+            metadata={"source": source, "checkpointId": str(checkpoint.id), "alreadyScanned": True},
         )
         db.commit()
-        return _checkin_response(registration, event, already_checked_in=True)
+        return _checkin_response(registration, event, checkpoint, existing_checkin, already_scanned=True)
 
-    if registration.status != "confirmed":
+    if registration.status != "confirmed" and not registration.checked_in:
         record_audit(
             db,
             actor_user_id=user.id,
             action="participant_check_in_failed",
             resource_type="registration",
             resource_id=registration.id,
-            metadata={"source": source, "reason": "registration_not_confirmed"},
+            metadata={"source": source, "checkpointId": str(checkpoint.id), "reason": "registration_not_confirmed"},
         )
         db.commit()
         raise CheckinNotAllowedError("Registration is not confirmed for check-in")
 
     checked_in_at = utc_now()
+    if not registration.checked_in_at:
+        registration.checked_in_at = checked_in_at
     registration.status = "checked_in"
     registration.checked_in = True
-    registration.checked_in_at = checked_in_at
-    db.add(
-        Checkin(
-            registration_id=registration.id,
-            checked_in_by=user.id,
-            checked_in_at=checked_in_at,
-            device_info=_safe_device_info(device_info),
-        )
+    scan = Checkin(
+        registration_id=registration.id,
+        checkpoint_id=checkpoint.id,
+        checked_in_by=user.id,
+        checked_in_at=checked_in_at,
+        device_info=_safe_device_info(device_info),
     )
+    db.add(scan)
     record_audit(
         db,
         actor_user_id=user.id,
         action="participant_checked_in",
         resource_type="registration",
         resource_id=registration.id,
-        metadata={"source": source},
+        metadata={"source": source, "checkpointId": str(checkpoint.id)},
     )
     db.commit()
-    return _checkin_response(registration, event, already_checked_in=False)
+    return _checkin_response(registration, event, checkpoint, scan, already_scanned=False)

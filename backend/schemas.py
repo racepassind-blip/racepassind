@@ -15,6 +15,8 @@ class TicketTierOut(BaseModel):
     price: int
     description: str
     available: int
+    entryType: Literal["singles", "doubles", "team"] = "singles"
+    participantsPerEntry: int = 1
 
 
 class EventOut(BaseModel):

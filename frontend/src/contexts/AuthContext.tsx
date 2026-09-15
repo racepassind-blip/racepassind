@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       clearSession();
       if (!(error instanceof ApiError) || error.status !== 401) {
-        setAuthError(error instanceof Error ? error.message : "Could not connect to RacePass");
+        setAuthError(error instanceof Error ? error.message : "Could not connect to SportPass");
       }
     } finally {
       setIsLoading(false);

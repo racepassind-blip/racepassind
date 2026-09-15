@@ -111,7 +111,7 @@ class OrganizerCreateIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=3, max_length=320)
     phone: str | None = Field(default=None, max_length=32)
-    temporary_password: str = Field(min_length=12, max_length=256)
+    temporary_password: str = Field(min_length=8, max_length=256)
 
 
 class FeeSettingsIn(BaseModel):

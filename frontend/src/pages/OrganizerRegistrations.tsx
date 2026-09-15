@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, Clock3, Download, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Clock3, Download, ScanLine, Search, UserPlus, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -46,6 +46,8 @@ interface OrganizerRegistration {
   registrationReference: string;
   event: { id: string; name: string };
   participant: { name: string; email: string | null; phone: string | null };
+  participants?: Array<{ index: number; participant: { name: string; email: string | null; phone: string | null } }>;
+  participantCount?: number;
   ticket: { id: string; name: string; category: string | null };
   amountPaise: number;
   receivedAmountPaise: number | null;
@@ -153,7 +155,7 @@ const OrganizerRegistrations = () => {
   useEffect(() => {
     const controller = new AbortController();
     setEventsLoading(true);
-    void apiRequest<OrganizerEventOption[]>("/events", { signal: controller.signal })
+    void apiRequest<OrganizerEventOption[]>("/organizer/events", { signal: controller.signal })
       .then(setEvents)
       .catch((loadError) => {
         if (!controller.signal.aborted) setEventsError(loadError instanceof Error ? loadError.message : "Could not load events");
@@ -344,7 +346,8 @@ const OrganizerRegistrations = () => {
             <div><h1 className="text-2xl font-extrabold tracking-tight">{eventScoped ? "Event registrations" : "Organizer registrations"}</h1><p className="text-sm text-muted-foreground">{eventScoped ? "Registrations for this event." : "All event registrations. Select an event to focus the workspace."}</p></div>
           </div>
           <div className="flex items-center gap-2">
-            {!eventScoped && <Button variant="outline" onClick={() => navigate("/organizer/check-in")}>Race check-in</Button>}
+            {!eventScoped && <Button variant="outline" onClick={() => navigate(`/organizer/check-in?event_id=${encodeURIComponent(filters.eventId)}`)}>Race check-in</Button>}
+            {eventScoped && <Button variant="outline" onClick={() => navigate(`/organizer/events/${filters.eventId}/check-in`)} className="gap-2"><ScanLine className="h-4 w-4" /> Check-in matrix</Button>}
             {eventScoped && <Button onClick={() => navigate(`/organizer/events/${filters.eventId}/participants/new`)} className="gap-2"><UserPlus className="h-4 w-4" /> Add manual participant</Button>}
             <Button onClick={() => void exportCsv()} disabled={!filters.eventId || exporting} className="gap-2"><Download className="h-4 w-4" />{exporting ? "Exporting…" : exportIsFiltered ? "Export filtered CSV" : "Export event CSV"}</Button>
           </div>
@@ -422,7 +425,7 @@ const OrganizerRegistrations = () => {
             <TableBody>{registrations.map((registration) => {
               const isReviewable = registration.status === "awaiting_payment" || registration.status === "pending_verification";
               return <TableRow key={registration.id}>
-                <TableCell><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{registration.participant.name}</p>{registration.isManualEntry && <Badge variant="outline">Manual entry</Badge>}</div><p className="text-xs text-muted-foreground">{registration.participant.email ?? registration.participant.phone ?? "No contact"}</p><p className="font-mono text-xs text-muted-foreground">{registration.registrationReference}</p>{dynamicRegistrationSummary(registration)}</TableCell>
+                <TableCell><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{registration.participant.name}</p>{registration.isManualEntry && <Badge variant="outline">Manual entry</Badge>}</div>{registration.participants && registration.participants.length > 1 && <p className="text-xs text-muted-foreground">Members: {registration.participants.map((member) => member.participant.name).join(" · ")}</p>}<p className="text-xs text-muted-foreground">{registration.participant.email ?? registration.participant.phone ?? "No contact"}</p><p className="font-mono text-xs text-muted-foreground">{registration.registrationReference}</p>{dynamicRegistrationSummary(registration)}</TableCell>
                 {!eventScoped && <TableCell><p className="max-w-44 truncate">{registration.event.name}</p></TableCell>}
                 <TableCell><p>{registration.ticket.name}</p><p className="text-xs text-muted-foreground">{registration.ticket.category ?? "—"}</p></TableCell>
                 <TableCell className="font-semibold"><p>{formatINR(registration.amountPaise)}</p>{registration.receivedAmountPaise !== null && <p className="text-xs font-normal text-accent">Received {formatINR(registration.receivedAmountPaise)}</p>}</TableCell>

@@ -1,4 +1,5 @@
-import { Clock3, MapPin, MessageCircle, QrCode, Ticket } from "lucide-react";
+import { Clock3, MapPin, MessageCircle, QrCode, Ticket, Trophy } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,10 @@ export function ParticipantRegistrationCard({ registration }: { registration: Pa
               {registration.event.location}
             </CardDescription>
           </div>
-          <RegistrationStatusBadge status={registration.status} />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <RegistrationStatusBadge status={registration.status} />
+            <Button asChild size="sm" variant="outline" className="gap-1.5"><Link to={`/event/${encodeURIComponent(registration.event.id)}/results`}><Trophy className="h-3.5 w-3.5" /> View results</Link></Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -43,6 +47,10 @@ export function ParticipantRegistrationCard({ registration }: { registration: Pa
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Registration reference</p>
             <p className="mt-1 font-mono font-semibold">{registration.registrationReference}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Participants</p>
+            <p className="mt-1 font-medium">{registration.participants?.map((member) => member.participant.name).join(" · ") || registration.participantName}</p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Ticket</p>

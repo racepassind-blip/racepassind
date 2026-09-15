@@ -39,10 +39,10 @@ from models import (
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-DATABASE_URL = os.getenv("RACEPASS_TEST_DATABASE_URL")
+DATABASE_URL = os.getenv("SPORTPASS_TEST_DATABASE_URL")
 
 
-@unittest.skipUnless(DATABASE_URL, "Set RACEPASS_TEST_DATABASE_URL to run PostgreSQL integration tests")
+@unittest.skipUnless(DATABASE_URL, "Set SPORTPASS_TEST_DATABASE_URL to run PostgreSQL integration tests")
 class PostgreSQLIntegrationTests(unittest.TestCase):
     """Integration tests that must run against a disposable PostgreSQL database.
 
@@ -54,10 +54,10 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         assert DATABASE_URL is not None
         if not DATABASE_URL.startswith(("postgresql://", "postgresql+")):
-            raise RuntimeError("RACEPASS_TEST_DATABASE_URL must be a PostgreSQL SQLAlchemy URL")
-        if os.getenv("RACEPASS_TEST_DATABASE_RESET") != "1":
+            raise RuntimeError("SPORTPASS_TEST_DATABASE_URL must be a PostgreSQL SQLAlchemy URL")
+        if os.getenv("SPORTPASS_TEST_DATABASE_RESET") != "1":
             raise RuntimeError(
-                "Set RACEPASS_TEST_DATABASE_RESET=1; the PostgreSQL integration suite resets a disposable database"
+                "Set SPORTPASS_TEST_DATABASE_RESET=1; the PostgreSQL integration suite resets a disposable database"
             )
 
         cls.engine = create_engine(
@@ -125,8 +125,8 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
             EventPaymentSettings(
                 event_id=event.id,
                 method="manual_upi",
-                upi_id="racepass@example",
-                payee_name="RacePass India",
+                upi_id="sportpass@example",
+                payee_name="SportPass India",
                 instructions="Use the UPI details shown below.",
                 is_active=True,
             )

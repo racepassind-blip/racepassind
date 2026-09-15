@@ -13,9 +13,9 @@ from app.services.ticket_pdf_service import (
     _MUTED,
     _PALE_GRAY,
     _PALE_TEAL,
-    _RACEPASS_NAVY,
-    _RACEPASS_ORANGE,
-    _RACEPASS_TEAL,
+    _SPORTPASS_NAVY,
+    _SPORTPASS_ORANGE,
+    _SPORTPASS_TEAL,
     _TEXT,
     _WHITE,
     _draw_page_footer,
@@ -153,6 +153,7 @@ def _bundle_ticket_story(registration: Registration, event: Event, qr_payload: s
     organization = event.organization
     ticket = registration.ticket
     participant = registration.participant
+    member_names = [member.participant.name for member in registration.participant_memberships] or [participant.name]
     currency = (ticket.currency if ticket is not None and ticket.currency else "INR").upper()
     category = ticket.category.name if ticket is not None and ticket.category else None
     location = event.location or "Location to be announced"
@@ -162,12 +163,12 @@ def _bundle_ticket_story(registration: Registration, event: Event, qr_payload: s
 
     story: list[object] = []
     header = Table([[
-        [Paragraph("RacePass India", styles["bundle_brand"]), Paragraph("SECURE EVENT ACCESS", styles["bundle_kicker"])],
+        [Paragraph("SportPass India", styles["bundle_brand"]), Paragraph("SECURE EVENT ACCESS", styles["bundle_kicker"])],
         [Paragraph("PARTICIPANT TICKET", styles["bundle_badge"]), Paragraph("Keep this ticket ready at check-in", styles["bundle_badge"])],
     ]], colWidths=[125 * mm, 43 * mm])
     header.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _RACEPASS_NAVY),
-        ("BACKGROUND", (1, 0), (1, 0), _RACEPASS_ORANGE),
+        ("BACKGROUND", (0, 0), (-1, -1), _SPORTPASS_NAVY),
+        ("BACKGROUND", (1, 0), (1, 0), _SPORTPASS_ORANGE),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (1, 0), (1, 0), "CENTER"),
         ("LEFTPADDING", (0, 0), (-1, -1), 12),
@@ -214,6 +215,11 @@ def _bundle_ticket_story(registration: Registration, event: Event, qr_payload: s
             "field_value": styles["bundle_field_value"],
             "field_value_accent": styles["bundle_field_value_accent"],
         }, accent=True),
+        *([_field("Members", " / ".join(member_names), {
+            "field_label": styles["bundle_field_label"],
+            "field_value": styles["bundle_field_value"],
+            "field_value_accent": styles["bundle_field_value_accent"],
+        })] if len(member_names) > 1 else []),
         _field("Ticket", ticket.name if ticket else None, {
             "field_label": styles["bundle_field_label"],
             "field_value": styles["bundle_field_value"],
@@ -335,8 +341,8 @@ def build_ticket_bundle_pdf(registrations: list[Registration], event: Event, qr_
         leftMargin=_PAGE_MARGIN,
         topMargin=13 * mm,
         bottomMargin=16 * mm,
-        title="RacePass participant tickets",
-        author="RacePass India",
+        title="SportPass participant tickets",
+        author="SportPass India",
         subject="Participant event tickets",
     )
     styles = _ticket_styles()

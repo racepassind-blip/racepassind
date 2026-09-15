@@ -1,7 +1,7 @@
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { ArrowLeft, BarChart3, CalendarDays, CheckCircle2, ClipboardList, Download, Edit3, MapPin, Power, RefreshCw, ScanLine, Ticket, Trash2, TrendingUp, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, BarChart3, CalendarDays, CheckCircle2, ClipboardList, Copy, Download, Edit3, ExternalLink, MapPin, Power, RefreshCw, ScanLine, Ticket, Trash2, TrendingUp, UserPlus, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useOrganizerEventDashboard, useOrganizerEventOptions } from "@/hooks/useEvents";
 import { apiRequest } from "@/lib/api";
+import { getSportConfig } from "@/data/sportConfig";
+import { buildResultsUrl } from "@/lib/eventCommunication";
 
 function formatINR(amountPaise: number) {
   return `₹${(amountPaise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
@@ -48,6 +50,7 @@ const OrganizerEventDashboard = () => {
   const { data, isLoading, isError, refetch, isFetching } = useOrganizerEventDashboard(eventId);
   const { data: organizerEvents = [] } = useOrganizerEventOptions();
   const queryClient = useQueryClient();
+  const [resultsCopied, setResultsCopied] = useState(false);
 
   useEffect(() => {
     if (data?.event.isArchived) navigate("/organizer", { replace: true });
@@ -66,6 +69,18 @@ const OrganizerEventDashboard = () => {
   }
 
   const { event, inventory, registrations, overview, byCategory, signupTrend, recentRegistrations } = data;
+  const eventSportConfig = getSportConfig(event.sport);
+  const resultsUrl = buildResultsUrl(event.id);
+  const copyResultsLink = async () => {
+    try {
+      await navigator.clipboard.writeText(resultsUrl);
+      setResultsCopied(true);
+      toast.success("Public results link copied.");
+      window.setTimeout(() => setResultsCopied(false), 1800);
+    } catch {
+      toast.error("Could not copy automatically. Select the public results URL from the Tournament page and copy it manually.");
+    }
+  };
   const updateArchiveState = async () => {
     const message = `Delete ${event.name}? It will be removed from your organizer workspace, hidden from participants, and new registrations will stop. Existing registrations, payments, tickets, audit records, and media will be preserved.`;
     if (!window.confirm(message)) return;
@@ -125,7 +140,10 @@ const OrganizerEventDashboard = () => {
               </div>
               <Button variant="outline" size="sm" className="gap-2" onClick={() => void refetch()} disabled={isFetching}><RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh</Button>
               <Button variant="outline" size="sm" className="gap-2" onClick={() => void updateRegistrationStatus()}><Power className="h-4 w-4" />{event.registrationStatus === "open" ? "Close registration" : "Open registration"}</Button>
+              {eventSportConfig.supports_tournament && <><Button asChild variant="outline" size="sm" className="gap-2"><a href={resultsUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /> Public results</a></Button><Button variant="outline" size="sm" className="gap-2" onClick={() => void copyResultsLink()}><Copy className="h-4 w-4" />{resultsCopied ? "Copied" : "Copy results link"}</Button></>}
               <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" onClick={() => void updateArchiveState()}><Trash2 className="h-4 w-4" /> Delete event</Button>
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ScanLine className="h-4 w-4" /> Check-in matrix</Button>
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate(`/organizer/events/${event.id}/checkpoints`)}><ClipboardList className="h-4 w-4" /> Checkpoints</Button>
               {!event.isArchived && <Button size="sm" className="gap-2" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event</Button>}
             </div>
           </div>
@@ -174,7 +192,7 @@ const OrganizerEventDashboard = () => {
         <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
           <Card><CardHeader className="flex-row items-center justify-between space-y-0"><div><CardTitle>Recent registrations</CardTitle><CardDescription>Latest participant activity for this event.</CardDescription></div><Button variant="outline" size="sm" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}>View all</Button></CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Participant</TableHead><TableHead>Category</TableHead><TableHead>Registered</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{recentRegistrations.map((registration) => <TableRow key={registration.id}><TableCell><p className="font-semibold">{registration.participant.name}</p><p className="text-xs text-muted-foreground">{registration.registrationReference}</p></TableCell><TableCell>{registration.ticket.category || registration.ticket.name}</TableCell><TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatDateTime(registration.createdAt)}</TableCell><TableCell>{registration.amountPaise === 0 ? "Free" : formatINR(registration.amountPaise)}</TableCell><TableCell>{registrationBadge(registration.status)}</TableCell></TableRow>)}{recentRegistrations.length === 0 && <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">No registrations yet.</TableCell></TableRow>}</TableBody></Table></div></CardContent></Card>
 
-          <Card><CardHeader><CardTitle>Quick actions</CardTitle><CardDescription>Every action below stays tied to this event.</CardDescription></CardHeader><CardContent className="grid gap-3"><Button className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/participants/new`)}><UserPlus className="h-4 w-4" /> Add offline participant</Button><Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><ClipboardList className="h-4 w-4" /> View registrations</Button><Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><Download className="h-4 w-4" /> View registrations & export</Button><Button variant="outline" className="justify-start gap-2" onClick={() => navigate("/organizer/check-in")}><ScanLine className="h-4 w-4" /> Open check-in</Button>{!event.isArchived && <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event details</Button>}<div className="mt-2 rounded-lg bg-muted/50 p-3 text-xs leading-5 text-muted-foreground"><p className="font-semibold text-foreground">Race-day readiness</p><p className="mt-1">{overview.confirmedParticipants.toLocaleString()} confirmed participants, {overview.checkInRate}% checked in by participant quantity.</p></div></CardContent></Card>
+          <Card><CardHeader><CardTitle>Quick actions</CardTitle><CardDescription>Every action below stays tied to this event.</CardDescription></CardHeader><CardContent className="grid gap-3"><Button className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/participants/new`)}><UserPlus className="h-4 w-4" /> Add offline participant</Button><Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><ClipboardList className="h-4 w-4" /> View registrations</Button><Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><Download className="h-4 w-4" /> View registrations & export</Button><Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/check-in?event_id=${encodeURIComponent(event.id)}`)}><ScanLine className="h-4 w-4" /> Open check-in</Button>{!event.isArchived && <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event details</Button>}<div className="mt-2 rounded-lg bg-muted/50 p-3 text-xs leading-5 text-muted-foreground"><p className="font-semibold text-foreground">Race-day readiness</p><p className="mt-1">{overview.confirmedParticipants.toLocaleString()} confirmed participants, {overview.checkInRate}% checked in by participant quantity.</p></div></CardContent></Card>
         </div>
       </div>
     </OrganizerDashboardLayout>

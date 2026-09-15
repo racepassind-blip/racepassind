@@ -1,18 +1,83 @@
-# RacePass India POC — Technical Design
+# SportPass India POC — Technical Design
 
 **Status:** Proposed  
 **Requirements:** `requirements.md`  
 **Version:** 0.1
 
+## Pilot Scope (Build Now) — Badminton (Build This Week)
+
+**Context:** A real organizer wants to pilot badminton next week. This scope intentionally excludes automated tournament engine features from the original spec (seeding, auto-draw generation, byes, automatic winner advancement, result-correction workflows, live/real-time scoring, and a generic `SportProfile` capability framework). Those remain valid future work, documented in the original spec below, but are **not** part of this build.
+
+### In scope
+
+- **Sport field on Event:** simple sport field (`running` | `cycling` | `badminton`), defaulted correctly for existing events. When `event.sport === "badminton"`, show a Tournament tab in organizer navigation. Do not build a generic capability/configuration framework yet.
+- **Doubles via existing Team Name field:** no new Entry/Entry Members schema. Pair participants by matching team name within a Doubles category, display-only.
+- **Manual Matches table:** organizer manually creates each match; no automatic bracket generation. A match contains a free-text round label, Entry A, Entry B, court, scheduled time, status, and winner.
+- **Courts:** simple organizer-created list such as `Court 1` and `Court 2`, used as a dropdown during match creation. No scheduling logic.
+- **Scoring configuration:** `games_to_win` defaults to `2` and `points_per_game` defaults to `21` as editable numbers per event/category. Score inputs must not cap at `points_per_game`; they must accept legitimate deuce scores up to `30` (win by 2 from 20–20, hard cap 30–29). There is no score validation logic. The organizer manually enters actual scores and explicitly selects the winner; the winner is never auto-derived.
+- **Match scoring UI:** one input row per game, up to the maximum implied by `games_to_win`, with two number inputs per row, informational helper text explaining the deuce/cap rule, explicit winner selection, and a `Complete Match` action. Editing a completed match requires a confirmation dialog; no complex correction-protection workflow.
+- **Shareable public results page:** new unauthenticated route such as `/events/:eventId/results`, plus a `Copy Results Link` action on the organizer dashboard. Show categories and matches grouped simply by round, entries, court, time, status, and score. The page is read-only and reflects current data on load/refresh; it is explicitly not real-time or websocket-driven.
+- **Reuse unchanged:** registration, categories, manual UPI payment, check-in, and exports must work identically for badminton events and running/cycling events. There must be zero risk to existing flows.
+
+### Explicitly deferred to future phases
+
+The following remain in the original spec below and are not part of this pilot:
+
+- Automated seeding, draw generation, and bye logic
+- Automatic winner advancement (`next_match` / `next_match_slot` routing)
+- Result-correction protection workflows
+- Generic `SportProfile` / capability configuration framework
+- Live/real-time scoreboard and visual bracket diagrams
+- Round robin, Swiss formats, BWF rankings, and referee management
+
+### Data model additions for this pass
+
+```json
+// Match
+{
+  "id": "match_1",
+  "event_id": "evt_123",
+  "category_id": "cat_456",
+  "round_label": "Quarterfinal 1",
+  "entry_a": "registration_id or team_name",
+  "entry_b": "registration_id or team_name",
+  "court": "Court 1",
+  "scheduled_time": "2026-09-20T10:00:00",
+  "status": "scheduled" | "in_progress" | "completed",
+  "games_to_win": 2,
+  "points_per_game": 21,
+  "games": [
+    { "game_number": 1, "score_a": 21, "score_b": 17 }
+  ],
+  "winner": "entry_a" | "entry_b" | null
+}
+```
+
+### Migration and authorization rules
+
+- All additions must be additive only. Do not change existing running/cycling tables, models, or flows.
+- New badminton features must be entirely inert for non-badminton events.
+- Match and Court CRUD must use the existing organizer-scoped authorization patterns. An organizer may manage only matches and courts belonging to their own events.
+
+### Implementation order
+
+1. Sport field and conditional badminton-only Tournament navigation.
+2. Courts CRUD.
+3. Manual Matches CRUD with team-name doubles display support.
+4. Scoring configuration and match scoring UI.
+5. Shareable public results page and organizer copy-link action.
+
+The original SportPass architecture and long-term multi-sport vision below remain preserved as the Phase 2+ reference. This pilot section supersedes those broader phases for the immediate build.
+
 ## 1. Design goals
 
-This design keeps RacePass simple enough to build in days while avoiding the shortcuts that would create security or scaling problems later.
+This design keeps SportPass simple enough to build in days while avoiding the shortcuts that would create security or scaling problems later.
 
 The central decision is:
 
 > Build a secure modular monolith now, with clear domain modules and a PostgreSQL data model that can support multiple organizers and concurrent registrations. Do not introduce microservices until real traffic proves they are needed.
 
-The first production flow is manual UPI. RacePass records the registration and verification decision; money moves directly from the runner to the organizer and is never held by RacePass.
+The first production flow is manual UPI. SportPass records the registration and verification decision; money moves directly from the runner to the organizer and is never held by SportPass.
 
 ## 2. Architecture decision summary
 
@@ -24,7 +89,7 @@ The first production flow is manual UPI. RacePass records the registration and v
 | Production database | Standard PostgreSQL | Transactions, row locking, indexes, backups, and multi-instance support without provider-specific application dependencies |
 | Local database | SQLite only for local development | Easy setup; not safe as the production checkout database |
 | Authentication | Backend-owned session flow with email/password and Google OAuth | Authorization remains server-side and works for participant, organizer, and admin roles |
-| Payment | Manual UPI only | Organizer receives money directly; RacePass verifies using optional UTR/reference |
+| Payment | Manual UPI only | Organizer receives money directly; SportPass verifies using optional UTR/reference |
 | QR ticket | Random server-side ticket token encoded as QR | QR contains no personal or payment data |
 | Event assets | `StorageService` backed by an S3-compatible adapter in production | Application instances must not depend on local disk or a provider SDK |
 | Backend deployment | Docker-compatible stateless container | The same image/process contract can run on any compatible container platform or host |
@@ -157,7 +222,7 @@ Use a backend-controlled authorization-code flow with state and PKCE:
 3. Google redirects to the backend callback.
 4. Backend validates state, exchanges the code, validates issuer/audience/expiry/email claims, and finds or creates the user.
 5. Backend assigns only explicitly approved roles; Google sign-in never grants organizer/admin privileges by itself.
-6. Backend creates a RacePass session and redirects to the frontend.
+6. Backend creates a SportPass session and redirects to the frontend.
 
 The Google client secret exists only in backend deployment secrets. Redirect URIs are configured separately for local, preview, and production environments.
 
@@ -324,7 +389,7 @@ The event payment settings provide:
 - payment instructions
 - optional uploaded QR image
 
-RacePass can generate a payment URI:
+SportPass can generate a payment URI:
 
 ```text
 upi://pay?pa=<upi_id>&pn=<payee_name>&am=<amount_rupees>&cu=INR&tn=<registration_reference>

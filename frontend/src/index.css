@@ -90,7 +90,7 @@
   }
 }
 
-@keyframes racepass-ride {
+@keyframes sportpass-ride {
   0%,
   100% {
     transform: translateX(0) translateY(0) rotate(-2deg);
@@ -100,12 +100,12 @@
   }
 }
 
-.racepass-ride {
-  animation: racepass-ride 1.6s ease-in-out infinite;
+.sportpass-ride {
+  animation: sportpass-ride 1.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .racepass-ride {
+  .sportpass-ride {
     animation: none;
   }
 }

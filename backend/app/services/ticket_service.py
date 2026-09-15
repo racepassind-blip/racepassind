@@ -27,13 +27,13 @@ def _ticket_signing_key(registration: Registration) -> bytes:
 def ticket_token_for_registration(registration: Registration) -> str:
     if not registration.confirmation_token_hash:
         raise ValueError("Registration confirmation credential is missing")
-    message = f"racepass-ticket:{_TICKET_VERSION}:{registration.id}".encode("utf-8")
+    message = f"sportpass-ticket:{_TICKET_VERSION}:{registration.id}".encode("utf-8")
     digest = hmac.new(_ticket_signing_key(registration), message + registration.confirmation_token_hash.encode("utf-8"), hashlib.sha256).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
 def ticket_qr_payload(ticket_token: str) -> str:
-    return "racepass://ticket?" + urlencode({"v": _TICKET_VERSION, "t": ticket_token})
+    return "sportpass://ticket?" + urlencode({"v": _TICKET_VERSION, "t": ticket_token})
 
 
 def verified_ticket_qr_payload(registration: Registration) -> str | None:

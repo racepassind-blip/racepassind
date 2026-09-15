@@ -38,7 +38,7 @@ const Index = () => {
           <div className="max-w-2xl">
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-bold uppercase tracking-[0.16em] backdrop-blur-sm">
               <span className="h-1.5 w-1.5 rounded-full bg-[#ff9933]" />
-              RacePass India
+              SportPass India
               <span className="h-1.5 w-1.5 rounded-full bg-[#138808]" />
             </div>
             <h1 className="text-5xl font-black leading-[1.02] tracking-tight sm:text-6xl lg:text-7xl">

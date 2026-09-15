@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, Interval, Numeric, String, Text, Uuid, func, text
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, Interval, Numeric, String, Text, UniqueConstraint, Uuid, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -192,6 +192,12 @@ class Event(Base):
     billing: Mapped["OrganizerEventBilling | None"] = relationship(
         back_populates="event", cascade="all, delete-orphan", uselist=False
     )
+    courts: Mapped[list["Court"]] = relationship(back_populates="event", cascade="all, delete-orphan")
+    tournament_rounds: Mapped[list["TournamentRound"]] = relationship(back_populates="event", cascade="all, delete-orphan")
+    matches: Mapped[list["Match"]] = relationship(back_populates="event", cascade="all, delete-orphan")
+    checkpoints: Mapped[list["EventCheckpoint"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", order_by="EventCheckpoint.position"
+    )
 
     @property
     def title(self) -> str:
@@ -239,6 +245,19 @@ class Event(Base):
         return self.tickets
 
 
+class Court(Base):
+    __tablename__ = "courts"
+    __table_args__ = (UniqueConstraint("event_id", "name", name="uq_courts_event_name"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    event: Mapped[Event] = relationship(back_populates="courts")
+    matches: Mapped[list["Match"]] = relationship(back_populates="court")
+
+
 class EventCategory(Base):
     __tablename__ = "event_categories"
 
@@ -250,11 +269,54 @@ class EventCategory(Base):
     age_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     age_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
     gender: Mapped[str | None] = mapped_column(String, nullable=True)
+    entry_type: Mapped[str] = mapped_column(String(20), nullable=False, default="singles", server_default="singles")
+    participants_per_entry: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     max_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     event: Mapped[Event] = relationship(back_populates="categories")
+    matches: Mapped[list["Match"]] = relationship(back_populates="category")
+    tournament_rounds: Mapped[list["TournamentRound"]] = relationship(back_populates="category", cascade="all, delete-orphan")
+    scoring_config: Mapped["BadmintonCategoryScoring | None"] = relationship(
+        back_populates="category", cascade="all, delete-orphan", uselist=False
+    )
     tickets: Mapped[list["Ticket"]] = relationship(back_populates="category")
+
+
+class TournamentRound(Base):
+    __tablename__ = "tournament_rounds"
+    __table_args__ = (UniqueConstraint("category_id", "position", name="uq_tournament_rounds_category_position"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
+    category_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("event_categories.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    event: Mapped[Event] = relationship(back_populates="tournament_rounds")
+    category: Mapped[EventCategory] = relationship(back_populates="tournament_rounds")
+    matches: Mapped[list["Match"]] = relationship(back_populates="round")
+
+
+class BadmintonCategoryScoring(Base):
+    __tablename__ = "badminton_category_scoring"
+    __table_args__ = (UniqueConstraint("category_id", name="uq_badminton_category_scoring_category"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
+    category_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("event_categories.id"), nullable=False, index=True)
+    games_to_win: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
+    points_per_game: Mapped[int] = mapped_column(Integer, nullable=False, server_default="21")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    category: Mapped[EventCategory] = relationship(back_populates="scoring_config")
 
 
 class OrganizerEventBilling(Base):
@@ -336,6 +398,51 @@ class Participant(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     registrations: Mapped[list["Registration"]] = relationship(back_populates="participant")
+    registration_memberships: Mapped[list["RegistrationParticipant"]] = relationship(
+        back_populates="participant", cascade="all, delete-orphan"
+    )
+
+
+class EventCheckpoint(Base):
+    __tablename__ = "event_checkpoints"
+    __table_args__ = (
+        UniqueConstraint("event_id", "position", name="uq_event_checkpoints_event_position"),
+        UniqueConstraint("event_id", "name", name="uq_event_checkpoints_event_name"),
+        Index("ix_event_checkpoints_event_position", "event_id", "position"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    event: Mapped[Event] = relationship(back_populates="checkpoints")
+    checkins: Mapped[list["Checkin"]] = relationship(back_populates="checkpoint")
+
+
+class RegistrationParticipant(Base):
+    __tablename__ = "registration_participants"
+    __table_args__ = (
+        UniqueConstraint("registration_id", "participant_index", name="uq_registration_participants_index"),
+        UniqueConstraint("registration_id", "participant_id", name="uq_registration_participants_participant"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    registration_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("registrations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    participant_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("participants.id"), nullable=False, index=True
+    )
+    participant_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    responses: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False, default=dict, server_default=text("'{}'"))
+
+    registration: Mapped["Registration"] = relationship(back_populates="participant_memberships")
+    participant: Mapped[Participant] = relationship(back_populates="registration_memberships")
 
 
 class Registration(Base):
@@ -357,6 +464,7 @@ class Registration(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     payment_status: Mapped[str] = mapped_column(String, nullable=False, server_default="pending")
     source: Mapped[str] = mapped_column(String, nullable=False, server_default="online", index=True)
+    participant_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     unit_price_paise: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_amount_paise: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -375,11 +483,44 @@ class Registration(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     participant: Mapped[Participant] = relationship(back_populates="registrations")
+    participant_memberships: Mapped[list[RegistrationParticipant]] = relationship(
+        back_populates="registration", cascade="all, delete-orphan", order_by="RegistrationParticipant.participant_index"
+    )
     user: Mapped[User | None] = relationship(back_populates="registrations")
     ticket: Mapped[Ticket] = relationship(back_populates="registrations")
     order_items: Mapped[list["OrderItem"]] = relationship(back_populates="registration")
-    checkins: Mapped[list["Checkin"]] = relationship(back_populates="registration")
+    checkins: Mapped[list["Checkin"]] = relationship(back_populates="registration", cascade="all, delete-orphan")
     payment: Mapped["Payment | None"] = relationship(back_populates="registration", uselist=False)
+
+
+class Match(Base):
+    __tablename__ = "matches"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
+    category_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("event_categories.id"), nullable=False, index=True)
+    entry_a_registration_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("registrations.id"), nullable=False, index=True)
+    entry_b_registration_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("registrations.id"), nullable=False, index=True)
+    court_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("courts.id"), nullable=False, index=True)
+    round_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("tournament_rounds.id", ondelete="SET NULL"), nullable=True, index=True)
+    round_label: Mapped[str] = mapped_column(String(160), nullable=False)
+    scheduled_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="scheduled")
+    winner: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    games_to_win: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
+    points_per_game: Mapped[int] = mapped_column(Integer, nullable=False, server_default="21")
+    games: Mapped[list[dict[str, int]]] = mapped_column(JSON_CONFIG, nullable=False, default=list, server_default=text("'[]'"))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    event: Mapped[Event] = relationship(back_populates="matches")
+    category: Mapped[EventCategory] = relationship(back_populates="matches")
+    court: Mapped[Court] = relationship(back_populates="matches")
+    round: Mapped["TournamentRound | None"] = relationship(back_populates="matches")
+    entry_a_registration: Mapped[Registration] = relationship(foreign_keys=[entry_a_registration_id])
+    entry_b_registration: Mapped[Registration] = relationship(foreign_keys=[entry_b_registration_id])
 
 
 class Order(Base):
@@ -440,15 +581,21 @@ class Payment(Base):
 
 class Checkin(Base):
     __tablename__ = "checkins"
-    __table_args__ = (Index("uq_checkins_registration_id", "registration_id", unique=True),)
+    __table_args__ = (
+        Index("uq_checkins_registration_checkpoint_id", "registration_id", "checkpoint_id", unique=True),
+        Index("uq_checkins_legacy_registration_id", "registration_id", unique=True, sqlite_where=text("checkpoint_id IS NULL"), postgresql_where=text("checkpoint_id IS NULL")),
+        Index("ix_checkins_checkpoint_id_checked_in_at", "checkpoint_id", "checked_in_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    registration_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("registrations.id"), nullable=False, index=False)
+    registration_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("registrations.id", ondelete="CASCADE"), nullable=False, index=False)
+    checkpoint_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("event_checkpoints.id", ondelete="CASCADE"), nullable=True, index=True)
     checked_in_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
     checked_in_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     device_info: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     registration: Mapped[Registration] = relationship(back_populates="checkins")
+    checkpoint: Mapped["EventCheckpoint | None"] = relationship(back_populates="checkins")
 
 
 class EventDocument(Base):

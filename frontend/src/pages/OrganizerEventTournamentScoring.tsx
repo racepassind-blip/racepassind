@@ -1,0 +1,48 @@
+import { useNavigate, useParams } from "react-router-dom";
+
+import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
+import OrganizerMatchScoring from "@/components/OrganizerMatchScoring";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useOrganizerEventDashboard } from "@/hooks/useEvents";
+import { getSportConfig } from "@/data/sportConfig";
+
+const OrganizerEventTournamentScoring = () => {
+  const navigate = useNavigate();
+  const { eventId } = useParams();
+  const { data: dashboard, isLoading, isError } = useOrganizerEventDashboard(eventId);
+  const supportsTournament = getSportConfig(dashboard?.event.sport).supports_tournament;
+
+  if (isLoading) {
+    return <OrganizerDashboardLayout eventId={eventId}><div className="px-4 py-20 text-center text-sm text-muted-foreground">Loading scoring workspace…</div></OrganizerDashboardLayout>;
+  }
+
+  if (isError || !dashboard?.event) {
+    return <OrganizerDashboardLayout eventId={eventId}><div className="mx-auto max-w-3xl px-4 py-20 text-center"><p className="text-sm text-muted-foreground">Could not load this event.</p><Button className="mt-4" variant="outline" onClick={() => navigate("/organizer")}>Back to events</Button></div></OrganizerDashboardLayout>;
+  }
+
+  const event = dashboard.event;
+  if (!supportsTournament) {
+    return <OrganizerDashboardLayout eventId={event.id}><div className="mx-auto max-w-3xl px-4 py-20"><Card><CardHeader><CardTitle>Tournament tools unavailable</CardTitle><CardDescription>Tournament tools are currently unavailable for this sport.</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={() => navigate(`/organizer/events/${event.id}`)}>Back to event</Button></CardContent></Card></div></OrganizerDashboardLayout>;
+  }
+
+  return (
+    <OrganizerDashboardLayout eventId={event.id}>
+      <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <Button variant="ghost" className="mb-3 -ml-3 gap-2 px-3 text-muted-foreground" onClick={() => navigate(`/organizer/events/${event.id}`)}>Back to event</Button>
+            <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-primary">Tournament operations</p><Badge variant="outline" className="capitalize">{event.sport.replaceAll("_", " ")}</Badge></div>
+            <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Live scoring</h1>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">Select a scheduled match, enter game scores, and publish the result when the match is complete.</p>
+          </div>
+          <Button variant="outline" onClick={() => navigate(`/organizer/events/${event.id}/tournament/matches`)}>View matches</Button>
+        </div>
+        <OrganizerMatchScoring eventId={event.id} />
+      </div>
+    </OrganizerDashboardLayout>
+  );
+};
+
+export default OrganizerEventTournamentScoring;

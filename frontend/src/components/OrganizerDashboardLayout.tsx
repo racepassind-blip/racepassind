@@ -1,11 +1,13 @@
 import type { ComponentType, ReactNode } from "react";
-import { BarChart3, CalendarDays, ClipboardList, ExternalLink, LayoutDashboard, LogOut, MessageSquare, Package, ScanLine, Settings2, Ticket, CreditCard } from "lucide-react";
+import { BarChart3, CalendarDays, ClipboardList, ExternalLink, Gauge, GitBranch, LayoutDashboard, LogOut, Medal, MessageSquare, Package, ScanLine, Settings2, Ticket, CreditCard, Trophy } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOrganizerEventDashboard } from "@/hooks/useEvents";
+import { getSportConfig } from "@/data/sportConfig";
 import { cn } from "@/lib/utils";
 
 type OrganizerDashboardLayoutProps = {
@@ -24,15 +26,24 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { data: eventDashboard } = useOrganizerEventDashboard(eventId);
   const eventQuery = eventId ? `?event_id=${eventId}&status=all` : "";
+  const currentSportConfig = getSportConfig(eventDashboard?.event.sport);
   const availableItems: NavItem[] = [
     ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: "Events", icon: CalendarDays, to: "/organizer" }, { label: "Plans & pricing", icon: CreditCard, to: "/organizer/pricing" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }]),
+    ...(eventId && currentSportConfig.supports_tournament ? [
+      { label: "Tournament setup", icon: Settings2, to: `/organizer/events/${eventId}/tournament` },
+      { label: "Matches", icon: Trophy, to: `/organizer/events/${eventId}/tournament/matches` },
+      { label: "Scoring", icon: Gauge, to: `/organizer/events/${eventId}/tournament/scoring` },
+      { label: "Results", icon: Medal, to: `/organizer/events/${eventId}/tournament/results` },
+      { label: "Bracket", icon: GitBranch, to: `/organizer/events/${eventId}/tournament/bracket` },
+    ] : []),
     { label: "Registrations", icon: ClipboardList, to: `/organizer/registrations${eventQuery}` },
     ...(eventId ? [{ label: "Communications", icon: MessageSquare, to: `/organizer/events/${eventId}/communications` }] : []),
-    { label: "Check-in", icon: ScanLine, to: "/organizer/check-in" },
+    { label: "Check-in", icon: ScanLine, to: eventId ? `/organizer/check-in?event_id=${encodeURIComponent(eventId)}` : "/organizer/check-in" },
   ];
   const comingSoonItems: NavItem[] = [
-    { label: "Bib & kit", icon: Package },
+    ...(eventId && !currentSportConfig.supports_bib ? [] : [{ label: "Bib & kit", icon: Package }]),
     { label: "Reports", icon: BarChart3 },
   ];
   const initials = user?.name?.split(" ").map((part) => part[0]).join("").toUpperCase() ?? "RP";
@@ -50,7 +61,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
             <div className="flex h-full flex-col p-4 lg:sticky lg:top-0 lg:h-screen">
               <Link to="/organizer" className="mb-6 flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-white/10">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Ticket className="h-5 w-5" /></span>
-                <span><span className="block text-sm font-black tracking-tight">RacePass <span className="text-primary">India</span></span><span className="mt-0.5 block text-xs text-slate-400">Organizer console</span></span>
+                <span><span className="block text-sm font-black tracking-tight">SportPass <span className="text-primary">India</span></span><span className="mt-0.5 block text-xs text-slate-400">Organizer console</span></span>
               </Link>
               <nav className="flex gap-1 overflow-x-auto lg:block lg:space-y-1">
                 {availableItems.map((item) => {

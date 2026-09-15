@@ -15,7 +15,7 @@ def main() -> int:
         print("Refusing to create a local admin in production; use the deployment onboarding process.", file=sys.stderr)
         return 1
 
-    name = os.getenv("ADMIN_NAME", "RacePass Admin").strip()
+    name = os.getenv("ADMIN_NAME", "SportPass Admin").strip()
     email = normalize_email(os.getenv("ADMIN_EMAIL", ""))
     password = os.getenv("ADMIN_PASSWORD", "")
     if not email or not password:

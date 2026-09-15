@@ -36,6 +36,7 @@ def scan_checkin(
             user,
             credential=payload.credential,
             registration_reference=payload.registration_reference,
+            checkpoint_id=payload.checkpoint_id,
             device_info=request.headers.get("user-agent"),
         )
     except RateLimitExceeded as exc:
@@ -52,6 +53,7 @@ def scan_checkin(
             user,
             credential=payload.credential,
             registration_reference=payload.registration_reference,
+            checkpoint_id=payload.checkpoint_id,
             device_info=request.headers.get("user-agent"),
         )
     except CheckinCredentialError as exc:

@@ -53,7 +53,7 @@ export default function FederationsAssociationsComingSoon() {
               </Badge>
               <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Built for Federations &amp; State Associations</h1>
               <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">A dedicated toolkit for managing multi-event, multi-category races — coming soon.</p>
-              <p className="mt-5 max-w-2xl text-sm leading-6 text-muted-foreground">We are shaping RacePass into a shared operating layer for championship calendars, sanctioned events, and regional race series. The capabilities below are designed to help associations maintain continuity across stages while keeping historical results, participant records, and official reporting accessible in one place.</p>
+              <p className="mt-5 max-w-2xl text-sm leading-6 text-muted-foreground">We are shaping SportPass into a shared operating layer for championship calendars, sanctioned events, and regional race series. The capabilities below are designed to help associations maintain continuity across stages while keeping historical results, participant records, and official reporting accessible in one place.</p>
               <Button asChild variant="outline" className="mt-6 gap-2">
                 <Link to="/"><ArrowLeft className="h-4 w-4" /> Back to Events</Link>
               </Button>

@@ -37,7 +37,11 @@ const ORGANIZATION_TYPES = [
   { value: "other", label: "Other" },
 ];
 
-const OrganizerSetup = () => {
+interface OrganizerSetupProps {
+  embedded?: boolean;
+}
+
+const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
   const navigate = useNavigate();
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -113,9 +117,8 @@ const OrganizerSetup = () => {
     }
   };
 
-  return (
-    <OrganizerOnboardingLayout>
-      <div className="mx-auto max-w-3xl space-y-6 px-4 py-10 sm:px-6 lg:px-8">
+  const content = (
+    <div className="mx-auto max-w-3xl space-y-6 px-4 py-10 sm:px-6 lg:px-8">
         <div>
           <p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Organizer setup</p>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Set up your organization</h1>
@@ -189,8 +192,9 @@ const OrganizerSetup = () => {
           </form>
         ) : null}
       </div>
-    </OrganizerOnboardingLayout>
   );
+
+  return embedded ? content : <OrganizerOnboardingLayout>{content}</OrganizerOnboardingLayout>;
 };
 
 export default OrganizerSetup;

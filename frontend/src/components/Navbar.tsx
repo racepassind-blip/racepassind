@@ -49,7 +49,7 @@ export function Navbar() {
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/15">
             <Ticket className="h-5 w-5 text-primary" />
           </span>
-          <span>RacePass <span className="text-primary">India</span></span>
+          <span>SportPass <span className="text-primary">India</span></span>
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">

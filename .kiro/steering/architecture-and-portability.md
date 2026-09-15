@@ -2,9 +2,9 @@
 inclusion: always
 ---
 
-# RacePass Architecture and Portability Rules
+# SportPass Architecture and Portability Rules
 
-These rules apply to every RacePass implementation and infrastructure decision:
+These rules apply to every SportPass implementation and infrastructure decision:
 
 1. Avoid vendor lock-in. Infrastructure integrations must be behind interfaces/adapters and use standard protocols.
 2. PostgreSQL must remain standard PostgreSQL. Domain and service layers must not depend on provider-specific database extensions, APIs, or SDKs.

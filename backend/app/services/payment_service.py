@@ -88,7 +88,7 @@ def build_upi_payment_details(settings: EventPaymentSettings, *, amount_paise: i
     upi_id = normalize_upi_id(settings.upi_id)
     payee_name = settings.payee_name.strip()
     amount = _amount_rupees(amount_paise)
-    transaction_note = f"RacePass {registration_reference}"
+    transaction_note = f"SportPass {registration_reference}"
     uri = "upi://pay?" + urlencode(
         {
             "pa": upi_id,

@@ -26,18 +26,20 @@ _FIELD_ID_PATTERN = re.compile(r"^custom_[a-z0-9_]+$")
 
 def default_field_config(category_options: list[str] | None = None) -> dict[str, list[dict[str, Any]]]:
     fields = []
-    for order, (field_id, definition) in enumerate(PREDEFINED_FIELD_DEFINITIONS.items(), start=1):
+    for field_id, definition in PREDEFINED_FIELD_DEFINITIONS.items():
+        options = definition.get("options")
+        if field_id == "category_distance" and not category_options:
+            continue
         field = {
             "id": field_id,
             "label": definition["label"],
             "type": definition["type"],
             "required": definition["required"],
             "predefined": True,
-            "order": order,
+            "order": len(fields) + 1,
         }
-        options = definition.get("options")
         if options is not None:
-            field["options"] = list(category_options or options) if field_id == "category_distance" else list(options)
+            field["options"] = list(category_options) if field_id == "category_distance" else list(options)
         fields.append(field)
     return {"fields": fields}
 

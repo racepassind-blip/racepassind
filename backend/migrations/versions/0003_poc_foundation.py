@@ -1,4 +1,4 @@
-"""Add RacePass POC security, ownership, and manual-payment primitives."""
+"""Add SportPass POC security, ownership, and manual-payment primitives."""
 
 from __future__ import annotations
 

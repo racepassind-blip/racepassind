@@ -1,6 +1,6 @@
-# RacePass deployment runbook
+# SportPass deployment runbook
 
-This runbook is intentionally provider-neutral. RacePass needs four replaceable infrastructure contracts: a Git-connected static frontend host, a Docker-compatible backend runtime, standard PostgreSQL, and private S3-compatible object storage. A concrete provider may be used as an operational example, but it is not part of the application architecture and can be replaced when the same inputs are available.
+This runbook is intentionally provider-neutral. SportPass needs four replaceable infrastructure contracts: a Git-connected static frontend host, a Docker-compatible backend runtime, standard PostgreSQL, and private S3-compatible object storage. A concrete provider may be used as an operational example, but it is not part of the application architecture and can be replaced when the same inputs are available.
 
 ## 1. What is deployed
 
@@ -90,23 +90,23 @@ sh scripts/migrate.sh
 alembic current
 ```
 
-The expected current head is `0010_organizer_applications`. Keep `AUTO_MIGRATE=false` in production. Application startup must not run migrations, create demo data, or create a default admin account.
+The expected current head is `0028_event_checkpoints`. Keep `AUTO_MIGRATE=false` in production. Application startup must not run migrations, create demo data, or create a default admin account.
 
 Build the backend image from the repository root:
 
 ```sh
-docker build -t racepass-api:local backend
+docker build -t sportpass-api:local backend
 ```
 
 Run a local image smoke test only with development-safe configuration:
 
 ```sh
-docker run --rm --name racepass-api-smoke \
+docker run --rm --name sportpass-api-smoke \
   -e ENVIRONMENT=development \
   -e AUTO_MIGRATE=true \
   -e PORT=8000 \
   -p 8000:8000 \
-  racepass-api:local
+  sportpass-api:local
 ```
 
 Then check:

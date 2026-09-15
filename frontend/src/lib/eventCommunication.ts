@@ -22,6 +22,10 @@ export function buildRegistrationUrl(eventId: string, origin = window.location.o
   return new URL(`/event/${encodeURIComponent(eventId)}`, origin).toString();
 }
 
+export function buildResultsUrl(eventId: string, origin = window.location.origin): string {
+  return new URL(`/event/${encodeURIComponent(eventId)}/results`, origin).toString();
+}
+
 export function formatCommunicationDate(value: string): string {
   const parsed = new Date(`${value.length === 10 ? `${value}T00:00:00` : value}`);
   return Number.isNaN(parsed.getTime())

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -23,12 +23,23 @@ class TicketCreateIn(BaseModel):
 
 class RaceCategoryCreateIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
-    distance: str = Field(min_length=1, max_length=80)
+    distance: str | None = Field(default=None, max_length=80)
     description: str = Field(default="", max_length=1000)
     age_min: int | None = Field(default=None, ge=0, le=120)
     age_max: int | None = Field(default=None, ge=0, le=120)
     gender: str | None = Field(default=None, max_length=40)
+    entry_type: Literal["singles", "doubles", "team"] = "singles"
+    participants_per_entry: int = Field(default=1, ge=1, le=5)
     tickets: list[TicketCreateIn] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_entry_format(self):
+        expected = {"singles": 1, "doubles": 2}.get(self.entry_type)
+        if expected is not None and self.participants_per_entry != expected:
+            raise ValueError(f"{self.entry_type.title()} categories must have exactly {expected} participant")
+        if self.entry_type == "team" and self.participants_per_entry not in {3, 4, 5}:
+            raise ValueError("Team categories must have exactly 3, 4, or 5 participants")
+        return self
 
 
 class EventScheduleItem(BaseModel):
@@ -75,6 +86,16 @@ class OrganizerEventCreateV1(BaseModel):
         return normalize_addon_config(value)
 
     @model_validator(mode="after")
+    def validate_category_distances(self):
+        is_badminton = self.sport.strip().lower() == "badminton"
+        for category in self.categories:
+            normalized_distance = category.distance.strip() if category.distance else None
+            if not is_badminton and not normalized_distance:
+                raise ValueError("Distance is required for non-badminton events")
+            category.distance = normalized_distance if not is_badminton else None
+        return self
+
+    @model_validator(mode="after")
     def validate_coordinates(self):
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError("Latitude and longitude must be provided together")
@@ -95,12 +116,23 @@ class OrganizerTicketUpdateIn(BaseModel):
 class OrganizerCategoryUpdateIn(BaseModel):
     id: UUID | None = None
     name: str = Field(min_length=2, max_length=120)
-    distance: str = Field(min_length=1, max_length=80)
+    distance: str | None = Field(default=None, max_length=80)
     description: str = Field(default="", max_length=1000)
     age_min: int | None = Field(default=None, ge=0, le=120)
     age_max: int | None = Field(default=None, ge=0, le=120)
     gender: str | None = Field(default=None, max_length=40)
+    entry_type: Literal["singles", "doubles", "team"] = "singles"
+    participants_per_entry: int = Field(default=1, ge=1, le=5)
     tickets: list[OrganizerTicketUpdateIn] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_entry_format(self):
+        expected = {"singles": 1, "doubles": 2}.get(self.entry_type)
+        if expected is not None and self.participants_per_entry != expected:
+            raise ValueError(f"{self.entry_type.title()} categories must have exactly {expected} participant")
+        if self.entry_type == "team" and self.participants_per_entry not in {3, 4, 5}:
+            raise ValueError("Team categories must have exactly 3, 4, or 5 participants")
+        return self
 
 
 class OrganizerEventUpdateV1(BaseModel):
@@ -137,6 +169,16 @@ class OrganizerEventUpdateV1(BaseModel):
     @classmethod
     def validate_addon_config(cls, value: dict[str, Any]) -> dict[str, Any]:
         return normalize_addon_config(value)
+
+    @model_validator(mode="after")
+    def validate_category_distances(self):
+        is_badminton = self.sport.strip().lower() == "badminton"
+        for category in self.categories:
+            normalized_distance = category.distance.strip() if category.distance else None
+            if not is_badminton and not normalized_distance:
+                raise ValueError("Distance is required for non-badminton events")
+            category.distance = normalized_distance if not is_badminton else None
+        return self
 
     @model_validator(mode="after")
     def validate_coordinates(self):

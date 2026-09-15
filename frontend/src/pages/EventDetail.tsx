@@ -132,6 +132,7 @@ const EventDetail = () => {
                   </div>
                 ))}
               </div>
+              <Button variant="outline" className="mt-4 gap-2" onClick={() => navigate(`/event/${encodeURIComponent(id ?? "")}/results`)}><Trophy className="h-4 w-4" /> View public results</Button>
             </section>
 
             {/* Description */}
@@ -274,7 +275,7 @@ const EventDetail = () => {
                       const cart = Object.entries(quantities)
                         .filter(([, quantity]) => quantity > 0)
                         .map(([ticketId, quantity]) => ({ ticketId, quantity }));
-                      sessionStorage.setItem(`racepass_cart_${event.id}`, JSON.stringify(cart));
+                      sessionStorage.setItem(`sportpass_cart_${event.id}`, JSON.stringify(cart));
                       navigate(`/checkout/${event.id}`);
                     }}
                   >

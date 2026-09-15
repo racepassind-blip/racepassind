@@ -14,12 +14,13 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.services.auth_service import hash_opaque_token, normalize_email, normalize_phone, utc_now
+from app.services.checkpoint_service import ensure_default_checkpoint
 from app.services.audit_service import record_audit
 from app.services.payment_service import normalize_payment_reference, validate_manual_upi_settings
 from app.services.registration_config_service import calculate_registration_total, normalize_event_configs
 from app.services.ticket_service import serialize_ticket, ticket_token_for_registration
 from app.services.organizer_visibility_service import _authorized_event_ids, get_visibility_for_events, serialize_visibility, visibility_filter_for_events
-from models import Event, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, Ticket, User
+from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, RegistrationParticipant, Ticket, User
 
 
 def _human_reference() -> str:
@@ -34,9 +35,106 @@ def _confirmation_token() -> str:
     return secrets.token_urlsafe(40)
 
 
+def _participant_payload(participant: Participant) -> dict:
+    return {
+        "name": participant.name,
+        "email": participant.email,
+        "phone": participant.phone,
+        "dateOfBirth": participant.date_of_birth,
+        "gender": participant.gender,
+        "jerseySize": participant.jersey_size,
+        "emergencyContact": participant.emergency_contact,
+        "teamName": participant.team_name,
+    }
+
+
+def _member_payload(membership: RegistrationParticipant) -> dict:
+    return {
+        "index": membership.participant_index,
+        "participant": _participant_payload(membership.participant),
+        "responses": membership.responses or {},
+    }
+
+
+def _entry_size(ticket: Ticket) -> int:
+    category = ticket.category
+    return category.participants_per_entry if category is not None else 1
+
+
+def _contact_value(value) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _resolve_shared_contact(entry_email, entry_phone, first_responses: dict) -> tuple[str | None, str | None]:
+    email = _contact_value(entry_email) or _contact_value(first_responses.get("email"))
+    phone = _contact_value(entry_phone) or _contact_value(first_responses.get("phone"))
+    if not email and not phone:
+        raise ValueError("At least one of email or phone is required for the entry")
+    return email, phone
+
+
+def _merge_shared_contact(responses: dict, email: str | None, phone: str | None) -> dict:
+    merged = dict(responses)
+    if email:
+        merged["email"] = email
+    else:
+        merged.pop("email", None)
+    if phone:
+        merged["phone"] = phone
+    else:
+        merged.pop("phone", None)
+    return merged
+
+
+def _participant_from_responses(responses: dict) -> Participant:
+    email_value = responses.get("email")
+    phone_value = responses.get("phone")
+    emergency_name = responses.get("emergency_contact_name")
+    emergency_phone = responses.get("emergency_contact_phone")
+    emergency_contact = " / ".join(str(value) for value in (emergency_name, emergency_phone) if value) or None
+    date_of_birth = dt.date.fromisoformat(str(responses["date_of_birth"])) if responses.get("date_of_birth") else None
+    return Participant(
+        name=str(responses["full_name"]),
+        email=normalize_email(str(email_value)) if email_value else None,
+        normalized_email=normalize_email(str(email_value)) if email_value else None,
+        phone=str(phone_value).strip() if phone_value else None,
+        normalized_phone=normalize_phone(str(phone_value)) if phone_value else None,
+        date_of_birth=date_of_birth,
+        gender=str(responses["gender"]) if responses.get("gender") else None,
+        jersey_size=str(responses["jersey_size"]) if responses.get("jersey_size") else None,
+        emergency_contact=emergency_contact,
+        team_name=str(responses["team_name"]) if responses.get("team_name") else None,
+    )
+
+
+def _create_participant_members(db: Session, member_responses: list[dict]) -> list[Participant]:
+    participants: list[Participant] = []
+    for responses in member_responses:
+        participant = _participant_from_responses(responses)
+        db.add(participant)
+        db.flush()
+        participants.append(participant)
+    return participants
+
+
+def _attach_registration_members(db: Session, registration: Registration, participants: list[Participant], member_responses: list[dict]) -> None:
+    registration.participant_count = len(participants)
+    for index, (participant, responses) in enumerate(zip(participants, member_responses, strict=True), start=1):
+        db.add(RegistrationParticipant(
+            registration_id=registration.id,
+            participant_id=participant.id,
+            participant_index=index,
+            responses=responses,
+        ))
+    db.flush()
+
+
 def registration_query():
     return select(Registration).options(
         selectinload(Registration.participant),
+        selectinload(Registration.participant_memberships).selectinload(RegistrationParticipant.participant),
         selectinload(Registration.ticket).selectinload(Ticket.category),
         selectinload(Registration.payment),
         selectinload(Registration.user),
@@ -50,16 +148,9 @@ def serialize_registration(registration: Registration, *, confirmation_token: st
         "registrationReference": registration.registration_reference,
         "eventId": str(registration.event_id),
         "ticketId": str(registration.ticket_id),
-        "participant": {
-            "name": registration.participant.name,
-            "email": registration.participant.email,
-            "phone": registration.participant.phone,
-            "dateOfBirth": registration.participant.date_of_birth,
-            "gender": registration.participant.gender,
-            "jerseySize": registration.participant.jersey_size,
-            "emergencyContact": registration.participant.emergency_contact,
-            "teamName": registration.participant.team_name,
-        },
+        "participant": _participant_payload(registration.participant),
+        "participants": [_member_payload(member) for member in registration.participant_memberships],
+        "participantCount": registration.participant_count,
         "quantity": registration.quantity,
         "amountPaise": registration.total_amount_paise,
         "responses": registration.responses or {},
@@ -108,7 +199,7 @@ def _registration_responses(payload) -> dict:
     return responses
 
 
-def create_guest_registration(db: Session, payload, *, idempotency_key: str | None, user_id=None) -> tuple[Registration, str, str]:
+def create_guest_registration(db: Session, payload, *, idempotency_key: str | None, user_id=None) -> tuple[Registration, str, str | None]:
     existing = _load_idempotent_registration(db, idempotency_key)
     if existing is not None:
         return existing, "", ""
@@ -166,7 +257,7 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
     computed_total["addonConfig"] = addon_config
     is_free = amount_paise == 0
     confirmation_token = _confirmation_token()
-    claim_code = _claim_code()
+    claim_code = _claim_code() if user_id is None else None
     reservation_until = None
     participant_name = str(responses["full_name"])
     email_value = responses.get("email")
@@ -207,12 +298,19 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
         computed_total=computed_total,
         registration_reference=_human_reference(),
         confirmation_token_hash=hash_opaque_token(confirmation_token),
-        claim_code_hash=hash_opaque_token(claim_code),
-        claim_code_expires_at=now + dt.timedelta(days=7),
+        claim_code_hash=hash_opaque_token(claim_code) if claim_code else None,
+        claim_code_expires_at=now + dt.timedelta(days=7) if claim_code else None,
         reserved_until=reservation_until,
     )
     ticket.quantity_reserved += 1
     db.add(registration)
+    db.flush()
+    db.add(RegistrationParticipant(
+        registration_id=registration.id,
+        participant_id=participant.id,
+        participant_index=1,
+        responses=responses,
+    ))
     db.flush()
     if is_free:
         _release_reservation(ticket, 1)
@@ -351,11 +449,9 @@ def serialize_organizer_registration(registration: Registration, event: Event) -
         "id": str(registration.id),
         "registrationReference": registration.registration_reference,
         "event": {"id": str(event.id), "name": event.name},
-        "participant": {
-            "name": registration.participant.name,
-            "email": registration.participant.email,
-            "phone": registration.participant.phone,
-        },
+        "participant": _participant_payload(registration.participant),
+        "participants": [_member_payload(member) for member in registration.participant_memberships],
+        "participantCount": registration.participant_count,
         "ticket": {
             "id": str(ticket.id),
             "name": ticket.name,
@@ -373,6 +469,15 @@ def serialize_organizer_registration(registration: Registration, event: Event) -
         "receivedAmountPaise": payment.received_amount_paise if payment else None,
         "checkInStatus": "checked_in" if is_checked_in else "not_checked_in",
         "checkedInAt": registration.checked_in_at,
+        "checkpointScans": [
+            {
+                "checkpointId": str(scan.checkpoint_id) if scan.checkpoint_id else None,
+                "checkpointName": scan.checkpoint.name if scan.checkpoint else "Check-In",
+                "scannedAt": scan.checked_in_at,
+                "scannedBy": str(scan.checked_in_by) if scan.checked_in_by else None,
+            }
+            for scan in sorted(registration.checkins, key=lambda item: item.checked_in_at)
+        ],
         "utrReference": payment.utr_reference if payment else None,
         "reservedUntil": registration.reserved_until,
         "createdAt": registration.created_at,
@@ -407,8 +512,10 @@ def _organizer_registration_query(
 ):
     query = _scoped_registration_query(user).add_columns(Event).options(
         joinedload(Registration.participant),
+        joinedload(Registration.participant_memberships).joinedload(RegistrationParticipant.participant),
         joinedload(Registration.ticket).joinedload(Ticket.category),
         joinedload(Registration.payment),
+        selectinload(Registration.checkins).joinedload(Checkin.checkpoint),
     ).join(Participant, Participant.id == Registration.participant_id)
 
     if visibility_event_ids is None:
@@ -550,7 +657,7 @@ def list_organizer_registrations(
 
     rows = db.execute(
         query.order_by(Registration.created_at.desc(), Registration.id.desc()).limit(page_size + 1)
-    ).all()
+    ).unique().all()
     has_more = len(rows) > page_size
     page_rows = rows[:page_size]
     items = [serialize_organizer_registration(registration, event) for registration, event in page_rows]
@@ -705,6 +812,11 @@ def export_organizer_registrations_csv(
     if event is None:
         raise ValueError("Event not found")
 
+    checkpoints = db.scalars(
+        select(EventCheckpoint).where(EventCheckpoint.event_id == event_id).order_by(EventCheckpoint.position, EventCheckpoint.created_at)
+    ).all()
+    if not checkpoints:
+        checkpoints = [ensure_default_checkpoint(db, event_id)]
     rows = db.execute(
         _organizer_registration_query(
             db,
@@ -736,19 +848,33 @@ def export_organizer_registrations_csv(
         raise CsvExportTooLargeError(f"Export exceeds the {_MAX_CSV_EXPORT_ROWS}-row limit")
 
     field_definitions, addon_definitions = _export_config_definitions(event, rows)
-    dynamic_headers = [field.get("label", field.get("id", "")) for field in field_definitions]
+    dynamic_headers = [_csv_cell(f"Checkpoint: {checkpoint.name}") for checkpoint in checkpoints]
+    dynamic_headers += [field.get("label", field.get("id", "")) for field in field_definitions]
     dynamic_headers += [f"Add-on: {addon.get('name', addon.get('id', ''))}" for addon in addon_definitions]
     if field_definitions or addon_definitions or any(registration.computed_total for registration, _ in rows):
         dynamic_headers.append("Computed total")
 
     output = io.StringIO(newline="")
     writer = csv.writer(output, lineterminator="\r\n")
-    writer.writerow(_CSV_HEADERS + dynamic_headers)
+    member_headers = ["Participant count", "Participant names", "Entry format"] if any(
+        registration.participant_count > 1 for registration, _ in rows
+    ) else []
+    writer.writerow(_CSV_HEADERS + member_headers + dynamic_headers)
     for registration, _ in rows:
         ticket = registration.ticket
         payment = registration.payment
         is_checked_in = registration.checked_in or registration.status == "checked_in"
-        dynamic_values = [
+        checkpoint_scans = {scan.checkpoint_id: scan for scan in registration.checkins if scan.checkpoint_id is not None}
+        legacy_scan = next((scan for scan in registration.checkins if scan.checkpoint_id is None), None)
+        checkpoint_values = [
+            _csv_cell(
+                (checkpoint_scans.get(checkpoint.id) or (legacy_scan if checkpoint.position == 1 else None)).checked_in_at
+                if (checkpoint_scans.get(checkpoint.id) or (legacy_scan if checkpoint.position == 1 else None))
+                else registration.checked_in_at if checkpoint.position == 1 and registration.checked_in else None
+            )
+            for checkpoint in checkpoints
+        ]
+        dynamic_values = checkpoint_values + [
             _csv_cell(_legacy_response_value(registration, field.get("id", "")))
             for field in field_definitions
         ]
@@ -758,6 +884,11 @@ def export_organizer_registrations_csv(
         )
         if field_definitions or addon_definitions or registration.computed_total:
             dynamic_values.append(_csv_cell(_csv_amount(registration.total_amount_paise)))
+        member_values = [
+            _csv_cell(registration.participant_count),
+            _csv_cell(" / ".join(member.participant.name for member in registration.participant_memberships) or registration.participant.name),
+            _csv_cell(ticket.category.entry_type if ticket.category else "singles"),
+        ] if member_headers else []
         writer.writerow([
             _csv_cell(registration.registration_reference),
             _csv_cell(registration.participant.name),
@@ -771,6 +902,7 @@ def export_organizer_registrations_csv(
             _csv_cell(payment.utr_reference if payment else None),
             _csv_cell(registration.created_at),
             _csv_cell("checked_in" if is_checked_in else "not_checked_in"),
+            *member_values,
             *dynamic_values,
         ])
     record_audit(
@@ -928,6 +1060,8 @@ def serialize_participant_registration(registration: Registration, event: Event)
             "whatsappGroupUrl": event.whatsapp_group_url if serialized_ticket is not None else None,
         },
         "participantName": registration.participant.name,
+        "participants": [_member_payload(member) for member in registration.participant_memberships],
+        "participantCount": registration.participant_count,
         "ticketType": {
             "name": ticket.name,
             "category": ticket.category.name if ticket.category else None,
@@ -951,6 +1085,7 @@ def _owned_participant_registration_query(user_id):
         .join(Event, Event.id == Registration.event_id)
         .options(
             selectinload(Registration.participant),
+            selectinload(Registration.participant_memberships).selectinload(RegistrationParticipant.participant),
             selectinload(Registration.ticket).selectinload(Ticket.category),
             selectinload(Registration.payment),
         )
@@ -1071,6 +1206,7 @@ def _registrations_for_order(db: Session, order_id) -> list[Registration]:
             .where(OrderItem.order_id == order_id)
             .options(
                 selectinload(Registration.participant),
+                selectinload(Registration.participant_memberships).selectinload(RegistrationParticipant.participant),
                 selectinload(Registration.ticket).selectinload(Ticket.category),
                 selectinload(Registration.payment),
                 selectinload(Registration.user),
@@ -1080,7 +1216,7 @@ def _registrations_for_order(db: Session, order_id) -> list[Registration]:
     )
 
 
-def create_guest_batch_registration(db: Session, payload, *, idempotency_key: str | None, user_id=None) -> tuple[list[Registration], list[str], list[str]]:
+def create_guest_batch_registration(db: Session, payload, *, idempotency_key: str | None, user_id=None) -> tuple[list[Registration], list[str], list[str | None]]:
     existing = _load_idempotent_registration(db, idempotency_key)
     if existing is not None:
         order = _lock_order_for_registration(db, existing.id)
@@ -1099,11 +1235,12 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
     if event.registration_status != "open":
         raise ValueError("Registration is closed")
 
-    ticket_ids = {rider.ticket_id for rider in payload.riders}
+    entries = payload.effective_entries
+    ticket_ids = {entry.ticket_id for entry in entries}
     tickets = {
         ticket.id: ticket
         for ticket in db.scalars(
-            select(Ticket).where(Ticket.id.in_(ticket_ids)).with_for_update()
+            select(Ticket).options(selectinload(Ticket.category)).where(Ticket.id.in_(ticket_ids)).with_for_update()
         ).all()
     }
     if len(tickets) != len(ticket_ids) or any(ticket.event_id != payload.event_id for ticket in tickets.values()):
@@ -1122,31 +1259,51 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
             if label.endswith("closed") and now > aware_value:
                 raise ValueError(label)
     requested_by_ticket: dict[UUID, int] = {}
-    for rider in payload.riders:
-        requested_by_ticket[rider.ticket_id] = requested_by_ticket.get(rider.ticket_id, 0) + 1
+    for entry in entries:
+        requested_by_ticket[entry.ticket_id] = requested_by_ticket.get(entry.ticket_id, 0) + 1
     for ticket_id, requested in requested_by_ticket.items():
         if tickets[ticket_id].available < requested:
             raise ValueError(f"Not enough spots left for {tickets[ticket_id].name}")
 
     field_config, addon_config = normalize_event_configs(event.field_config, event.addon_config)
     prepared: list[dict] = []
-    for rider in payload.riders:
-        responses, selections, computed_total = calculate_registration_total(
-            field_config,
-            addon_config,
-            dict(rider.responses or {}),
-            rider.selections,
-            base_fee_paise=tickets[rider.ticket_id].price,
+    for entry in entries:
+        ticket = tickets[entry.ticket_id]
+        expected_members = _entry_size(ticket)
+        if len(entry.participants) != expected_members:
+            raise ValueError(f"{ticket.category.name if ticket.category else 'This'} entry requires exactly {expected_members} participants")
+        first_responses = dict(entry.participants[0].responses or {})
+        shared_email, shared_phone = _resolve_shared_contact(
+            getattr(entry, "email", None),
+            getattr(entry, "phone", None),
+            first_responses,
         )
+        member_responses: list[dict] = []
+        normalized_selections: dict = {}
+        computed_total: dict | None = None
+        for index, member in enumerate(entry.participants):
+            responses, selections, member_total = calculate_registration_total(
+                field_config,
+                addon_config,
+                _merge_shared_contact(dict(member.responses or {}), shared_email, shared_phone),
+                entry.selections,
+                base_fee_paise=ticket.price,
+            )
+            member_responses.append(responses)
+            if index == 0:
+                normalized_selections = selections
+                computed_total = member_total
+        assert computed_total is not None
         computed_total["fieldConfig"] = field_config
         computed_total["addonConfig"] = addon_config
         amount_paise = computed_total["totalPaise"]
         if amount_paise > 0 and event.payment_settings is None:
             raise ValueError("Manual UPI payment settings are not configured")
         prepared.append({
-            "rider": rider,
-            "responses": responses,
-            "selections": selections,
+            "entry": entry,
+            "member_responses": member_responses,
+            "responses": member_responses[0],
+            "selections": normalized_selections,
             "computed_total": computed_total,
             "amount_paise": amount_paise,
         })
@@ -1155,41 +1312,23 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
     if total_amount_paise > 0:
         validate_manual_upi_settings(event.payment_settings)
     confirmation_tokens: list[str] = []
-    claim_codes: list[str] = []
+    claim_codes: list[str | None] = []
     registrations: list[Registration] = []
     for item in prepared:
-        rider = item["rider"]
+        entry = item["entry"]
         responses = item["responses"]
         amount_paise = item["amount_paise"]
         is_free = amount_paise == 0
         confirmation_token = _confirmation_token()
-        claim_code = _claim_code()
+        claim_code = _claim_code() if user_id is None else None
         confirmation_tokens.append(confirmation_token)
         claim_codes.append(claim_code)
-        email_value = responses.get("email")
-        phone_value = responses.get("phone")
-        emergency_contact = " / ".join(str(value) for value in (
-            responses.get("emergency_contact_name"), responses.get("emergency_contact_phone")
-        ) if value) or None
-        date_of_birth = dt.date.fromisoformat(str(responses["date_of_birth"])) if responses.get("date_of_birth") else None
-        participant = Participant(
-            name=str(responses["full_name"]),
-            email=normalize_email(str(email_value)) if email_value else None,
-            normalized_email=normalize_email(str(email_value)) if email_value else None,
-            phone=str(phone_value).strip() if phone_value else None,
-            normalized_phone=normalize_phone(str(phone_value)) if phone_value else None,
-            date_of_birth=date_of_birth,
-            gender=str(responses["gender"]) if responses.get("gender") else None,
-            jersey_size=str(responses["jersey_size"]) if responses.get("jersey_size") else None,
-            emergency_contact=emergency_contact,
-            team_name=str(responses["team_name"]) if responses.get("team_name") else None,
-        )
-        db.add(participant)
-        db.flush()
-        ticket = tickets[rider.ticket_id]
+        participants = _create_participant_members(db, item["member_responses"])
+        ticket = tickets[entry.ticket_id]
         registration = Registration(
             event_id=event.id,
-            participant_id=participant.id,
+            participant_id=participants[0].id,
+            participant_count=len(participants),
             user_id=user_id,
             ticket_id=ticket.id,
             category_id=ticket.category_id,
@@ -1203,12 +1342,13 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
             computed_total=item["computed_total"],
             registration_reference=_human_reference(),
             confirmation_token_hash=hash_opaque_token(confirmation_token),
-            claim_code_hash=hash_opaque_token(claim_code),
-            claim_code_expires_at=now + dt.timedelta(days=7),
+            claim_code_hash=hash_opaque_token(claim_code) if claim_code else None,
+            claim_code_expires_at=now + dt.timedelta(days=7) if claim_code else None,
         )
         ticket.quantity_reserved += 1
         db.add(registration)
         db.flush()
+        _attach_registration_members(db, registration, participants, item["member_responses"])
         if is_free:
             _release_reservation(ticket, 1)
             ticket.quantity_sold += 1
@@ -1258,7 +1398,7 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
         .where(Event.id == payload.event_id)
         .with_for_update()
     )
-    ticket = db.scalar(select(Ticket).where(Ticket.id == payload.ticket_id).with_for_update())
+    ticket = db.scalar(select(Ticket).options(selectinload(Ticket.category)).where(Ticket.id == payload.ticket_id).with_for_update())
     existing = _load_idempotent_registration(db, idempotency_key)
     if existing is not None:
         return existing, event
@@ -1276,13 +1416,32 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
         event.addon_config,
         category_options=sorted({category.distance for category in event.categories if category.distance}),
     )
-    responses, selections, computed_total = calculate_registration_total(
-        field_config,
-        addon_config,
-        payload.responses,
-        payload.selections,
-        base_fee_paise=ticket.price,
+    expected_members = _entry_size(ticket)
+    raw_member_responses = [member.responses for member in payload.participants] if payload.participants else [payload.responses]
+    if len(raw_member_responses) != expected_members:
+        raise ValueError(f"{ticket.category.name if ticket.category else 'This'} entry requires exactly {expected_members} participants")
+    shared_email, shared_phone = _resolve_shared_contact(
+        getattr(payload, "email", None),
+        getattr(payload, "phone", None),
+        dict(raw_member_responses[0] or {}),
     )
+    member_responses: list[dict] = []
+    selections: dict = {}
+    computed_total: dict | None = None
+    for index, raw_responses in enumerate(raw_member_responses):
+        normalized_responses, normalized_selections, member_total = calculate_registration_total(
+            field_config,
+            addon_config,
+            _merge_shared_contact(dict(raw_responses or {}), shared_email, shared_phone),
+            payload.selections,
+            base_fee_paise=ticket.price,
+        )
+        member_responses.append(normalized_responses)
+        if index == 0:
+            selections = normalized_selections
+            computed_total = member_total
+    assert computed_total is not None
+    responses = member_responses[0]
     computed_total["fieldConfig"] = field_config
     computed_total["addonConfig"] = addon_config
     amount_paise = computed_total["totalPaise"]
@@ -1295,31 +1454,13 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
     now = utc_now()
     confirmation_token = _confirmation_token()
     claim_code = _claim_code()
-    email_value = responses.get("email")
-    phone_value = responses.get("phone")
-    emergency_contact = " / ".join(str(value) for value in (
-        responses.get("emergency_contact_name"), responses.get("emergency_contact_phone")
-    ) if value) or None
-    date_of_birth = dt.date.fromisoformat(str(responses["date_of_birth"])) if responses.get("date_of_birth") else None
-    participant = Participant(
-        name=str(responses["full_name"]),
-        email=normalize_email(str(email_value)) if email_value else None,
-        normalized_email=normalize_email(str(email_value)) if email_value else None,
-        phone=str(phone_value).strip() if phone_value else None,
-        normalized_phone=normalize_phone(str(phone_value)) if phone_value else None,
-        date_of_birth=date_of_birth,
-        gender=str(responses["gender"]) if responses.get("gender") else None,
-        jersey_size=str(responses["jersey_size"]) if responses.get("jersey_size") else None,
-        emergency_contact=emergency_contact,
-        team_name=str(responses["team_name"]) if responses.get("team_name") else None,
-    )
-    db.add(participant)
-    db.flush()
+    participants = _create_participant_members(db, member_responses)
 
     confirmed = is_free or payload.payment_received
     registration = Registration(
         event_id=event.id,
-        participant_id=participant.id,
+        participant_id=participants[0].id,
+        participant_count=len(participants),
         user_id=None,
         ticket_id=ticket.id,
         category_id=ticket.category_id,
@@ -1340,6 +1481,7 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
     ticket.quantity_reserved += 1
     db.add(registration)
     db.flush()
+    _attach_registration_members(db, registration, participants, member_responses)
     if confirmed:
         _release_reservation(ticket, 1)
         ticket.quantity_sold += 1

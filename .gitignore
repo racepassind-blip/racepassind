@@ -24,3 +24,10 @@ frontend/.git-frontend-history/
 # Local/editor files
 .DS_Store
 .vscode/
+# Secrets / scratch files (never commit)
+*.sh.sh
+**/Cloudflaretoken*
+*token*.txt
+**/Untitled-*.md
+semantic-review/
+skills-lock.json
