@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiRequest } from "@/lib/api";
 import { scrollToTop } from "@/lib/scroll";
 import type { OrganizerVisibility } from "@/hooks/useEvents";
@@ -416,11 +417,61 @@ const OrganizerRegistrations = () => {
           </div>}
         </div>
 
-        {decisionTarget && <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-          <p className="mb-2 font-semibold">{decisionTarget.decision === "reject" ? "Why are you rejecting this payment?" : "Optional approval note"}</p>
-          <Textarea value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} placeholder={decisionTarget.decision === "reject" ? "Explain what the runner should correct or contact you about…" : "Optional note for the payment record"} />
-          <div className="mt-3 flex gap-2"><Button onClick={() => { const registration = registrations.find((item) => item.id === decisionTarget.id); if (registration) void decide(registration, decisionTarget.decision); }} disabled={actionId === decisionTarget.id}>{actionId === decisionTarget.id ? "Saving…" : decisionTarget.decision === "reject" ? "Reject payment" : "Approve payment"}</Button><Button variant="outline" onClick={() => { setDecisionTarget(null); setReason(""); }}>Cancel</Button></div>
-        </div>}
+        {decisionTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md overflow-hidden rounded-2xl border bg-card shadow-2xl animate-in fade-in zoom-in duration-200">
+              <div className="p-6">
+                <h3 className="text-lg font-bold">
+                  {decisionTarget.decision === "reject" 
+                    ? "Reject this payment" 
+                    : "Approve this registration"}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {decisionTarget.decision === "reject" 
+                    ? "Let the participant know what to fix or contact you about. This message will be visible to them." 
+                    : "Add a brief note to the registration record (optional)."}
+                </p>
+                <div className="mt-4">
+                  <Textarea 
+                    value={reason} 
+                    onChange={(event) => setReason(event.target.value)} 
+                    maxLength={1000} 
+                    placeholder={decisionTarget.decision === "reject" ? "Explain what the runner should correct or contact you about…" : "Enter a note (optional)…"}
+                    className="min-h-[120px]"
+                  />
+                  <div className="mt-2 flex justify-end">
+                    <span className="text-xs text-muted-foreground">
+                      {reason.length}/1000 characters
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-6 flex items-center justify-end gap-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => { setDecisionTarget(null); setReason(""); }}
+                    disabled={actionId === decisionTarget.id}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={() => { 
+                      const registration = registrations.find((item) => item.id === decisionTarget.id); 
+                      if (registration) void decide(registration, decisionTarget.decision); 
+                    }} 
+                    disabled={actionId === decisionTarget.id}
+                    autoFocus
+                  >
+                    {actionId === decisionTarget.id 
+                      ? "Processing…" 
+                      : decisionTarget.decision === "reject" 
+                        ? "Reject payment" 
+                        : "Approve payment"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="overflow-hidden rounded-xl border bg-card">
           {loading ? <div className="p-10 text-center text-muted-foreground">Loading registrations…</div> : error ? <div className="p-10 text-center text-destructive">{error}</div> : registrations.length === 0 ? <div className="p-10 text-center text-muted-foreground">No registrations match these filters.</div> : <Table>
@@ -436,7 +487,7 @@ const OrganizerRegistrations = () => {
                 <TableCell><div className="space-y-1">{registrationBadge(registration.status)}<p className="text-xs text-muted-foreground">{formatDate(registration.createdAt)}</p></div></TableCell>
                 <TableCell>{registration.checkInStatus === "checked_in" ? <span className="text-xs font-medium text-accent">Checked in</span> : <span className="text-xs text-muted-foreground">Not checked in</span>}</TableCell>
                 <TableCell>{registration.utrReference ? <span className="font-mono text-sm">{registration.utrReference}</span> : <span className="text-xs text-muted-foreground">Not provided</span>}</TableCell>
-                <TableCell className="text-right">{isReviewable ? <div className="flex justify-end gap-1"><Button variant="ghost" size="sm" className="gap-1 text-accent" onClick={() => { setDecisionTarget({ id: registration.id, decision: "approve" }); setReason(""); }} disabled={actionId !== null}><Check className="h-3 w-3" />Approve</Button><Button variant="ghost" size="sm" className="gap-1 text-destructive" onClick={() => { setDecisionTarget({ id: registration.id, decision: "reject" }); setReason(""); }} disabled={actionId !== null}><X className="h-3 w-3" />Reject</Button></div> : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />No action</span>}</TableCell>
+                <TableCell className="text-right">{isReviewable ? <div className="flex justify-end gap-1"><TooltipProvider><Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => { setDecisionTarget({ id: registration.id, decision: "approve" }); setReason(""); }} disabled={actionId !== null}><Check className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Approve</p></TooltipContent></Tooltip><Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => { setDecisionTarget({ id: registration.id, decision: "reject" }); setReason(""); }} disabled={actionId !== null}><X className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Reject</p></TooltipContent></Tooltip></TooltipProvider></div> : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />No action</span>}</TableCell>
               </TableRow>;
             })}</TableBody>
           </Table>}
