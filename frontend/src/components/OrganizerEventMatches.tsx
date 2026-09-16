@@ -42,9 +42,10 @@ function matchSideLabel(entry: OrganizerMatch["entryA"], players: OrganizerMatch
 }
 
 function entryOptionLabel(entry: { displayName: string; participantName: string; participantNames?: string[]; teamName: string | null; registrationReference: string | null }) {
-  // For teams: show team name followed by all member names. For singles/doubles the
-  // displayName already contains the member name(s), so keep it as-is.
-  const group = entry.teamName ? `${entry.teamName} · ${entryMemberNames(entry)}` : entry.displayName;
+  // For teams: show only the team name in the Entry A/B dropdowns — specific members
+  // are chosen in the player dropdowns below. For singles/doubles the displayName
+  // already contains the member name(s), so keep it as-is.
+  const group = entry.teamName ? entry.teamName : entry.displayName;
   return `${group}${entry.registrationReference ? ` (${entry.registrationReference})` : ""}`;
 }
 
