@@ -465,10 +465,13 @@ const Checkout = () => {
           const fields = fieldsForRider(entryRider);
           
           // Group fields by type
-          const teamInfoFields = fields.filter((f) => f.id === "team_name" || f.id === "captain_name");
+          // Team info fields (collected once): team_name, captain_name
+          const teamInfoFieldIds = ["team_name", "captain_name"];
+          const teamInfoFields = fields.filter((f) => teamInfoFieldIds.includes(f.id));
           const contactFields = fields.filter((f) => CONTACT_FIELD_IDS.includes(f.id));
-          const memberFields = fields.filter((f) => f.id === "full_name" || f.id.startsWith("custom_") || f.type === "select" || f.type === "dropdown" || f.type === "yes_no" || f.type === "date" || f.type === "number" || f.type === "text");
-          const allOtherFields = fields.filter((f) => !teamInfoFields.includes(f) && !contactFields.includes(f) && !memberFields.includes(f));
+          // Per-member fields: everything that is NOT team info and NOT contact
+          const memberFields = fields.filter((f) => !teamInfoFieldIds.includes(f.id) && !CONTACT_FIELD_IDS.includes(f.id));
+          const allOtherFields: ParticipantFieldConfig[] = [];
 
           return (
             <div key={entryKey} className="overflow-hidden rounded-2xl border-2 border-primary/30 bg-card shadow-sm">
