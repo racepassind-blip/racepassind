@@ -386,19 +386,27 @@ const Checkout = () => {
   };
   const renderFieldGrid = (rider: RiderDraft, groupFields: ParticipantFieldConfig[]) => groupFields.length > 0 && <div className="grid gap-4 sm:grid-cols-2">{groupFields.map((field) => <div key={field.id} className={`space-y-2 ${field.id === "full_name" || field.id.startsWith("custom_") ? "sm:col-span-2" : ""}`}><Label>{field.label}{field.required ? " *" : ""}</Label>{fieldInput(rider, field)}</div>)}</div>;
 
-  // Team-specific view: show all participants in a table/grid
+  // Team-specific view: show all participants in a table/grid with all fields together per member
   const teamParticipantsView = () => {
     const entryKeys = Array.from(new Set(riders.map((r) => r.entryKey)));
+    const firstRider = riders[0];
+    const firstTier = firstRider ? event?.tiers.find((tier) => tier.id === firstRider.ticketId) : undefined;
+    const minMembers = firstTier?.teamSizeMin ?? 1;
+    const maxMembers = firstTier?.teamSizeMax ?? 50;
+
     return (
       <div className="space-y-6">
         {entryKeys.map((entryKey, entryIdx) => {
           const entryRiders = riders.filter((r) => r.entryKey === entryKey).sort((a, b) => a.participantIndex - b.participantIndex);
           const entryRider = entryRiders[0];
           const fields = fieldsForRider(entryRider);
+          
+          // Group fields by type
           const teamInfoFields = fields.filter((f) => f.id === "team_name" || f.id === "captain_name");
-          const identityFields = fields.filter((f) => f.id === "full_name");
           const contactFields = fields.filter((f) => CONTACT_FIELD_IDS.includes(f.id));
-          const otherFields = fields.filter((f) => !teamInfoFields.includes(f) && !identityFields.includes(f) && !contactFields.includes(f));
+          const memberFields = fields.filter((f) => f.id === "full_name" || f.id.startsWith("custom_") || f.type === "select" || f.type === "dropdown" || f.type === "yes_no" || f.type === "date" || f.type === "number" || f.type === "text");
+          const allOtherFields = fields.filter((f) => !teamInfoFields.includes(f) && !contactFields.includes(f) && !memberFields.includes(f));
+
           return (
             <div key={entryKey} className="overflow-hidden rounded-2xl border-2 border-primary/30 bg-card shadow-sm">
               <div className="flex items-start justify-between gap-4 bg-primary/5 px-5 py-4 sm:px-6">
@@ -406,10 +414,10 @@ const Checkout = () => {
                   <p className="text-xs font-semibold uppercase tracking-wider text-primary">
                     Entry {entryIdx + 1} · {entryRiders.length} member{entryRiders.length !== 1 ? "s" : ""}
                   </p>
-                  <h3 className="mt-1 text-xl font-bold">{activeTier?.name}</h3>
+                  <h3 className="mt-1 text-xl font-bold">{firstTier?.name}</h3>
                 </div>
                 <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
-                  <p className="whitespace-nowrap text-lg font-bold text-primary">₹{activeTier?.price.toLocaleString("en-IN")}</p>
+                  <p className="whitespace-nowrap text-lg font-bold text-primary">₹{firstTier?.price.toLocaleString("en-IN")}</p>
                 </div>
               </div>
               <div className="space-y-6 p-5 sm:p-6">
@@ -423,24 +431,47 @@ const Checkout = () => {
                     {renderFieldGrid(entryRider, teamInfoFields)}
                   </section>
                 )}
-                {/* Per-member details */}
+
+                {/* All member details in a single row per member */}
                 <section className="space-y-4 border-b pb-6">
-                  <div>
-                    <h4 className="font-bold">Member details</h4>
-                    <p className="text-sm text-muted-foreground">Use the person who will participate in this event.</p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold">Member details</h4>
+                      <p className="text-sm text-muted-foreground">Use the person who will participate in this event.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      {entryRiders.length < maxMembers && (
+                        <Button type="button" variant="outline" size="sm" onClick={() => addTeamMember(entryKey, firstRider?.ticketId || "")}>
+                          <Plus className="mr-1 h-4 w-4" /> Add member
+                        </Button>
+                      )}
+                      {entryRiders.length > minMembers && (
+                        <Button type="button" variant="outline" size="sm" onClick={() => removeTeamMember(entryRiders[entryRiders.length - 1].key)}>
+                          <Trash2 className="mr-1 h-4 w-4" /> Remove
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-4">
-                    {entryRiders.map((rider) => (
-                      <div key={rider.key} className="rounded-xl border bg-secondary/20 p-4">
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Member {rider.participantIndex + 1}</span>
-                          {!riderReady(rider) && <span className="text-xs text-amber-600">Incomplete</span>}
+                  <div className="space-y-3">
+                    {entryRiders.map((rider, idx) => {
+                      const memberFieldsGroup = memberFields.concat(allOtherFields).sort((a, b) => a.order - b.order);
+                      return (
+                        <div key={rider.key} className="overflow-hidden rounded-xl border bg-secondary/20 shadow-sm">
+                          <div className="border-b bg-muted/30 px-4 py-2">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              Member {rider.participantIndex + 1}
+                            </span>
+                            {!riderReady(rider) && <span className="ml-2 text-xs text-amber-600">Incomplete</span>}
+                          </div>
+                          <div className="p-4">
+                            {renderFieldGrid(rider, memberFieldsGroup)}
+                          </div>
                         </div>
-                        {renderFieldGrid(rider, identityFields)}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </section>
+
                 {/* Captain contact (collected once per entry) */}
                 {contactFields.length > 0 && (
                   <section className="space-y-4 border-b pb-6">
@@ -451,8 +482,9 @@ const Checkout = () => {
                     {renderFieldGrid(entryRider, contactFields)}
                   </section>
                 )}
-                {/* Other fields */}
-                {otherFields.length > 0 && (
+
+                {/* Other fields (if any remain) */}
+                {allOtherFields.length > 0 && entryRiders.some((r) => otherFields.some((f) => r.responses[f.id] !== undefined)) && (
                   <section className="space-y-4">
                     <div>
                       <h4 className="font-bold">Event details</h4>
@@ -460,11 +492,13 @@ const Checkout = () => {
                     </div>
                     <div className="space-y-4">
                       {entryRiders.map((rider) => (
-                        <div key={rider.key} className="rounded-xl border bg-secondary/20 p-4">
-                          <div className="mb-3 flex items-center justify-between">
+                        <div key={rider.key} className="overflow-hidden rounded-xl border bg-secondary/20 shadow-sm">
+                          <div className="border-b bg-muted/30 px-4 py-2">
                             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Member {rider.participantIndex + 1} details</span>
                           </div>
-                          {renderFieldGrid(rider, otherFields)}
+                          <div className="p-4">
+                            {renderFieldGrid(rider, allOtherFields)}
+                          </div>
                         </div>
                       ))}
                     </div>
