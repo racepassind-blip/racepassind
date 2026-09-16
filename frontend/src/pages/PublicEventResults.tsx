@@ -6,8 +6,54 @@ import { Layout } from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { usePublicEventResults } from "@/hooks/useEvents";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { usePublicEventResults, usePublicStandings } from "@/hooks/useEvents";
 import type { PublicMatchResult } from "@/hooks/useEvents";
+
+function PublicStandings({ eventId, categoryId, categoryName }: { eventId: string; categoryId: string; categoryName: string }) {
+  const { data: standings = [], isLoading } = usePublicStandings(eventId, categoryId);
+  if (isLoading || standings.length === 0) return null;
+  return (
+    <Card className="mt-5">
+      <CardHeader>
+        <CardTitle>Standings — {categoryName}</CardTitle>
+        <CardDescription>League table from completed team matches.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <Table className="min-w-[560px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Team</TableHead>
+                <TableHead className="text-center">P</TableHead>
+                <TableHead className="text-center">W</TableHead>
+                <TableHead className="text-center">D</TableHead>
+                <TableHead className="text-center">L</TableHead>
+                <TableHead className="text-center">BW</TableHead>
+                <TableHead className="text-center">BL</TableHead>
+                <TableHead className="text-center font-bold">Pts</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {standings.map((row) => (
+                <TableRow key={row.registrationId}>
+                  <TableCell className="font-medium">{row.teamName}</TableCell>
+                  <TableCell className="text-center">{row.matchesPlayed}</TableCell>
+                  <TableCell className="text-center">{row.wins}</TableCell>
+                  <TableCell className="text-center">{row.draws}</TableCell>
+                  <TableCell className="text-center">{row.losses}</TableCell>
+                  <TableCell className="text-center">{row.boutsWon}</TableCell>
+                  <TableCell className="text-center">{row.boutsLost}</TableCell>
+                  <TableCell className="text-center font-bold">{row.points}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 type StatusFilter = "all" | PublicMatchResult["status"];
 
@@ -129,6 +175,10 @@ const PublicEventResults = () => {
               </div>
             )}
           </div>
+
+          {data.categories.filter((category) => category.entryType === "team").map((category) => (
+            <PublicStandings key={category.id} eventId={data.event.id} categoryId={category.id} categoryName={category.name} />
+          ))}
 
           <div className="mt-8 flex justify-center"><Button asChild variant="ghost" className="gap-2"><a href={`/event/${encodeURIComponent(data.event.id)}`}><ExternalLink className="h-4 w-4" /> View full event page</a></Button></div>
         </div>

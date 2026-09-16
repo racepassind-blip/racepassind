@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { OrganizerMatch } from "@/hooks/useEvents";
 import { useOrganizerMatches } from "@/hooks/useEvents";
+import MatchBoutPanel from "@/components/MatchBoutPanel";
 import { apiRequest } from "@/lib/api";
 
 interface OrganizerMatchScoringProps {
@@ -86,7 +87,11 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
 
   const saveScores = async (complete: boolean) => {
     if (!selectedMatch) return;
-    if (complete && !winner) { toast.error("Select the winner before completing the match."); return; }
+    const isTeamAuto = selectedMatch.category.entryType === "team" && selectedMatch.winnerBy !== "manual";
+    // For team matches decided by bouts, the winner is auto-computed server-side.
+    const effectiveWinner = isTeamAuto ? (selectedMatch.winner ?? winner) : winner;
+    if (complete && !isTeamAuto && !winner) { toast.error("Select the winner before completing the match."); return; }
+    if (complete && isTeamAuto && !effectiveWinner) { toast.error("Record bout results so a winner can be determined, or use manual scoring."); return; }
     const games = [];
     for (const row of rows) {
       if (row.scoreA === "" && row.scoreB === "") continue;
@@ -115,7 +120,7 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
           round_label: selectedMatch.roundLabel,
           scheduled_time: selectedMatch.scheduledTime,
           status: complete ? "completed" : "in_progress",
-          winner: complete ? winner : null,
+          winner: complete ? effectiveWinner : null,
           games,
         }),
       });
@@ -187,47 +192,77 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    {rows.map((row, index) => (
-                      <div key={row.gameNumber} className="grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3">
-                        <div className="pb-2 text-sm font-medium">Game {row.gameNumber}</div>
+                  {selectedMatch.category.entryType === "team" ? (
+                    <>
+                      <MatchBoutPanel eventId={eventId} match={selectedMatch} />
+                      <div className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-end sm:justify-between">
                         <div className="space-y-2">
-                          <Label htmlFor={`score-a-${selectedMatch.id}-${row.gameNumber}`}>Entry A</Label>
-                          <Input id={`score-a-${selectedMatch.id}-${row.gameNumber}`} type="number" min={0} max={30} inputMode="numeric" value={row.scoreA} onChange={(e) => updateRow(index, "scoreA", e.target.value)} />
+                          <Label htmlFor={`score-winner-${selectedMatch.id}`}>Winner {selectedMatch.winnerBy === "manual" ? "(manual)" : "(auto from bouts)"}</Label>
+                          <select
+                            id={`score-winner-${selectedMatch.id}`}
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-64 disabled:opacity-60"
+                            value={winner}
+                            disabled={selectedMatch.winnerBy !== "manual"}
+                            onChange={(e) => setWinner(e.target.value as "entry_a" | "entry_b" | "")}
+                          >
+                            <option value="">Select winner</option>
+                            <option value="entry_a">Entry A — {selectedMatch.entryA.displayName}</option>
+                            <option value="entry_b">Entry B — {selectedMatch.entryB.displayName}</option>
+                          </select>
+                          {selectedMatch.winnerBy !== "manual" && <p className="text-xs text-muted-foreground">The winner is decided automatically by bout majority. Switch scoring to “manual” in Tournament setup to override.</p>}
                         </div>
-                        <div className="space-y-2">
-                          <Label htmlFor={`score-b-${selectedMatch.id}-${row.gameNumber}`}>Entry B</Label>
-                          <Input id={`score-b-${selectedMatch.id}-${row.gameNumber}`} type="number" min={0} max={30} inputMode="numeric" value={row.scoreB} onChange={(e) => updateRow(index, "scoreB", e.target.value)} />
+                        <div className="flex gap-2">
+                          <Button type="button" onClick={() => void saveScores(true)} disabled={isSaving || (selectedMatch.winnerBy === "manual" && !winner)}>
+                            <CheckCircle2 className="mr-2 h-4 w-4" />Complete match
+                          </Button>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="space-y-3">
+                        {rows.map((row, index) => (
+                          <div key={row.gameNumber} className="grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3">
+                            <div className="pb-2 text-sm font-medium">Game {row.gameNumber}</div>
+                            <div className="space-y-2">
+                              <Label htmlFor={`score-a-${selectedMatch.id}-${row.gameNumber}`}>Entry A</Label>
+                              <Input id={`score-a-${selectedMatch.id}-${row.gameNumber}`} type="number" min={0} max={30} inputMode="numeric" value={row.scoreA} onChange={(e) => updateRow(index, "scoreA", e.target.value)} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor={`score-b-${selectedMatch.id}-${row.gameNumber}`}>Entry B</Label>
+                              <Input id={`score-b-${selectedMatch.id}-${row.gameNumber}`} type="number" min={0} max={30} inputMode="numeric" value={row.scoreB} onChange={(e) => updateRow(index, "scoreB", e.target.value)} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
 
-                  <p className="text-xs leading-5 text-muted-foreground">Normal target: {selectedMatch.pointsPerGame}. Deuce can continue to 30; the hard cap is 30–29. SportPass does not calculate or validate the winner.</p>
+                      <p className="text-xs leading-5 text-muted-foreground">Normal target: {selectedMatch.pointsPerGame}. Deuce can continue to 30; the hard cap is 30–29. SportPass does not calculate or validate the winner.</p>
 
-                  <div className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-end sm:justify-between">
-                    <div className="space-y-2">
-                      <Label htmlFor={`score-winner-${selectedMatch.id}`}>Winner</Label>
-                      <select
-                        id={`score-winner-${selectedMatch.id}`}
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-64"
-                        value={winner}
-                        onChange={(e) => setWinner(e.target.value as "entry_a" | "entry_b" | "")}
-                      >
-                        <option value="">Select winner</option>
-                        <option value="entry_a">Entry A — {selectedMatch.entryA.displayName}</option>
-                        <option value="entry_b">Entry B — {selectedMatch.entryB.displayName}</option>
-                      </select>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="button" variant="outline" onClick={() => void saveScores(false)} disabled={isSaving}>
-                        <Save className="mr-2 h-4 w-4" />Save scores
-                      </Button>
-                      <Button type="button" onClick={() => void saveScores(true)} disabled={isSaving}>
-                        <CheckCircle2 className="mr-2 h-4 w-4" />Complete match
-                      </Button>
-                    </div>
-                  </div>
+                      <div className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-end sm:justify-between">
+                        <div className="space-y-2">
+                          <Label htmlFor={`score-winner-${selectedMatch.id}`}>Winner</Label>
+                          <select
+                            id={`score-winner-${selectedMatch.id}`}
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-64"
+                            value={winner}
+                            onChange={(e) => setWinner(e.target.value as "entry_a" | "entry_b" | "")}
+                          >
+                            <option value="">Select winner</option>
+                            <option value="entry_a">Entry A — {selectedMatch.entryA.displayName}</option>
+                            <option value="entry_b">Entry B — {selectedMatch.entryB.displayName}</option>
+                          </select>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button type="button" variant="outline" onClick={() => void saveScores(false)} disabled={isSaving}>
+                            <Save className="mr-2 h-4 w-4" />Save scores
+                          </Button>
+                          <Button type="button" onClick={() => void saveScores(true)} disabled={isSaving}>
+                            <CheckCircle2 className="mr-2 h-4 w-4" />Complete match
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </>

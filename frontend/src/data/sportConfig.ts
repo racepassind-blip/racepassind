@@ -35,8 +35,24 @@ const DEFAULT_SPORT_CONFIG: SportConfig = {
   supports_tournament: false,
 };
 
-export function getSportConfig(sport: string | null | undefined): SportConfig {
+export function getSportConfig(
+  sport: string | null | undefined,
+  options?: { hasTeamCategories?: boolean },
+): SportConfig {
   const normalizedSport = sport?.trim().toLowerCase();
-  if (!normalizedSport) return DEFAULT_SPORT_CONFIG;
-  return sportConfig[normalizedSport as ConfiguredSport] ?? DEFAULT_SPORT_CONFIG;
+  const base = (!normalizedSport ? DEFAULT_SPORT_CONFIG : sportConfig[normalizedSport as ConfiguredSport] ?? DEFAULT_SPORT_CONFIG);
+  // Team-format events (any sport) unlock the tournament tooling.
+  if (options?.hasTeamCategories) {
+    return { ...base, supports_tournament: true };
+  }
+  return base;
+}
+
+/** True when an event should expose tournament tooling: badminton, or any event with a team category. */
+export function eventSupportsTournament(
+  sport: string | null | undefined,
+  categories?: Array<{ entryType?: string }> | null,
+): boolean {
+  const hasTeam = Boolean(categories?.some((category) => category.entryType === "team"));
+  return getSportConfig(sport, { hasTeamCategories: hasTeam }).supports_tournament;
 }

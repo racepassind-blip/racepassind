@@ -16,6 +16,10 @@ PREDEFINED_FIELD_DEFINITIONS: dict[str, dict[str, Any]] = {
     "blood_group": {"label": "Blood group", "type": "select", "required": False, "options": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]},
     "college_organization": {"label": "College / organization name", "type": "text", "required": False},
     "category_distance": {"label": "Category / distance", "type": "select", "required": False, "options": []},
+    # Team-specific predefined fields
+    "captain_name": {"label": "Captain name", "type": "text", "required": True},
+    "captain_phone": {"label": "Captain phone", "type": "phone", "required": True},
+    "captain_email": {"label": "Captain email", "type": "email", "required": True},
 }
 
 PREDEFINED_FIELD_IDS = frozenset(PREDEFINED_FIELD_DEFINITIONS)
@@ -129,6 +133,151 @@ def normalize_field_config(config: dict[str, Any] | None, *, category_options: l
     return {"fields": normalized}
 
 
+# ---------------------------------------------------------------------------
+# Team registration: two-section field config
+# Section A = main registrant / captain fields (collected once per entry)
+# Section B = per-participant fields (repeated for every team member)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_MAIN_REGISTRANT_FIELDS: list[dict[str, Any]] = [
+    {"id": "team_name",     "label": "Team name",     "type": "text",  "required": True,  "predefined": True, "order": 1},
+    {"id": "captain_name",  "label": "Captain name",  "type": "text",  "required": True,  "predefined": True, "order": 2},
+    {"id": "captain_phone", "label": "Captain phone", "type": "phone", "required": True,  "predefined": True, "order": 3},
+    {"id": "captain_email", "label": "Captain email", "type": "email", "required": True,  "predefined": True, "order": 4},
+]
+
+_DEFAULT_PARTICIPANT_FIELDS: list[dict[str, Any]] = [
+    {"id": "full_name",     "label": "Full name",      "type": "text",     "required": True,  "predefined": True, "order": 1},
+    {"id": "date_of_birth", "label": "Date of birth",  "type": "date",     "required": True,  "predefined": True, "order": 2},
+    {"id": "blood_group",   "label": "Blood group",    "type": "dropdown", "required": False, "predefined": True, "order": 3,
+     "options": ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"]},
+    {"id": "jersey_size",   "label": "Jersey size",    "type": "dropdown", "required": False, "predefined": True, "order": 4,
+     "options": ["XS", "S", "M", "L", "XL", "XXL"]},
+]
+
+
+def _normalize_team_section(
+    raw_fields: list[Any],
+    *,
+    section_label: str,
+    locked_id: str,
+    custom_count_ref: list[int],
+    max_custom: int = 10,
+) -> list[dict[str, Any]]:
+    """Validate and normalise one section of a team field_config."""
+    if not isinstance(raw_fields, list) or len(raw_fields) > len(PREDEFINED_FIELD_IDS) + max_custom:
+        raise ValueError(f"{section_label} configuration is invalid")
+
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(raw_fields, start=1):
+        if not isinstance(raw, dict):
+            raise ValueError(f"{section_label} field configuration is invalid")
+        field_id = _clean_text(raw.get("id"), f"{section_label} field id", max_length=60)
+        if field_id in seen:
+            raise ValueError(f"{section_label} field ids must be unique")
+        seen.add(field_id)
+        predefined = bool(raw.get("predefined", field_id in PREDEFINED_FIELD_IDS))
+        if predefined:
+            if field_id not in PREDEFINED_FIELD_IDS:
+                raise ValueError(f"Unknown predefined field '{field_id}' in {section_label}")
+            definition = PREDEFINED_FIELD_DEFINITIONS[field_id]
+            field_type = definition["type"]
+            label = definition["label"]
+            required = bool(raw.get("required", definition["required"]))
+        else:
+            custom_count_ref[0] += 1
+            if custom_count_ref[0] > max_custom or not _FIELD_ID_PATTERN.fullmatch(field_id):
+                raise ValueError(f"A maximum of {max_custom} custom participant fields is allowed across all sections")
+            field_type = _clean_text(raw.get("type"), "Custom participant field type", max_length=20)
+            if field_type not in CUSTOM_FIELD_TYPES:
+                raise ValueError("Unsupported custom participant field type")
+            label = _clean_text(raw.get("label"), "Custom participant field label")
+            required = bool(raw.get("required", False))
+
+        # Locked field is always required
+        if field_id == locked_id:
+            required = True
+
+        field: dict[str, Any] = {
+            "id": field_id,
+            "label": label,
+            "type": field_type,
+            "required": required,
+            "predefined": predefined,
+            "order": index,
+        }
+        if field_type in {"select", "dropdown"}:
+            raw_options = raw.get("options")
+            if not isinstance(raw_options, list):
+                raise ValueError(f"Options are required for {label}")
+            options = []
+            for option in raw_options:
+                option_text = _clean_text(option, f"Option for {label}", max_length=80)
+                if option_text not in options:
+                    options.append(option_text)
+            if not options:
+                raise ValueError(f"At least one option is required for {label}")
+            field["options"] = options
+        normalized.append(field)
+
+    # Ensure the locked field is present
+    if not any(f["id"] == locked_id for f in normalized):
+        raise ValueError(f"'{locked_id}' is required and cannot be removed from {section_label}")
+    return normalized
+
+
+def normalize_team_field_config(config: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalise a two-section team field_config.
+
+    Returns a dict with keys:
+      ``main_registrant_fields`` — Section A (captain / team info, once per entry)
+      ``participant_fields``     — Section B (per-member fields)
+      ``fields``                 — empty list kept for schema compatibility
+    """
+    if not config:
+        return {
+            "main_registrant_fields": list(_DEFAULT_MAIN_REGISTRANT_FIELDS),
+            "participant_fields": list(_DEFAULT_PARTICIPANT_FIELDS),
+            "fields": [],
+        }
+
+    custom_count_ref: list[int] = [0]  # mutable counter shared across both sections
+
+    raw_main = config.get("main_registrant_fields")
+    if raw_main is None:
+        main_fields = list(_DEFAULT_MAIN_REGISTRANT_FIELDS)
+    else:
+        main_fields = _normalize_team_section(
+            raw_main,
+            section_label="Main registrant fields",
+            locked_id="team_name",
+            custom_count_ref=custom_count_ref,
+        )
+
+    raw_participant = config.get("participant_fields")
+    if raw_participant is None:
+        participant_fields = list(_DEFAULT_PARTICIPANT_FIELDS)
+    else:
+        participant_fields = _normalize_team_section(
+            raw_participant,
+            section_label="Per-participant fields",
+            locked_id="full_name",
+            custom_count_ref=custom_count_ref,
+        )
+
+    return {
+        "main_registrant_fields": main_fields,
+        "participant_fields": participant_fields,
+        "fields": [],
+    }
+
+
+def is_team_field_config(config: dict[str, Any] | None) -> bool:
+    """Return True if config uses the two-section team layout."""
+    return bool(config and ("main_registrant_fields" in config or "participant_fields" in config))
+
+
 def normalize_addon_config(config: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
     if not config:
         return default_addon_config()
@@ -195,6 +344,8 @@ def normalize_event_configs(
     *,
     category_options: list[str] | None = None,
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
+    if is_team_field_config(field_config):
+        return (normalize_team_field_config(field_config), normalize_addon_config(addon_config))
     return (
         normalize_field_config(field_config, category_options=category_options),
         normalize_addon_config(addon_config),
@@ -237,10 +388,32 @@ def calculate_registration_total(
     selections: dict[str, Any] | None,
     *,
     base_fee_paise: int,
+    is_team_member: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Validate responses and compute the registration total.
+
+    For team registrations, set ``is_team_member=True`` for participant indices
+    > 0 so that per-member rows are validated against ``participant_fields``
+    only (no email/phone contact check applies).  For participant index 0 (the
+    captain) or any non-team registration, leave ``is_team_member=False``.
+    """
     responses = responses or {}
     selections = selections or {}
-    fields = field_config["fields"]
+
+    # Choose the correct field list depending on config type and participant role
+    if is_team_field_config(field_config):
+        if is_team_member:
+            # Per-member row: validate against Section B only
+            fields = field_config.get("participant_fields", [])
+            require_contact = False
+        else:
+            # Captain / primary registrant: validate Section A + Section B combined
+            fields = field_config.get("main_registrant_fields", []) + field_config.get("participant_fields", [])
+            require_contact = True
+    else:
+        fields = field_config["fields"]
+        require_contact = True
+
     known_fields = {field["id"]: field for field in fields}
     unknown_fields = set(responses) - set(known_fields)
     if unknown_fields:
@@ -253,7 +426,8 @@ def calculate_registration_total(
                 raise ValueError(f"{field['label']} is required")
             continue
         normalized_responses[field["id"]] = _response_value(value, field)
-    if not normalized_responses.get("email") and not normalized_responses.get("phone"):
+    if require_contact and not normalized_responses.get("email") and not normalized_responses.get("phone") \
+            and not normalized_responses.get("captain_email") and not normalized_responses.get("captain_phone"):
         raise ValueError("At least one of email or phone is required")
 
     addons = addon_config["addons"]

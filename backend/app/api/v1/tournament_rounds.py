@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_authorized_event, require_csrf, require_roles
+from app.api.deps import get_authorized_event, require_csrf, require_roles, require_tournament_capable
 from app.schemas.tournament_rounds import TournamentRoundsIn
 from app.services.tournament_round_service import (
     TournamentRoundValidationError,
@@ -16,11 +16,6 @@ from db import get_db
 from models import User
 
 router = APIRouter()
-
-
-def _require_badminton(event) -> None:
-    if event.category.casefold() != "badminton":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tournament rounds are not available for this event")
 
 
 def _validation_error(error: TournamentRoundValidationError) -> HTTPException:
@@ -37,7 +32,7 @@ def get_tournament_rounds(
     db: Session = Depends(get_db),
 ) -> list[dict]:
     event = get_authorized_event(db, user, event_id)
-    _require_badminton(event)
+    require_tournament_capable(event, db)
     try:
         return list_tournament_rounds(db, event, category_id)
     except TournamentRoundValidationError as exc:
@@ -54,7 +49,7 @@ def put_tournament_rounds(
     db: Session = Depends(get_db),
 ) -> list[dict]:
     event = get_authorized_event(db, user, event_id)
-    _require_badminton(event)
+    require_tournament_capable(event, db)
     try:
         return update_tournament_rounds(db, event, category_id, payload)
     except TournamentRoundValidationError as exc:

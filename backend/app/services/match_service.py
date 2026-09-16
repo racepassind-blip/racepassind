@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.organizer_visibility_service import confirmed_registration_condition, get_event_visibility
-from models import BadmintonCategoryScoring, Court, Event, EventCategory, Match, Registration, RegistrationParticipant, Ticket, TournamentRound
+from models import BadmintonCategoryScoring, Court, Event, EventCategory, Match, MatchBout, Registration, RegistrationParticipant, TeamMatchScoring, Ticket, TournamentRound
 
 
 class MatchValidationError(ValueError):
@@ -171,11 +171,11 @@ def _serialize_entry(registration: Registration) -> dict:
     }
 
 
-def serialize_match(match: Match) -> dict:
-    return {
+def serialize_match(match: Match, *, include_bouts: bool = False) -> dict:
+    result = {
         "id": str(match.id),
         "eventId": str(match.event_id),
-        "category": {"id": str(match.category.id), "name": match.category.name},
+        "category": {"id": str(match.category.id), "name": match.category.name, "entryType": match.category.entry_type},
         "entryA": _serialize_entry(match.entry_a_registration),
         "entryB": _serialize_entry(match.entry_b_registration),
         "court": {"id": str(match.court.id), "name": match.court.name},
@@ -189,6 +189,7 @@ def serialize_match(match: Match) -> dict:
         "scheduledTime": match.scheduled_time.isoformat() if match.scheduled_time else None,
         "status": match.status,
         "winner": match.winner,
+        "winnerBy": match.winner_by,
         "gamesToWin": match.games_to_win,
         "pointsPerGame": match.points_per_game,
         "games": [
@@ -198,6 +199,9 @@ def serialize_match(match: Match) -> dict:
         "createdAt": match.created_at.isoformat(),
         "updatedAt": match.updated_at.isoformat(),
     }
+    if include_bouts:
+        result["bouts"] = [_serialize_bout(b) for b in (match.bouts or [])]
+    return result
 
 
 def _match_query(event_id: UUID):
@@ -373,3 +377,350 @@ def _get_serialized_match(db: Session, event_id: UUID, match_id: UUID) -> dict:
     if match is None:
         raise MatchValidationError("Match not found after save")
     return serialize_match(match)
+
+
+# ---------------------------------------------------------------------------
+# Bout serialisation helpers
+# ---------------------------------------------------------------------------
+
+def _serialize_bout(bout: MatchBout) -> dict:
+    return {
+        "id": str(bout.id),
+        "matchId": str(bout.match_id),
+        "eventId": str(bout.event_id),
+        "courtId": str(bout.court_id) if bout.court_id else None,
+        "court": {"id": str(bout.court.id), "name": bout.court.name} if bout.court else None,
+        "playerARegParticipantId": str(bout.player_a_reg_participant_id) if bout.player_a_reg_participant_id else None,
+        "playerBRegParticipantId": str(bout.player_b_reg_participant_id) if bout.player_b_reg_participant_id else None,
+        "playerAName": bout.player_a_name,
+        "playerBName": bout.player_b_name,
+        "status": bout.status,
+        "winner": bout.winner,
+        "scoreA": bout.score_a,
+        "scoreB": bout.score_b,
+        "scheduledTime": bout.scheduled_time.isoformat() if bout.scheduled_time else None,
+        "createdAt": bout.created_at.isoformat(),
+        "updatedAt": bout.updated_at.isoformat(),
+    }
+
+
+def _bout_query(match_id: UUID):
+    return (
+        select(MatchBout)
+        .options(
+            joinedload(MatchBout.court),
+            joinedload(MatchBout.player_a),
+            joinedload(MatchBout.player_b),
+        )
+        .where(MatchBout.match_id == match_id)
+        .order_by(MatchBout.scheduled_time, MatchBout.created_at, MatchBout.id)
+    )
+
+
+def _get_match_for_event(db: Session, event_id: UUID, match_id: UUID) -> Match:
+    match = db.scalar(select(Match).where(Match.id == match_id, Match.event_id == event_id))
+    if match is None:
+        raise MatchValidationError("Match not found")
+    return match
+
+
+def _validate_bout_players(
+    db: Session,
+    match: Match,
+    player_a_rp_id: UUID | None,
+    player_b_rp_id: UUID | None,
+) -> None:
+    """Validate that player participant IDs belong to the correct entry registration."""
+    if player_a_rp_id is None and player_b_rp_id is None:
+        return
+    entry_a_rp_ids = {rp.id for rp in match.entry_a_registration.participant_memberships}
+    entry_b_rp_ids = {rp.id for rp in match.entry_b_registration.participant_memberships}
+    if player_a_rp_id is not None and player_a_rp_id not in entry_a_rp_ids:
+        raise MatchValidationError("Player A must be a member of Entry A")
+    if player_b_rp_id is not None and player_b_rp_id not in entry_b_rp_ids:
+        raise MatchValidationError("Player B must be a member of Entry B")
+
+
+# ---------------------------------------------------------------------------
+# Bout CRUD
+# ---------------------------------------------------------------------------
+
+def list_bouts(db: Session, event_id: UUID, match_id: UUID) -> list[dict]:
+    _get_match_for_event(db, event_id, match_id)
+    bouts = db.scalars(_bout_query(match_id)).unique().all()
+    return [_serialize_bout(b) for b in bouts]
+
+
+def create_bout(db: Session, event_id: UUID, match_id: UUID, payload) -> dict:
+    match = db.scalar(
+        select(Match)
+        .options(
+            joinedload(Match.entry_a_registration).joinedload(Registration.participant_memberships),
+            joinedload(Match.entry_b_registration).joinedload(Registration.participant_memberships),
+        )
+        .where(Match.id == match_id, Match.event_id == event_id)
+    )
+    if match is None:
+        raise MatchValidationError("Match not found")
+    _validate_bout_players(db, match, payload.player_a_reg_participant_id, payload.player_b_reg_participant_id)
+
+    # Resolve display names from RegistrationParticipant if IDs provided but names not
+    player_a_name = payload.player_a_name
+    player_b_name = payload.player_b_name
+    if payload.player_a_reg_participant_id and not player_a_name:
+        rp = db.get(RegistrationParticipant, payload.player_a_reg_participant_id)
+        player_a_name = rp.participant.name if rp and rp.participant else None
+    if payload.player_b_reg_participant_id and not player_b_name:
+        rp = db.get(RegistrationParticipant, payload.player_b_reg_participant_id)
+        player_b_name = rp.participant.name if rp and rp.participant else None
+
+    bout = MatchBout(
+        match_id=match_id,
+        event_id=event_id,
+        court_id=payload.court_id,
+        player_a_reg_participant_id=payload.player_a_reg_participant_id,
+        player_b_reg_participant_id=payload.player_b_reg_participant_id,
+        player_a_name=player_a_name,
+        player_b_name=player_b_name,
+        status=payload.status,
+        winner=payload.winner,
+        score_a=payload.score_a,
+        score_b=payload.score_b,
+        scheduled_time=payload.scheduled_time,
+    )
+    db.add(bout)
+    db.flush()
+    if payload.status == "completed" and match.winner_by in (None, "bouts"):
+        _recompute_match_winner(db, match)
+    db.commit()
+    db.refresh(bout)
+    return _serialize_bout(bout)
+
+
+def update_bout(db: Session, event_id: UUID, match_id: UUID, bout_id: UUID, payload) -> dict:
+    match = db.scalar(
+        select(Match)
+        .options(
+            joinedload(Match.entry_a_registration).joinedload(Registration.participant_memberships),
+            joinedload(Match.entry_b_registration).joinedload(Registration.participant_memberships),
+        )
+        .where(Match.id == match_id, Match.event_id == event_id)
+    )
+    if match is None:
+        raise MatchValidationError("Match not found")
+    bout = db.scalar(select(MatchBout).where(MatchBout.id == bout_id, MatchBout.match_id == match_id))
+    if bout is None:
+        raise MatchValidationError("Bout not found")
+    _validate_bout_players(db, match, payload.player_a_reg_participant_id, payload.player_b_reg_participant_id)
+
+    bout.court_id = payload.court_id
+    bout.player_a_reg_participant_id = payload.player_a_reg_participant_id
+    bout.player_b_reg_participant_id = payload.player_b_reg_participant_id
+    if payload.player_a_name is not None:
+        bout.player_a_name = payload.player_a_name
+    if payload.player_b_name is not None:
+        bout.player_b_name = payload.player_b_name
+    bout.status = payload.status
+    bout.winner = payload.winner
+    bout.score_a = payload.score_a
+    bout.score_b = payload.score_b
+    bout.scheduled_time = payload.scheduled_time
+
+    if match.winner_by in (None, "bouts"):
+        _recompute_match_winner(db, match)
+    db.commit()
+    db.refresh(bout)
+    return _serialize_bout(bout)
+
+
+def delete_bout(db: Session, event_id: UUID, match_id: UUID, bout_id: UUID) -> None:
+    match = _get_match_for_event(db, event_id, match_id)
+    bout = db.scalar(select(MatchBout).where(MatchBout.id == bout_id, MatchBout.match_id == match_id))
+    if bout is None:
+        raise MatchValidationError("Bout not found")
+    db.delete(bout)
+    db.flush()
+    if match.winner_by in (None, "bouts"):
+        _recompute_match_winner(db, match)
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Auto-compute match winner from bout majority
+# ---------------------------------------------------------------------------
+
+def _recompute_match_winner(db: Session, match: Match) -> None:
+    """Update match.winner based on completed bout results (majority wins)."""
+    bouts = db.scalars(
+        select(MatchBout).where(MatchBout.match_id == match.id, MatchBout.status == "completed")
+    ).all()
+    wins_a = sum(1 for b in bouts if b.winner == "player_a")
+    wins_b = sum(1 for b in bouts if b.winner == "player_b")
+    if wins_a > wins_b:
+        match.winner = "entry_a"
+    elif wins_b > wins_a:
+        match.winner = "entry_b"
+    else:
+        match.winner = None  # tie — organiser can set manually
+
+
+# ---------------------------------------------------------------------------
+# Team match scoring config
+# ---------------------------------------------------------------------------
+
+DEFAULT_POINTS_FOR_WIN = 3
+DEFAULT_POINTS_FOR_DRAW = 1
+DEFAULT_POINTS_FOR_LOSS = 0
+
+
+def _team_scoring_config(db: Session, event: Event, category_id: UUID, *, create: bool = False) -> TeamMatchScoring | None:
+    config = db.scalar(
+        select(TeamMatchScoring).where(
+            TeamMatchScoring.event_id == event.id,
+            TeamMatchScoring.category_id == category_id,
+        )
+    )
+    if config is None and create:
+        config = TeamMatchScoring(
+            event_id=event.id,
+            category_id=category_id,
+        )
+        db.add(config)
+        db.flush()
+    return config
+
+
+def get_team_scoring(db: Session, event: Event, category_id: UUID) -> dict:
+    config = _team_scoring_config(db, event, category_id, create=True)
+    assert config is not None
+    db.commit()
+    return _serialize_team_scoring(config)
+
+
+def update_team_scoring(db: Session, event: Event, category_id: UUID, payload) -> dict:
+    category = db.scalar(select(EventCategory).where(EventCategory.id == category_id, EventCategory.event_id == event.id))
+    if category is None:
+        raise MatchValidationError("Category not found for this event")
+    if category.entry_type != "team":
+        raise MatchValidationError("Team scoring config is only available for team-format categories")
+    config = _team_scoring_config(db, event, category_id, create=True)
+    assert config is not None
+    config.points_for_win = payload.points_for_win
+    config.points_for_draw = payload.points_for_draw
+    config.points_for_loss = payload.points_for_loss
+    config.winner_by = payload.winner_by
+    db.commit()
+    db.refresh(config)
+    return _serialize_team_scoring(config)
+
+
+def _serialize_team_scoring(config: TeamMatchScoring) -> dict:
+    return {
+        "id": str(config.id),
+        "categoryId": str(config.category_id),
+        "pointsForWin": config.points_for_win,
+        "pointsForDraw": config.points_for_draw,
+        "pointsForLoss": config.points_for_loss,
+        "winnerBy": config.winner_by,
+        "updatedAt": config.updated_at.isoformat(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Standings computation
+# ---------------------------------------------------------------------------
+
+def compute_standings(db: Session, event_id: UUID, category_id: UUID) -> list[dict]:
+    """Return sorted standings for a team category."""
+    category = db.scalar(select(EventCategory).where(EventCategory.id == category_id))
+    if category is None or category.event_id != event_id:
+        raise MatchValidationError("Category not found for this event")
+    if category.entry_type != "team":
+        raise MatchValidationError("Standings are only available for team-format categories")
+
+    # Load scoring config (use defaults if not set)
+    config = db.scalar(
+        select(TeamMatchScoring).where(
+            TeamMatchScoring.event_id == event_id,
+            TeamMatchScoring.category_id == category_id,
+        )
+    )
+    pts_win = config.points_for_win if config else DEFAULT_POINTS_FOR_WIN
+    pts_draw = config.points_for_draw if config else DEFAULT_POINTS_FOR_DRAW
+    pts_loss = config.points_for_loss if config else DEFAULT_POINTS_FOR_LOSS
+
+    # Load all completed matches
+    matches = db.scalars(
+        select(Match)
+        .options(
+            joinedload(Match.entry_a_registration).joinedload(Registration.participant),
+            joinedload(Match.entry_b_registration).joinedload(Registration.participant),
+            joinedload(Match.bouts),
+        )
+        .where(
+            Match.event_id == event_id,
+            Match.category_id == category_id,
+            Match.status == "completed",
+        )
+    ).unique().all()
+
+    # Accumulate stats per registration_id
+    stats: dict[str, dict] = {}
+
+    def _ensure(reg) -> dict:
+        rid = str(reg.id)
+        if rid not in stats:
+            stats[rid] = {
+                "registrationId": rid,
+                "teamName": reg.participant.team_name or reg.participant.name,
+                "captainName": reg.participant.name,
+                "matchesPlayed": 0,
+                "wins": 0,
+                "draws": 0,
+                "losses": 0,
+                "boutsWon": 0,
+                "boutsLost": 0,
+                "points": 0,
+            }
+        return stats[rid]
+
+    for match in matches:
+        entry_a = match.entry_a_registration
+        entry_b = match.entry_b_registration
+        sa = _ensure(entry_a)
+        sb = _ensure(entry_b)
+        sa["matchesPlayed"] += 1
+        sb["matchesPlayed"] += 1
+
+        if match.winner == "entry_a":
+            sa["wins"] += 1
+            sa["points"] += pts_win
+            sb["losses"] += 1
+            sb["points"] += pts_loss
+        elif match.winner == "entry_b":
+            sb["wins"] += 1
+            sb["points"] += pts_win
+            sa["losses"] += 1
+            sa["points"] += pts_loss
+        else:
+            sa["draws"] += 1
+            sa["points"] += pts_draw
+            sb["draws"] += 1
+            sb["points"] += pts_draw
+
+        # Bouts
+        for bout in match.bouts:
+            if bout.status != "completed":
+                continue
+            if bout.winner == "player_a":
+                sa["boutsWon"] += 1
+                sb["boutsLost"] += 1
+            elif bout.winner == "player_b":
+                sb["boutsWon"] += 1
+                sa["boutsLost"] += 1
+
+    # Sort: points DESC, boutsWon DESC, boutsLost ASC
+    return sorted(
+        stats.values(),
+        key=lambda r: (-r["points"], -r["boutsWon"], r["boutsLost"]),
+    )

@@ -57,8 +57,17 @@ def _member_payload(membership: RegistrationParticipant) -> dict:
 
 
 def _entry_size(ticket: Ticket) -> int:
+    """Minimum required number of participants for this ticket (= team_size_min for team entries)."""
     category = ticket.category
     return category.participants_per_entry if category is not None else 1
+
+
+def _max_entry_size(ticket: Ticket) -> int:
+    """Maximum allowed number of participants for this ticket."""
+    category = ticket.category
+    if category is not None and category.entry_type == "team" and category.team_size_max is not None:
+        return category.team_size_max
+    return _entry_size(ticket)
 
 
 def _contact_value(value) -> str | None:
@@ -68,8 +77,16 @@ def _contact_value(value) -> str | None:
 
 
 def _resolve_shared_contact(entry_email, entry_phone, first_responses: dict) -> tuple[str | None, str | None]:
-    email = _contact_value(entry_email) or _contact_value(first_responses.get("email"))
-    phone = _contact_value(entry_phone) or _contact_value(first_responses.get("phone"))
+    email = (
+        _contact_value(entry_email)
+        or _contact_value(first_responses.get("email"))
+        or _contact_value(first_responses.get("captain_email"))
+    )
+    phone = (
+        _contact_value(entry_phone)
+        or _contact_value(first_responses.get("phone"))
+        or _contact_value(first_responses.get("captain_phone"))
+    )
     if not email and not phone:
         raise ValueError("At least one of email or phone is required for the entry")
     return email, phone
@@ -1269,9 +1286,14 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
     prepared: list[dict] = []
     for entry in entries:
         ticket = tickets[entry.ticket_id]
-        expected_members = _entry_size(ticket)
-        if len(entry.participants) != expected_members:
-            raise ValueError(f"{ticket.category.name if ticket.category else 'This'} entry requires exactly {expected_members} participants")
+        min_members = _entry_size(ticket)
+        max_members = _max_entry_size(ticket)
+        count = len(entry.participants)
+        if count < min_members or count > max_members:
+            category_label = ticket.category.name if ticket.category else "This"
+            if min_members == max_members:
+                raise ValueError(f"{category_label} entry requires exactly {min_members} participants")
+            raise ValueError(f"{category_label} entry requires between {min_members} and {max_members} participants")
         first_responses = dict(entry.participants[0].responses or {})
         shared_email, shared_phone = _resolve_shared_contact(
             getattr(entry, "email", None),
@@ -1281,6 +1303,7 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
         member_responses: list[dict] = []
         normalized_selections: dict = {}
         computed_total: dict | None = None
+        is_team = ticket.category is not None and ticket.category.entry_type == "team"
         for index, member in enumerate(entry.participants):
             responses, selections, member_total = calculate_registration_total(
                 field_config,
@@ -1288,6 +1311,7 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
                 _merge_shared_contact(dict(member.responses or {}), shared_email, shared_phone),
                 entry.selections,
                 base_fee_paise=ticket.price,
+                is_team_member=(is_team and index > 0),
             )
             member_responses.append(responses)
             if index == 0:
@@ -1416,10 +1440,15 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
         event.addon_config,
         category_options=sorted({category.distance for category in event.categories if category.distance}),
     )
-    expected_members = _entry_size(ticket)
     raw_member_responses = [member.responses for member in payload.participants] if payload.participants else [payload.responses]
-    if len(raw_member_responses) != expected_members:
-        raise ValueError(f"{ticket.category.name if ticket.category else 'This'} entry requires exactly {expected_members} participants")
+    min_members = _entry_size(ticket)
+    max_members = _max_entry_size(ticket)
+    count = len(raw_member_responses)
+    if count < min_members or count > max_members:
+        category_label = ticket.category.name if ticket.category else "This"
+        if min_members == max_members:
+            raise ValueError(f"{category_label} entry requires exactly {min_members} participants")
+        raise ValueError(f"{category_label} entry requires between {min_members} and {max_members} participants")
     shared_email, shared_phone = _resolve_shared_contact(
         getattr(payload, "email", None),
         getattr(payload, "phone", None),
@@ -1428,6 +1457,7 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
     member_responses: list[dict] = []
     selections: dict = {}
     computed_total: dict | None = None
+    is_team = ticket.category is not None and ticket.category.entry_type == "team"
     for index, raw_responses in enumerate(raw_member_responses):
         normalized_responses, normalized_selections, member_total = calculate_registration_total(
             field_config,
@@ -1435,6 +1465,7 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
             _merge_shared_contact(dict(raw_responses or {}), shared_email, shared_phone),
             payload.selections,
             base_fee_paise=ticket.price,
+            is_team_member=(is_team and index > 0),
         )
         member_responses.append(normalized_responses)
         if index == 0:

@@ -37,6 +37,8 @@ def _public_event(event: Event, storage=None) -> dict:
             "available": ticket.available,
             "entryType": category.entry_type if category is not None else "singles",
             "participantsPerEntry": category.participants_per_entry if category is not None else 1,
+            "teamSizeMin": category.team_size_min if category is not None else None,
+            "teamSizeMax": category.team_size_max if category is not None else None,
         }
         for category_name, category, ticket in ordered_tickets
     ]
@@ -121,7 +123,7 @@ def get_public_results(
     return {
         "event": {"id": str(event.id), "title": event.title, "date": event.date, "category": event.category},
         "categories": [
-            {"id": str(category.id), "name": category.name, "distance": category.distance}
+            {"id": str(category.id), "name": category.name, "distance": category.distance, "entryType": category.entry_type}
             for category in event.categories
         ],
         "matches": list_public_match_results(db, event.id, category_id=category_id, status=match_status),
@@ -171,3 +173,34 @@ def list_public_organizer_plans(db: Session = Depends(get_db)) -> dict:
             "defaultDiscountPercent": (program.default_discount_basis_points / 100) if program else 100,
         },
     }
+
+
+
+@router.get("/events/{event_id}/categories/{category_id}/standings")
+def get_public_standings(
+    event_id: str,
+    category_id: str,
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Public standings endpoint — no auth required, event must be published."""
+    import uuid as _uuid
+    from models import Event as _Event
+    from app.services.match_service import compute_standings, MatchValidationError
+
+    try:
+        event_uuid = _uuid.UUID(event_id)
+        category_uuid = _uuid.UUID(category_id)
+    except ValueError:
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(status_code=400, detail="Invalid id")
+
+    event = db.get(_Event, event_uuid)
+    if event is None or event.status != "published" or event.archived_at is not None:
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(status_code=404, detail="Event not found")
+
+    try:
+        return compute_standings(db, event_uuid, category_uuid)
+    except MatchValidationError as exc:
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(status_code=404, detail=str(exc))

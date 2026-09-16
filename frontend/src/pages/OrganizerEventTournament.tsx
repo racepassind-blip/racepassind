@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
 import OrganizerScoringConfig from "@/components/OrganizerScoringConfig";
+import TeamScoringConfig from "@/components/TeamScoringConfig";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useOrganizerCourts, useOrganizerEventDashboard, useOrganizerTournamentRounds } from "@/hooks/useEvents";
 import type { OrganizerTournamentRound } from "@/hooks/useEvents";
-import { getSportConfig } from "@/data/sportConfig";
+import { getSportConfig, eventSupportsTournament } from "@/data/sportConfig";
 import { apiRequest } from "@/lib/api";
 
 const emptyRounds: OrganizerTournamentRound[] = [];
@@ -26,7 +27,7 @@ const OrganizerEventTournament = () => {
   const { eventId } = useParams();
   const { data: dashboard, isLoading: isLoadingEvent, isError: isEventError } = useOrganizerEventDashboard(eventId);
   const eventSportConfig = getSportConfig(dashboard?.event.sport);
-  const supportsTournament = eventSportConfig.supports_tournament;
+  const supportsTournament = eventSupportsTournament(dashboard?.event.sport, dashboard?.event.categories);
   const { data: courts = [], isLoading: isLoadingCourts, isError: isCourtsError, refetch, isFetching } = useOrganizerCourts(eventId, supportsTournament);
   const [name, setName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -189,7 +190,8 @@ const OrganizerEventTournament = () => {
           </CardContent>
         </Card>
 
-        <OrganizerScoringConfig eventId={event.id} enabled={supportsTournament} />
+        <OrganizerScoringConfig eventId={event.id} enabled={eventSportConfig.supports_tournament && event.sport.toLowerCase() === "badminton"} />
+        <TeamScoringConfig eventId={event.id} categories={event.categories} />
 
         <Card>
           <CardHeader className="border-b"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle className="flex items-center gap-2"><ListOrdered className="h-5 w-5 text-primary" />Round order</CardTitle><CardDescription className="mt-2 max-w-3xl">Define the stages for each category. The first round appears on the left of the bracket and the final stage on the right.</CardDescription></div><Badge variant="secondary" className="w-fit">{roundDrafts.length} {roundDrafts.length === 1 ? "round" : "rounds"}</Badge></div></CardHeader>

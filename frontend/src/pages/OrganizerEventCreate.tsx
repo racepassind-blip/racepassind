@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, uploadFile } from "@/lib/api";
 import type { AddonDefinition, EventAddonConfig, EventFieldConfig, ParticipantFieldConfig, ParticipantFieldType } from "@/data/mockEvents";
+import { TeamFieldEditor, DEFAULT_MAIN_REGISTRANT_FIELDS, DEFAULT_PARTICIPANT_FIELDS, type TeamFieldEditorItem } from "@/components/TeamFieldEditor";
 import { getSportConfig } from "@/data/sportConfig";
 import type { CommunicationEvent } from "@/lib/eventCommunication";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,8 @@ interface CategoryForm {
   gender: string | null;
   entryType: "singles" | "doubles" | "team";
   participantsPerEntry: number;
+  teamSizeMin: number | null;
+  teamSizeMax: number | null;
   tickets: TicketForm[];
 }
 
@@ -114,6 +117,8 @@ interface OrganizerEventResponse {
     gender: string | null;
     entryType: "singles" | "doubles" | "team";
     participantsPerEntry: number;
+    teamSizeMin: number | null;
+    teamSizeMax: number | null;
     tickets: Array<{ id: string; name: string; description: string; pricePaise: number; quantityTotal: number; saleStart: string | null; saleEnd: string | null; maxPerUser: number | null }>;
   }>;
   paymentSettings: { upiId: string; payeeName: string; instructions: string } | null;
@@ -146,7 +151,7 @@ const sports = [
 ];
 
 const newTicket = (): TicketForm => ({ id: crypto.randomUUID(), persisted: false, name: "", description: "", price: "", quantity: "", saleStart: null, saleEnd: null, maxPerUser: 1 });
-const newCategory = (): CategoryForm => ({ id: crypto.randomUUID(), persisted: false, name: "", distance: "", description: "", ageMin: null, ageMax: null, gender: null, entryType: "singles", participantsPerEntry: 1, tickets: [newTicket()] });
+const newCategory = (): CategoryForm => ({ id: crypto.randomUUID(), persisted: false, name: "", distance: "", description: "", ageMin: null, ageMax: null, gender: null, entryType: "singles", participantsPerEntry: 1, teamSizeMin: null, teamSizeMax: null, tickets: [newTicket()] });
 
 const OrganizerEventCreate = () => {
   const navigate = useNavigate();
@@ -177,11 +182,14 @@ const OrganizerEventCreate = () => {
   const [qrImageFile, setQrImageFile] = useState<File | null>(null);
   const [categories, setCategories] = useState<CategoryForm[]>([newCategory()]);
   const [fieldEditors, setFieldEditors] = useState<ParticipantFieldEditor[]>(defaultFieldEditors);
+  const [mainRegistrantFields, setMainRegistrantFields] = useState<TeamFieldEditorItem[]>(() => DEFAULT_MAIN_REGISTRANT_FIELDS.map((f) => ({ ...f })));
+  const [teamParticipantFields, setTeamParticipantFields] = useState<TeamFieldEditorItem[]>(() => DEFAULT_PARTICIPANT_FIELDS.map((f) => ({ ...f })));
   const [addonEditors, setAddonEditors] = useState<AddonEditor[]>(defaultAddonEditors);
   const currentSportConfig = getSportConfig(sport);
   const supportsDistance = currentSportConfig.supports_distance;
   const categoryDistances = useMemo(() => categories.map((category) => category.distance.trim()).filter(Boolean), [categories]);
   const hasPaidTickets = categories.some((category) => category.tickets.some((ticket) => Number(ticket.price) > 0));
+  const hasTeamCategory = categories.some((category) => category.entryType === "team");
   const [isLoadingEvent, setIsLoadingEvent] = useState(Boolean(eventId));
   const [isSaving, setIsSaving] = useState(false);
   const [shareEvent, setShareEvent] = useState<CommunicationEvent | null>(null);
@@ -230,6 +238,21 @@ const OrganizerEventCreate = () => {
           optionsText: field.options?.join(", ") ?? "",
         }));
         setFieldEditors(loadedFields);
+        // Load team two-section field config if present
+        if (event.fieldConfig?.main_registrant_fields?.length) {
+          setMainRegistrantFields(event.fieldConfig.main_registrant_fields.map((field, index) => ({
+            ...field,
+            order: index + 1,
+            optionsText: field.options?.join(", ") ?? "",
+          })));
+        }
+        if (event.fieldConfig?.participant_fields?.length) {
+          setTeamParticipantFields(event.fieldConfig.participant_fields.map((field, index) => ({
+            ...field,
+            order: index + 1,
+            optionsText: field.options?.join(", ") ?? "",
+          })));
+        }
         setAddonEditors((event.addonConfig?.addons ?? []).map((addon, index) => ({
           ...addon,
           order: index + 1,
@@ -251,6 +274,8 @@ const OrganizerEventCreate = () => {
           gender: category.gender,
           entryType: category.entryType ?? "singles",
           participantsPerEntry: category.participantsPerEntry ?? 1,
+          teamSizeMin: category.teamSizeMin ?? null,
+          teamSizeMax: category.teamSizeMax ?? null,
           tickets: category.tickets.map((ticket) => ({
             id: ticket.id,
             persisted: true,
@@ -277,11 +302,19 @@ const OrganizerEventCreate = () => {
 
   const updateEntryType = (id: string, entryType: CategoryForm["entryType"]) => {
     const participantsPerEntry = entryType === "singles" ? 1 : entryType === "doubles" ? 2 : 3;
-    setCategories((current) => current.map((category) => category.id === id ? { ...category, entryType, participantsPerEntry } : category));
+    const teamSizeMin = entryType === "team" ? 3 : null;
+    const teamSizeMax = entryType === "team" ? 10 : null;
+    setCategories((current) => current.map((category) => category.id === id ? { ...category, entryType, participantsPerEntry, teamSizeMin, teamSizeMax } : category));
   };
 
-  const updateTeamSize = (id: string, participantsPerEntry: number) => {
-    setCategories((current) => current.map((category) => category.id === id ? { ...category, participantsPerEntry } : category));
+  const updateTeamSize = (id: string, field: "teamSizeMin" | "teamSizeMax", value: number) => {
+    setCategories((current) => current.map((category) => {
+      if (category.id !== id) return category;
+      const updated = { ...category, [field]: value };
+      // Keep participantsPerEntry in sync with teamSizeMin for the API
+      if (field === "teamSizeMin") updated.participantsPerEntry = value;
+      return updated;
+    }));
   };
 
   const addCategory = () => setCategories((current) => [...current, newCategory()]);
@@ -349,17 +382,41 @@ const OrganizerEventCreate = () => {
 
   const removeAddon = (id: string) => setAddonEditors((current) => current.filter((addon) => addon.id !== id));
 
-  const participantConfigPayload = (): EventFieldConfig => ({
-    fields: fieldEditors.filter((field) => (field.predefined || field.label.trim()) && supportsDistance || field.id !== "category_distance").map((field, index) => ({
-      id: field.id,
-      label: field.predefined ? field.label : field.label.trim(),
-      type: field.type,
-      required: field.id === "full_name" ? true : field.required,
-      predefined: field.predefined,
-      order: index + 1,
-      ...(field.type === "select" || field.type === "dropdown" ? { options: field.id === "category_distance" ? categoryDistances : field.optionsText.split(",").map((item) => item.trim()).filter(Boolean) } : {}),
-    })),
-  });
+  const mapTeamSection = (fields: TeamFieldEditorItem[]): ParticipantFieldConfig[] =>
+    fields
+      .filter((field) => field.predefined || field.label.trim())
+      .map((field, index) => ({
+        id: field.id,
+        label: field.predefined ? field.label : field.label.trim(),
+        type: field.type,
+        required: field.required,
+        predefined: field.predefined,
+        order: index + 1,
+        ...(field.type === "select" || field.type === "dropdown"
+          ? { options: field.optionsText.split(",").map((item) => item.trim()).filter(Boolean) }
+          : {}),
+      }));
+
+  const participantConfigPayload = (): EventFieldConfig => {
+    if (hasTeamCategory) {
+      return {
+        fields: [],
+        main_registrant_fields: mapTeamSection(mainRegistrantFields),
+        participant_fields: mapTeamSection(teamParticipantFields),
+      };
+    }
+    return {
+      fields: fieldEditors.filter((field) => (field.predefined || field.label.trim()) && supportsDistance || field.id !== "category_distance").map((field, index) => ({
+        id: field.id,
+        label: field.predefined ? field.label : field.label.trim(),
+        type: field.type,
+        required: field.id === "full_name" ? true : field.required,
+        predefined: field.predefined,
+        order: index + 1,
+        ...(field.type === "select" || field.type === "dropdown" ? { options: field.id === "category_distance" ? categoryDistances : field.optionsText.split(",").map((item) => item.trim()).filter(Boolean) } : {}),
+      })),
+    };
+  };
 
   const addonConfigPayload = (): EventAddonConfig => ({
     addons: addonEditors.filter((addon) => addon.name.trim()).map((addon, index) => ({
@@ -397,6 +454,21 @@ const OrganizerEventCreate = () => {
         toast.error("Complete every category and ticket field.");
         return false;
       }
+      // Validate team size range
+      for (const category of categories) {
+        if (category.entryType === "team") {
+          const min = Number(category.teamSizeMin);
+          const max = Number(category.teamSizeMax);
+          if (!Number.isInteger(min) || min < 2 || min > 50) {
+            toast.error(`Team size minimum must be between 2 and 50 for category "${category.name || `#${categories.indexOf(category) + 1}`}".`);
+            return false;
+          }
+          if (!Number.isInteger(max) || max < min || max > 50) {
+            toast.error(`Team size maximum must be between ${min} and 50 for category "${category.name || `#${categories.indexOf(category) + 1}`}".`);
+            return false;
+          }
+        }
+      }
       const participantLimit = Number(maxParticipants);
       const hasInvalidNumber = !Number.isInteger(participantLimit) || participantLimit < 1 || participantLimit > 1_000_000 || categories.some((category) => category.tickets.some((ticket) => {
         const price = Number(ticket.price);
@@ -411,6 +483,22 @@ const OrganizerEventCreate = () => {
     if (step === 3) {
       const fieldConfig = participantConfigPayload();
       const addonConfig = addonConfigPayload();
+      if (hasTeamCategory) {
+        const allTeamFields = [...(fieldConfig.main_registrant_fields ?? []), ...(fieldConfig.participant_fields ?? [])];
+        if ((fieldConfig.main_registrant_fields ?? []).some((field) => !field.predefined && !field.label.trim())) {
+          toast.error("Give every custom field a label.");
+          return false;
+        }
+        if (allTeamFields.some((field) => (field.type === "select" || field.type === "dropdown") && (!field.options || field.options.length === 0))) {
+          toast.error("Add at least one option to every dropdown field.");
+          return false;
+        }
+        if (addonConfig.addons.some((addon) => !addon.id.startsWith("addon_") || !Number.isFinite(addon.price_paise) || addon.price_paise < 0 || (addon.type === "single_select" && !addon.options?.length))) {
+          toast.error("Complete every add-on with a valid price and options.");
+          return false;
+        }
+        return true;
+      }
       if (!fieldConfig.fields.some((field) => field.id === "email" && field.required) && !fieldConfig.fields.some((field) => field.id === "phone" && field.required)) {
         toast.error("Make email or phone required.");
         return false;
@@ -533,6 +621,7 @@ const OrganizerEventCreate = () => {
           gender: category.gender,
           entry_type: category.entryType,
           participants_per_entry: category.participantsPerEntry,
+          ...(category.entryType === "team" ? { team_size_min: category.teamSizeMin, team_size_max: category.teamSizeMax } : {}),
           tickets: category.tickets.map((ticket) => ({
             ...(eventId && ticket.persisted ? { id: ticket.id } : {}),
             name: ticket.name,
@@ -643,7 +732,17 @@ const OrganizerEventCreate = () => {
             <Textarea value={rules.join("\n")} onChange={(event) => setRules(event.target.value.split("\n"))} placeholder="Participants must check in at the venue.\nFollow organizer instructions and venue guidelines." className="min-h-32" />
           </section>}
 
-          {currentStep === 3 && <section className="space-y-5 rounded-xl border bg-card p-6">
+          {currentStep === 3 && hasTeamCategory && <section className="space-y-5 rounded-xl border bg-card p-6">
+            <div><h2 className="text-lg font-bold">Team registration form</h2><p className="text-sm text-muted-foreground">Team info is collected once per team. Per-participant fields are collected for every member. Reorder, edit, or add custom fields to either section.</p></div>
+            <TeamFieldEditor
+              mainFields={mainRegistrantFields}
+              participantFields={teamParticipantFields}
+              onMainChange={setMainRegistrantFields}
+              onParticipantChange={setTeamParticipantFields}
+            />
+          </section>}
+
+          {currentStep === 3 && !hasTeamCategory && <section className="space-y-5 rounded-xl border bg-card p-6">
             <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold">Participant Information</h2><p className="text-sm text-muted-foreground">Choose the information participants must provide. Full name is always required, and email or phone must be required.</p></div><Button type="button" variant="outline" size="sm" onClick={addCustomField} disabled={fieldEditors.filter((field) => !field.predefined).length >= 5}><Plus className="mr-1 h-4 w-4" /> Custom field</Button></div>
             <div className="space-y-2">{PREDEFINED_FIELDS.filter((definition) => !(!supportsDistance && definition.id === "category_distance")).map((definition) => { const field = fieldEditors.find((item) => item.id === definition.id); return <div key={definition.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3"><input type="checkbox" checked={Boolean(field)} disabled={definition.id === "full_name"} onChange={() => togglePredefinedField(definition)} className="h-4 w-4" /><div className="min-w-48 flex-1"><p className="font-medium">{definition.label}</p><p className="text-xs text-muted-foreground">{definition.type === "select" ? (definition.id === "category_distance" ? `Options from categories: ${categoryDistances.join(", ") || "add distances below"}` : definition.options?.join(", ")) : definition.type}</p></div>{field && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={field.required} disabled={definition.id === "full_name"} onChange={(event) => updateField(definition.id, { required: event.target.checked })} /> Required</label>}</div>; })}</div>
             {fieldEditors.filter((field) => !field.predefined).map((field) => <div key={field.id} className="grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-[1fr_10rem_auto]"><div className="space-y-1"><Label>Custom field label *</Label><Input value={field.label} onChange={(event) => updateField(field.id, { label: event.target.value })} placeholder="College name" /></div><div className="space-y-1"><Label>Type</Label><Select value={field.type} onValueChange={(value) => updateField(field.id, { type: value as ParticipantFieldType })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="text">Text</SelectItem><SelectItem value="number">Number</SelectItem><SelectItem value="dropdown">Dropdown</SelectItem><SelectItem value="yes_no">Yes / No</SelectItem></SelectContent></Select></div><Button type="button" variant="ghost" size="icon" className="self-end text-destructive" onClick={() => removeField(field.id)} aria-label="Remove custom field"><Trash2 className="h-4 w-4" /></Button>{field.type === "dropdown" && <div className="space-y-1 sm:col-span-2"><Label>Options (comma separated) *</Label><Input value={field.optionsText} onChange={(event) => updateField(field.id, { optionsText: event.target.value })} placeholder="Student, Professional" /></div>}<label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={field.required} onChange={(event) => updateField(field.id, { required: event.target.checked })} /> Required</label></div>)}
@@ -660,7 +759,7 @@ const OrganizerEventCreate = () => {
             <div className="flex items-center justify-between"><div><h2 className="text-lg font-bold">Categories and Tickets</h2><p className="text-sm text-muted-foreground">Add one or more categories and ticket options for this event.</p></div><Button variant="outline" size="sm" onClick={addCategory}><Plus className="mr-1 h-4 w-4" /> Category</Button></div>
             {categories.map((category, categoryIndex) => <div key={category.id} className="space-y-4 rounded-lg border p-4">
               <div className="flex items-center justify-between"><p className="font-semibold">Category #{categoryIndex + 1}</p>{categories.length > 1 && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4" /></Button>}</div>
-              <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Category name *</Label><Input value={category.name} onChange={(e) => updateCategory(category.id, "name", e.target.value)} placeholder="Open category" /></div>{supportsDistance && <div className="space-y-2"><Label>Distance *</Label><Input value={category.distance} onChange={(e) => updateCategory(category.id, "distance", e.target.value)} placeholder="10 km" /></div>}<div className="space-y-2"><Label>Entry format *</Label><Select value={category.entryType} onValueChange={(value) => updateEntryType(category.id, value as CategoryForm["entryType"])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="singles">Singles · 1 participant</SelectItem><SelectItem value="doubles">Doubles · 2 participants</SelectItem><SelectItem value="team">Team</SelectItem></SelectContent></Select></div>{category.entryType === "team" && <div className="space-y-2"><Label>Team size *</Label><Select value={String(category.participantsPerEntry)} onValueChange={(value) => updateTeamSize(category.id, Number(value))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[3, 4, 5].map((size) => <SelectItem key={size} value={String(size)}>{size} participants</SelectItem>)}</SelectContent></Select><p className="text-xs text-muted-foreground">The ticket price and inventory count one complete team.</p></div>}</div>
+              <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Category name *</Label><Input value={category.name} onChange={(e) => updateCategory(category.id, "name", e.target.value)} placeholder="Open category" /></div>{supportsDistance && <div className="space-y-2"><Label>Distance *</Label><Input value={category.distance} onChange={(e) => updateCategory(category.id, "distance", e.target.value)} placeholder="10 km" /></div>}<div className="space-y-2"><Label>Entry format *</Label><Select value={category.entryType} onValueChange={(value) => updateEntryType(category.id, value as CategoryForm["entryType"])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="singles">Singles · 1 participant</SelectItem><SelectItem value="doubles">Doubles · 2 participants</SelectItem><SelectItem value="team">Team</SelectItem></SelectContent></Select></div>{category.entryType === "team" && <div className="space-y-2 sm:col-span-2"><Label>Team size *</Label><div className="flex items-center gap-3"><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Min participants</p><Input type="number" min={2} max={50} value={category.teamSizeMin ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMin", Number(e.target.value))} placeholder="3" /></div><span className="mt-5 text-sm text-muted-foreground">—</span><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Max participants</p><Input type="number" min={2} max={50} value={category.teamSizeMax ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMax", Number(e.target.value))} placeholder="10" /></div></div><p className="text-xs text-muted-foreground">Ticket price and inventory count per complete team.</p></div>}</div>
               {category.tickets.map((ticket, ticketIndex) => <div key={ticket.id} className="space-y-3 rounded-md bg-muted/40 p-4"><div className="flex items-center justify-between"><p className="text-sm font-medium">Ticket #{ticketIndex + 1}</p>{category.tickets.length > 1 && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeTicket(category.id, ticket.id)}><Trash2 className="h-3.5 w-3.5" /></Button>}</div><div className="grid gap-3 sm:grid-cols-3"><div className="space-y-1"><Label className="text-xs">Name *</Label><Input value={ticket.name} onChange={(e) => updateTicket(category.id, ticket.id, "name", e.target.value)} placeholder="Early Bird" /></div><div className="space-y-1"><Label className="text-xs">Price (₹; 0 = free) *</Label><Input type="number" min="0" step="0.01" value={ticket.price} onChange={(e) => updateTicket(category.id, ticket.id, "price", e.target.value)} placeholder="0 for free" /></div><div className="space-y-1"><Label className="text-xs">Places *</Label><Input type="number" min="1" value={ticket.quantity} onChange={(e) => updateTicket(category.id, ticket.id, "quantity", e.target.value)} placeholder="100" /></div></div></div>)}
               <Button variant="outline" size="sm" onClick={() => addTicket(category.id)}><Plus className="mr-1 h-4 w-4" /> Ticket tier</Button>
             </div>)}
