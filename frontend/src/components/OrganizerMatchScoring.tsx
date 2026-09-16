@@ -102,8 +102,11 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
 
   const saveScores = async (complete: boolean) => {
     if (!selectedMatch) return;
-    const isTeamAuto = selectedMatch.category.entryType === "team" && selectedMatch.winnerBy !== "manual";
-    // For team matches decided by bouts, the winner is auto-computed server-side.
+    // A team match with a picked match type (singles/doubles + specific players) is
+    // scored like a normal game — winner is chosen manually, no bout aggregation.
+    const usesBoutModel = selectedMatch.category.entryType === "team" && !selectedMatch.matchType;
+    const isTeamAuto = usesBoutModel && selectedMatch.winnerBy !== "manual";
+    // For whole-team matches decided by bouts, the winner is auto-computed server-side.
     const effectiveWinner = isTeamAuto ? (selectedMatch.winner ?? winner) : winner;
     if (complete && !isTeamAuto && !winner) { toast.error("Select the winner before completing the match."); return; }
     if (complete && isTeamAuto && !effectiveWinner) { toast.error("Record bout results so a winner can be determined, or use manual scoring."); return; }
@@ -124,6 +127,14 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
     }
     setIsSaving(true);
     try {
+      // Preserve the picked players so scoring an edit doesn't wipe the selection.
+      const playerPayload = selectedMatch.matchType
+        ? {
+            match_type: selectedMatch.matchType,
+            player_a_participant_ids: (selectedMatch.playersA ?? []).map((player) => player.regParticipantId),
+            player_b_participant_ids: (selectedMatch.playersB ?? []).map((player) => player.regParticipantId),
+          }
+        : {};
       await apiRequest(`/organizer/events/${eventId}/matches/${selectedMatch.id}`, {
         method: "PUT",
         body: JSON.stringify({
@@ -137,6 +148,7 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
           status: complete ? "completed" : "in_progress",
           winner: complete ? effectiveWinner : null,
           games,
+          ...playerPayload,
         }),
       });
       await queryClient.invalidateQueries({ queryKey: ["organizer-matches", eventId] });
@@ -219,7 +231,7 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
                     </div>
                   </div>
 
-                  {selectedMatch.category.entryType === "team" ? (
+                  {selectedMatch.category.entryType === "team" && !selectedMatch.matchType ? (
                     <>
                       <MatchBoutPanel eventId={eventId} match={selectedMatch} />
                       <div className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-end sm:justify-between">
@@ -275,8 +287,8 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
                             onChange={(e) => setWinner(e.target.value as "entry_a" | "entry_b" | "")}
                           >
                             <option value="">Select winner</option>
-                            <option value="entry_a">Entry A — {selectedMatch.entryA.displayName}</option>
-                            <option value="entry_b">Entry B — {selectedMatch.entryB.displayName}</option>
+                            <option value="entry_a">Entry A — {matchSideLabel(selectedMatch.entryA, selectedMatch.playersA)}</option>
+                            <option value="entry_b">Entry B — {matchSideLabel(selectedMatch.entryB, selectedMatch.playersB)}</option>
                           </select>
                         </div>
                         <div className="flex gap-2">
