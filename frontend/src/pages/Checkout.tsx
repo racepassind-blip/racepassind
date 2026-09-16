@@ -244,6 +244,19 @@ const Checkout = () => {
                 updatedFirstMember.responses["phone"] = captainPhone;
               }
               updatedRiders[firstMemberIndex] = updatedFirstMember;
+              
+              // Auto-fill team_name for all members in the entry
+              const teamName = firstRiderInEntry.responses["team_name"];
+              if (teamName) {
+                entryRiders.forEach((rider) => {
+                  if (!rider.responses["team_name"]) {
+                    const riderIndex = updatedRiders.findIndex((r) => r.key === rider.key);
+                    if (riderIndex !== -1) {
+                      updatedRiders[riderIndex] = { ...rider, responses: { ...rider.responses, team_name: teamName } };
+                    }
+                  }
+                });
+              }
             }
           }
         }
