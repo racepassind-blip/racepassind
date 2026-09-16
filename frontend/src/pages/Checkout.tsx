@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Download, Shield } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Download, Plus, Shield } from "lucide-react";
 import { toast } from "sonner";
 
 import { Layout } from "@/components/Layout";
@@ -140,8 +140,24 @@ const Checkout = () => {
   const checkoutReturnPath = `${location.pathname}${location.search}`;
   const effectiveRegistrationMode = isParticipant ? "account" : registrationMode;
   const fields = useMemo(() => event?.fieldConfig?.fields?.length ? [...event.fieldConfig.fields].sort((a, b) => a.order - b.order) : FALLBACK_FIELDS, [event]);
+  // Team two-section config (present only for team-format events)
+  const mainRegistrantFields = useMemo(
+    () => event?.fieldConfig?.main_registrant_fields ? [...event.fieldConfig.main_registrant_fields].sort((a, b) => a.order - b.order) : [],
+    [event],
+  );
+  const teamParticipantFields = useMemo(
+    () => event?.fieldConfig?.participant_fields ? [...event.fieldConfig.participant_fields].sort((a, b) => a.order - b.order) : [],
+    [event],
+  );
   const addons = useMemo(() => event?.addonConfig?.addons ?? [], [event]);
   const selectedTiers = useMemo(() => (event?.tiers ?? []).filter((tier) => cart.some((line) => line.ticketId === tier.id)), [cart, event]);
+  const tierById = useMemo(() => new Map((event?.tiers ?? []).map((tier) => [tier.id, tier])), [event]);
+  const isTeamTier = (ticketId: string | undefined) => ticketId != null && tierById.get(ticketId)?.entryType === "team";
+  // For a given rider, resolve the field list to render (team-aware)
+  const fieldsForRider = (rider: RiderDraft): ParticipantFieldConfig[] => {
+    if (!isTeamTier(rider.ticketId)) return fields;
+    return rider.participantIndex === 0 ? [...mainRegistrantFields, ...teamParticipantFields] : teamParticipantFields;
+  };
   const entryGroups = useMemo(() => {
     const groups = new Map<string, RiderDraft[]>();
     riders.forEach((rider) => groups.set(rider.entryKey, [...(groups.get(rider.entryKey) ?? []), rider]));
@@ -165,10 +181,11 @@ const Checkout = () => {
     const nextRiders: RiderDraft[] = [];
     cart.forEach((line, lineIndex) => {
       const tier = event.tiers.find((candidate) => candidate.id === line.ticketId);
-      const participantsPerEntry = tier?.participantsPerEntry ?? 1;
+      // For team tiers, start with the minimum required members; participants can add more.
+      const initialMembers = tier?.entryType === "team" ? (tier.teamSizeMin ?? 1) : (tier?.participantsPerEntry ?? 1);
       for (let entryIndex = 0; entryIndex < line.quantity; entryIndex += 1) {
         const entryKey = `${lineIndex}-${line.ticketId}-entry-${entryIndex}`;
-        for (let participantIndex = 0; participantIndex < participantsPerEntry; participantIndex += 1) {
+        for (let participantIndex = 0; participantIndex < initialMembers; participantIndex += 1) {
           nextRiders.push({ key: `${entryKey}-member-${participantIndex}`, entryKey, participantIndex, ticketId: line.ticketId, responses: {}, selections: {} });
         }
       }
@@ -186,6 +203,47 @@ const Checkout = () => {
     }));
   };
 
+  const membersInEntry = (entryKey: string) => riders.filter((rider) => rider.entryKey === entryKey);
+
+  const addTeamMember = (entryKey: string, ticketId: string) => {
+    const existing = membersInEntry(entryKey);
+    const tier = tierById.get(ticketId);
+    const max = tier?.teamSizeMax ?? existing.length;
+    if (existing.length >= max) {
+      toast.error(`This team can have at most ${max} members.`);
+      return;
+    }
+    const nextIndex = existing.length;
+    const primarySelections = existing[0]?.selections ?? {};
+    setRiders((previous) => [
+      ...previous,
+      { key: `${entryKey}-member-${nextIndex}-${crypto.randomUUID().slice(0, 8)}`, entryKey, participantIndex: nextIndex, ticketId, responses: {}, selections: { ...primarySelections } },
+    ]);
+  };
+
+  const removeTeamMember = (riderKey: string) => {
+    setRiders((previous) => {
+      const target = previous.find((rider) => rider.key === riderKey);
+      if (!target) return previous;
+      const tier = tierById.get(target.ticketId);
+      const min = tier?.teamSizeMin ?? 1;
+      const entryMembers = previous.filter((rider) => rider.entryKey === target.entryKey);
+      if (entryMembers.length <= min) {
+        toast.error(`This team must have at least ${min} members.`);
+        return previous;
+      }
+      // Remove the target, then re-index remaining members within the entry
+      const remaining = previous.filter((rider) => rider.key !== riderKey);
+      let idx = 0;
+      return remaining.map((rider) => {
+        if (rider.entryKey !== target.entryKey) return rider;
+        return { ...rider, participantIndex: idx++ };
+      });
+    });
+    // Keep active index in bounds
+    setActiveRiderIndex((current) => Math.max(0, current - (riders.findIndex((r) => r.key === riderKey) <= current ? 1 : 0)));
+  };
+
   const updateAddon = (riderKey: string, addon: AddonDefinition, value: string) => {
     setRiders((previous) => {
       const target = previous.find((rider) => rider.key === riderKey);
@@ -201,15 +259,17 @@ const Checkout = () => {
     });
   };
 
+  const CONTACT_FIELD_IDS = ["email", "phone", "captain_email", "captain_phone"];
   const riderReady = (rider: RiderDraft) => {
     const isEntryPrimary = rider.participantIndex === 0;
-    const fieldsReady = fields.every((field) => {
-      const isSharedContact = field.id === "email" || field.id === "phone";
+    const riderFields = fieldsForRider(rider);
+    const fieldsReady = riderFields.every((field) => {
+      const isSharedContact = CONTACT_FIELD_IDS.includes(field.id);
       if (!field.required || (isSharedContact && !isEntryPrimary)) return true;
       const value = rider.responses[field.id];
       return value !== undefined && String(value).trim() !== "";
     });
-    const sharedContactReady = !isEntryPrimary || ["email", "phone"].some((fieldId) => {
+    const sharedContactReady = !isEntryPrimary || CONTACT_FIELD_IDS.some((fieldId) => {
       const value = rider.responses[fieldId];
       return value !== undefined && String(value).trim() !== "";
     });
@@ -226,10 +286,13 @@ const Checkout = () => {
   const completedRiders = riders.filter(riderReady).length;
   const activeRider = riders[activeRiderIndex] ?? riders[0];
   const activeTier = event?.tiers.find((tier) => tier.id === activeRider?.ticketId);
-  const identityFields = fields.filter((field) => field.id === "full_name");
-  const contactFields = fields.filter((field) => field.id === "email" || field.id === "phone");
-  const emergencyFields = fields.filter((field) => EMERGENCY_RIDER_FIELD_IDS.includes(field.id as typeof EMERGENCY_RIDER_FIELD_IDS[number]));
-  const otherFields = fields.filter((field) => !identityFields.includes(field) && !contactFields.includes(field) && !emergencyFields.includes(field));
+  const activeIsTeam = isTeamTier(activeRider?.ticketId);
+  const activeFields = activeRider ? fieldsForRider(activeRider) : fields;
+  const identityFields = activeFields.filter((field) => field.id === "full_name");
+  const contactFields = activeFields.filter((field) => CONTACT_FIELD_IDS.includes(field.id));
+  const emergencyFields = activeFields.filter((field) => EMERGENCY_RIDER_FIELD_IDS.includes(field.id as typeof EMERGENCY_RIDER_FIELD_IDS[number]));
+  const teamInfoFields = activeFields.filter((field) => field.id === "team_name" || field.id === "captain_name");
+  const otherFields = activeFields.filter((field) => !identityFields.includes(field) && !contactFields.includes(field) && !emergencyFields.includes(field) && !teamInfoFields.includes(field));
 
   if (isLoading) return <Layout><div className="py-20 text-center text-muted-foreground">Loading event…</div></Layout>;
   if (isError || !event || selectedTiers.length === 0) return <Layout><div className="py-20 text-center text-muted-foreground">Event or ticket selection not found.</div></Layout>;
@@ -255,9 +318,10 @@ const Checkout = () => {
             const primaryResponses = group[0].responses;
             return {
               ticket_id: group[0].ticketId,
-              email: primaryResponses.email,
-              phone: primaryResponses.phone,
+              email: (primaryResponses.email ?? primaryResponses.captain_email) as string | undefined,
+              phone: (primaryResponses.phone ?? primaryResponses.captain_phone) as string | undefined,
               participants: group.map(({ responses }) => ({
+                // Strip only the plain shared-contact keys; keep captain_* which are real fields
                 responses: Object.fromEntries(Object.entries(responses).filter(([fieldId]) => fieldId !== "email" && fieldId !== "phone")),
               })),
               selections: group[0].selections,
@@ -333,7 +397,7 @@ const Checkout = () => {
           <main className="min-w-0">
             {currentStep === 0 && <section className="space-y-5"><div><h2 className="text-xl font-bold">Review your tickets</h2><p className="mt-1 text-sm text-muted-foreground">We’ll collect the required participant profiles for every entry below.</p></div><div className="space-y-3">{selectedTiers.map((tier) => { const quantity = cart.find((line) => line.ticketId === tier.id)?.quantity ?? 0; return <div key={tier.id} className="flex items-center justify-between rounded-2xl border bg-card p-5 shadow-sm"><div><p className="font-bold">{tier.name} <span className="font-normal text-muted-foreground">× {quantity}</span></p><p className="mt-1 text-sm text-muted-foreground">{tier.description}</p></div><p className="text-lg font-bold text-primary">₹{(tier.price * quantity).toLocaleString("en-IN")}</p></div>; })}</div><div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground"><p className="font-semibold text-foreground">What happens next?</p><p className="mt-1">We’ll collect member details for each entry, then make one payment for the paid entries.</p></div><div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground"><p className="font-semibold text-foreground">Save your registration</p>{!isInitialized ? <p className="mt-1">Checking your account session…</p> : isParticipant ? <p className="mt-1">You are signed in as <span className="font-semibold text-foreground">{user?.email}</span>. This registration will be linked to your participant account so you can easily access your records, tickets, and results.</p> : <div className="mt-3 space-y-3"><p>Create a free participant account to keep your registrations, tickets, and results together. You can also continue as a guest. Guest checkout gives you a private claim code on the confirmation page; save it with your registration reference so you can link this registration to an account later.</p><div className="flex flex-col gap-2 sm:flex-row"><Button type="button" onClick={() => { setRegistrationMode("guest"); setCurrentStep(1); }}>Continue as guest</Button><Button type="button" variant="outline" onClick={() => navigate("/login", { state: { from: checkoutReturnPath } })}>I have an account — sign in</Button><Button type="button" variant="ghost" onClick={() => navigate("/signup?type=participant", { state: { from: checkoutReturnPath } })}>Create participant account</Button></div>{registrationMode === "guest" && <p className="font-medium text-foreground">Guest checkout selected. After registration, your confirmation page will show a private one-time claim code. Save it with your registration reference; use both in your participant dashboard to link this registration later. This is separate from your event ticket QR.</p>}</div>}</div><Button onClick={() => setCurrentStep(1)} disabled={!isInitialized || !effectiveRegistrationMode} size="lg" className="w-full">Start {participantLabel.toLowerCase()} details <ArrowRight className="ml-2 h-4 w-4" /></Button></section>}
 
-            {currentStep === 1 && activeRider && <section className="space-y-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-xl font-bold">{participantLabel} details</h2><p className="mt-1 text-sm text-muted-foreground">Complete one {participantLabel.toLowerCase()} at a time. You can return to any {participantLabel.toLowerCase()} before submitting.</p></div><p className="text-sm font-medium text-muted-foreground">{completedRiders} of {totalParticipants} complete</p></div><div className="h-2 overflow-hidden rounded-full bg-secondary"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${totalParticipants ? (completedRiders / totalParticipants) * 100 : 0}%` }} /></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{riders.map((rider, index) => { const tier = event.tiers.find((candidate) => candidate.id === rider.ticketId); const complete = riderReady(rider); const active = index === activeRiderIndex; return <button key={rider.key} type="button" onClick={() => setActiveRiderIndex(index)} className={`rounded-xl border p-3 text-left transition-colors ${active ? "border-primary bg-primary/10 shadow-sm" : "border-border bg-card hover:border-primary/40"}`}><span className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">{participantLabel} {index + 1}{complete && <CheckCircle2 className="h-4 w-4 text-accent" />}</span><span className="mt-1 block truncate text-sm font-semibold">{tier?.name}</span><span className="mt-1 block text-xs text-muted-foreground">{complete ? "Ready" : "Needs details"}</span></button>; })}</div><div className="overflow-hidden rounded-2xl border-2 border-primary/30 bg-card shadow-sm"><div className="flex items-start justify-between gap-4 bg-primary/5 px-5 py-4 sm:px-6"><div><p className="text-xs font-semibold uppercase tracking-wider text-primary">{participantLabel} {activeRiderIndex + 1} of {totalParticipants}</p><h3 className="mt-1 text-xl font-bold">{activeTier?.name}</h3><p className="mt-1 text-sm text-muted-foreground">{activeTier?.description}</p></div><div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center"><p className="whitespace-nowrap text-lg font-bold text-primary">₹{activeTier?.price.toLocaleString("en-IN")}</p></div></div><div className="space-y-6 p-5 sm:p-6"><section className="space-y-4"><div><h4 className="font-bold">Participant identity</h4><p className="text-sm text-muted-foreground">Use the person who will participate in this event.</p></div>{renderFieldGrid(activeRider, identityFields)}</section>{activeRider.participantIndex === 0 && contactFields.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Entry contact</h4><p className="text-sm text-muted-foreground">One email or phone number is used for this entire entry.</p></div>{renderFieldGrid(activeRider, contactFields)}</section>}{otherFields.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Event details</h4><p className="text-sm text-muted-foreground">These details can be different for every participant.</p></div>{renderFieldGrid(activeRider, otherFields)}</section>}{emergencyFields.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Emergency contact</h4><p className="text-sm text-muted-foreground">Who should we contact if this {participantLabel.toLowerCase()} needs help?</p></div>{renderFieldGrid(activeRider, emergencyFields)}</section>}{addons.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Add-ons for this entry</h4><p className="text-sm text-muted-foreground">Add-ons are optional and saved once for this entry. Leave the quantity at 0 if you do not need one.</p></div><div className="grid gap-4 sm:grid-cols-2">{addons.map((addon) => <div key={addon.id} className="space-y-2"><Label>{addon.name}{addon.required ? " *" : ""} {addon.price_paise > 0 && <span className="text-muted-foreground">(+₹{(addon.price_paise / 100).toFixed(2)}{addon.type === "quantity" ? " each" : ""})</span>}</Label>{addon.type === "quantity" ? <Input type="number" min={addon.required ? 1 : 0} max={addon.max_qty ?? undefined} value={activeRider.selections[addon.id]?.qty ?? 0} onChange={(e) => updateAddon(activeRider.key, addon, e.target.value)} placeholder="0" /> : <Select value={activeRider.selections[addon.id]?.selected ?? ""} onValueChange={(value) => updateAddon(activeRider.key, addon, value)}><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{(addon.options ?? []).map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>}</div>)}</div></section>}</div></div><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><Button type="button" variant="outline" onClick={() => activeRiderIndex > 0 ? setActiveRiderIndex(activeRiderIndex - 1) : setCurrentStep(0)}><ArrowLeft className="mr-2 h-4 w-4" /> Previous</Button>{activeRiderIndex < totalParticipants - 1 ? <Button type="button" onClick={() => { if (!riderReady(activeRider)) { toast.error(`Complete the required ${participantLabel.toLowerCase()} fields for this ${participantLabel.toLowerCase()}.`); return; } setActiveRiderIndex(activeRiderIndex + 1); }}>Save {participantLabel.toLowerCase()} & continue <ArrowRight className="ml-2 h-4 w-4" /></Button> : <Button type="button" onClick={createRegistration} disabled={!participantReady || loading}>{loading ? "Creating registrations…" : totalPaise === 0 ? "Complete free registrations" : "Continue to payment"}<ArrowRight className="ml-2 h-4 w-4" /></Button>}</div>{!participantReady && activeRiderIndex === totalParticipants - 1 && <p className="text-right text-sm text-muted-foreground">Complete the required {participantLabel.toLowerCase()} fields for every {participantLabel.toLowerCase()} before continuing.</p>}</section>}
+            {currentStep === 1 && activeRider && <section className="space-y-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-xl font-bold">{participantLabel} details</h2><p className="mt-1 text-sm text-muted-foreground">Complete one {participantLabel.toLowerCase()} at a time. You can return to any {participantLabel.toLowerCase()} before submitting.</p></div><p className="text-sm font-medium text-muted-foreground">{completedRiders} of {totalParticipants} complete</p></div><div className="h-2 overflow-hidden rounded-full bg-secondary"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${totalParticipants ? (completedRiders / totalParticipants) * 100 : 0}%` }} /></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{riders.map((rider, index) => { const tier = event.tiers.find((candidate) => candidate.id === rider.ticketId); const complete = riderReady(rider); const active = index === activeRiderIndex; return <button key={rider.key} type="button" onClick={() => setActiveRiderIndex(index)} className={`rounded-xl border p-3 text-left transition-colors ${active ? "border-primary bg-primary/10 shadow-sm" : "border-border bg-card hover:border-primary/40"}`}><span className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">{participantLabel} {index + 1}{complete && <CheckCircle2 className="h-4 w-4 text-accent" />}</span><span className="mt-1 block truncate text-sm font-semibold">{tier?.name}</span><span className="mt-1 block text-xs text-muted-foreground">{complete ? "Ready" : "Needs details"}</span></button>; })}</div><div className="overflow-hidden rounded-2xl border-2 border-primary/30 bg-card shadow-sm"><div className="flex items-start justify-between gap-4 bg-primary/5 px-5 py-4 sm:px-6"><div><p className="text-xs font-semibold uppercase tracking-wider text-primary">{participantLabel} {activeRiderIndex + 1} of {totalParticipants}</p><h3 className="mt-1 text-xl font-bold">{activeTier?.name}</h3><p className="mt-1 text-sm text-muted-foreground">{activeTier?.description}</p></div><div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center"><p className="whitespace-nowrap text-lg font-bold text-primary">₹{activeTier?.price.toLocaleString("en-IN")}</p></div></div><div className="space-y-6 p-5 sm:p-6">{activeIsTeam && activeRider.participantIndex === 0 && teamInfoFields.length > 0 && <section className="space-y-4"><div><h4 className="font-bold">Team information</h4><p className="text-sm text-muted-foreground">Collected once for the whole team.</p></div>{renderFieldGrid(activeRider, teamInfoFields)}</section>}<section className="space-y-4">{activeIsTeam && <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Member {activeRider.participantIndex + 1}</div>}<div><h4 className="font-bold">{activeIsTeam ? "Member details" : "Participant identity"}</h4><p className="text-sm text-muted-foreground">Use the person who will participate in this event.</p></div>{renderFieldGrid(activeRider, identityFields)}</section>{activeRider.participantIndex === 0 && contactFields.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">{activeIsTeam ? "Captain contact" : "Entry contact"}</h4><p className="text-sm text-muted-foreground">One email or phone number is used for this entire {activeIsTeam ? "team" : "entry"}.</p></div>{renderFieldGrid(activeRider, contactFields)}</section>}{otherFields.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Event details</h4><p className="text-sm text-muted-foreground">These details can be different for every participant.</p></div>{renderFieldGrid(activeRider, otherFields)}</section>}{emergencyFields.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Emergency contact</h4><p className="text-sm text-muted-foreground">Who should we contact if this {participantLabel.toLowerCase()} needs help?</p></div>{renderFieldGrid(activeRider, emergencyFields)}</section>}{addons.length > 0 && <section className="space-y-4 border-t pt-6"><div><h4 className="font-bold">Add-ons for this entry</h4><p className="text-sm text-muted-foreground">Add-ons are optional and saved once for this entry. Leave the quantity at 0 if you do not need one.</p></div><div className="grid gap-4 sm:grid-cols-2">{addons.map((addon) => <div key={addon.id} className="space-y-2"><Label>{addon.name}{addon.required ? " *" : ""} {addon.price_paise > 0 && <span className="text-muted-foreground">(+₹{(addon.price_paise / 100).toFixed(2)}{addon.type === "quantity" ? " each" : ""})</span>}</Label>{addon.type === "quantity" ? <Input type="number" min={addon.required ? 1 : 0} max={addon.max_qty ?? undefined} value={activeRider.selections[addon.id]?.qty ?? 0} onChange={(e) => updateAddon(activeRider.key, addon, e.target.value)} placeholder="0" /> : <Select value={activeRider.selections[addon.id]?.selected ?? ""} onValueChange={(value) => updateAddon(activeRider.key, addon, value)}><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{(addon.options ?? []).map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>}</div>)}</div></section>}</div></div>{activeIsTeam && (() => { const entryMembers = riders.filter((r) => r.entryKey === activeRider.entryKey); const tier = tierById.get(activeRider.ticketId); const min = tier?.teamSizeMin ?? 1; const max = tier?.teamSizeMax ?? entryMembers.length; return <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4"><p className="text-sm text-muted-foreground">{entryMembers.length} member{entryMembers.length !== 1 ? "s" : ""} added (min {min}, max {max})</p><div className="flex gap-2">{entryMembers.length > min && <Button type="button" variant="outline" size="sm" onClick={() => removeTeamMember(activeRider.key)}>Remove this member</Button>}{entryMembers.length < max && <Button type="button" variant="outline" size="sm" onClick={() => addTeamMember(activeRider.entryKey, activeRider.ticketId)}><Plus className="mr-1 h-4 w-4" /> Add member</Button>}</div></div>; })()}<div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><Button type="button" variant="outline" onClick={() => activeRiderIndex > 0 ? setActiveRiderIndex(activeRiderIndex - 1) : setCurrentStep(0)}><ArrowLeft className="mr-2 h-4 w-4" /> Previous</Button>{activeRiderIndex < totalParticipants - 1 ? <Button type="button" onClick={() => { if (!riderReady(activeRider)) { toast.error(`Complete the required ${participantLabel.toLowerCase()} fields for this ${participantLabel.toLowerCase()}.`); return; } setActiveRiderIndex(activeRiderIndex + 1); }}>Save {participantLabel.toLowerCase()} & continue <ArrowRight className="ml-2 h-4 w-4" /></Button> : <Button type="button" onClick={createRegistration} disabled={!participantReady || loading}>{loading ? "Creating registrations…" : totalPaise === 0 ? "Complete free registrations" : "Continue to payment"}<ArrowRight className="ml-2 h-4 w-4" /></Button>}</div>{!participantReady && activeRiderIndex === totalParticipants - 1 && <p className="text-right text-sm text-muted-foreground">Complete the required {participantLabel.toLowerCase()} fields for every {participantLabel.toLowerCase()} before continuing.</p>}</section>}
 
             {currentStep === 2 && registration && <section className="space-y-5"><div><h2 className="text-xl font-bold">Pay for all {participantLabel.toLowerCase()}s</h2><p className="mt-1 text-sm text-muted-foreground">One payment covers all paid entries in this order.</p></div><div className="rounded-2xl border bg-card p-5"><p className="text-sm text-muted-foreground">{registration.registrations.length} {registration.registrations.length === 1 ? "entry" : "entries"}</p><p className="mt-2 text-sm font-bold tracking-wide">{registration.registrations.map((child) => child.registrationReference).join(" · ")}</p><p className="mt-5 text-sm text-muted-foreground">Total amount to pay</p><p className="text-3xl font-extrabold text-primary">₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings && <div className="space-y-4 rounded-2xl border bg-primary/5 p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">UPI ID</p><p className="font-bold">{registration.paymentSettings.upiId}</p><p className="text-xs text-muted-foreground">Payee: {registration.paymentSettings.payeeName}</p></div><Button variant="outline" size="sm" onClick={copyUpi}><Copy className="mr-2 h-4 w-4" /> Copy</Button></div><p className="text-sm text-muted-foreground">{registration.paymentSettings.instructions}</p><div className="flex flex-col items-center gap-3 rounded-lg bg-white p-3"><img src={registration.paymentSettings.qrDataUrl} alt="Generated UPI payment QR" className="h-56 w-56" /><p className="text-xs text-muted-foreground">Scan to pay ₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings.qrImageUrl && <div><p className="mb-2 text-xs font-medium text-muted-foreground">Organizer-provided QR</p><img src={registration.paymentSettings.qrImageUrl} alt="Organizer UPI QR" className="mx-auto max-h-56 rounded-lg" /></div>}<div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm dark:border-blue-900/50 dark:bg-blue-950/20"><p className="font-semibold text-blue-900 dark:text-blue-100">Can't scan? Pay from your UPI app directly</p><p className="mt-1 text-blue-800/80 dark:text-blue-100/80">Download the QR image below, then open your UPI app (GPay, PhonePe, Paytm, etc.), choose <span className="font-semibold">Scan QR</span> or <span className="font-semibold">Upload QR</span>, and select the downloaded image to pay ₹{totalRupees.toLocaleString("en-IN")} automatically.</p><Button type="button" variant="outline" size="sm" className="mt-3 gap-2 border-blue-300 bg-white text-blue-900 hover:bg-blue-50 dark:border-blue-800 dark:bg-transparent dark:text-blue-100" onClick={() => void downloadQrAsPng(registration.paymentSettings!.qrDataUrl, `sportpass-payment-qr-${registration.registrations[0]?.registrationReference ?? "order"}.png`).then(() => setQrDownloaded(true)).catch(() => toast.error("Could not download QR image"))}><Download className="h-4 w-4" /> Download QR image</Button>{qrDownloaded && <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400"><CheckCircle2 className="h-4 w-4 shrink-0" /> QR saved — open your UPI app, tap Scan QR or Upload QR, and pick this image to pay.</p>}</div></div>}<div className="space-y-2"><Label>UTR / transaction reference (optional)</Label><Input value={utrReference} onChange={(e) => setUtrReference(e.target.value)} placeholder="Enter it after paying in your UPI app" /><p className="text-xs text-muted-foreground">One reference will be submitted for the complete {participantLabel.toLowerCase()} group.</p></div><Button onClick={submitUtr} disabled={loading} size="lg" className="w-full">{loading ? "Saving…" : "Submit reference / continue"}</Button><p className="flex items-center justify-center gap-1 text-xs text-muted-foreground"><Shield className="h-3 w-3" /> Do not enter card details on SportPass.</p></section>}
           </main>

@@ -6,14 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useOrganizerCourts, useOrganizerEventDashboard } from "@/hooks/useEvents";
-import { getSportConfig } from "@/data/sportConfig";
+import { eventSupportsTournament } from "@/data/sportConfig";
 
 const OrganizerEventTournamentMatches = () => {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const { data: dashboard, isLoading: isLoadingEvent, isError: isEventError } = useOrganizerEventDashboard(eventId);
-  const eventSportConfig = getSportConfig(dashboard?.event.sport);
-  const supportsTournament = eventSportConfig.supports_tournament;
+  const supportsTournament = eventSupportsTournament(dashboard?.event.sport, dashboard?.event.categories);
   const { data: courts = [], isLoading: isLoadingCourts } = useOrganizerCourts(eventId, supportsTournament);
 
   if (isLoadingEvent) {

@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.services.payment_service import normalize_upi_id
-from app.services.registration_config_service import normalize_addon_config, normalize_field_config
+from app.services.registration_config_service import normalize_addon_config, normalize_field_config, normalize_team_field_config, is_team_field_config
 
 
 class TicketCreateIn(BaseModel):
@@ -29,16 +29,29 @@ class RaceCategoryCreateIn(BaseModel):
     age_max: int | None = Field(default=None, ge=0, le=120)
     gender: str | None = Field(default=None, max_length=40)
     entry_type: Literal["singles", "doubles", "team"] = "singles"
-    participants_per_entry: int = Field(default=1, ge=1, le=5)
+    participants_per_entry: int = Field(default=1, ge=1, le=50)
+    # Team-only: flexible size range (min 2, max 50)
+    team_size_min: int | None = Field(default=None, ge=2, le=50)
+    team_size_max: int | None = Field(default=None, ge=2, le=50)
     tickets: list[TicketCreateIn] = Field(min_length=1, max_length=20)
 
     @model_validator(mode="after")
     def validate_entry_format(self):
-        expected = {"singles": 1, "doubles": 2}.get(self.entry_type)
-        if expected is not None and self.participants_per_entry != expected:
-            raise ValueError(f"{self.entry_type.title()} categories must have exactly {expected} participant")
-        if self.entry_type == "team" and self.participants_per_entry not in {3, 4, 5}:
-            raise ValueError("Team categories must have exactly 3, 4, or 5 participants")
+        if self.entry_type == "singles":
+            self.participants_per_entry = 1
+            self.team_size_min = None
+            self.team_size_max = None
+        elif self.entry_type == "doubles":
+            self.participants_per_entry = 2
+            self.team_size_min = None
+            self.team_size_max = None
+        else:  # team
+            if self.team_size_min is None or self.team_size_max is None:
+                raise ValueError("Team categories require team_size_min and team_size_max")
+            if self.team_size_min > self.team_size_max:
+                raise ValueError("team_size_min must be less than or equal to team_size_max")
+            # Keep participants_per_entry in sync (= min) for legacy compatibility
+            self.participants_per_entry = self.team_size_min
         return self
 
 
@@ -78,6 +91,8 @@ class OrganizerEventCreateV1(BaseModel):
     @field_validator("field_config")
     @classmethod
     def validate_field_config(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if is_team_field_config(value):
+            return normalize_team_field_config(value)
         return normalize_field_config(value)
 
     @field_validator("addon_config")
@@ -122,16 +137,29 @@ class OrganizerCategoryUpdateIn(BaseModel):
     age_max: int | None = Field(default=None, ge=0, le=120)
     gender: str | None = Field(default=None, max_length=40)
     entry_type: Literal["singles", "doubles", "team"] = "singles"
-    participants_per_entry: int = Field(default=1, ge=1, le=5)
+    participants_per_entry: int = Field(default=1, ge=1, le=50)
+    # Team-only: flexible size range (min 2, max 50)
+    team_size_min: int | None = Field(default=None, ge=2, le=50)
+    team_size_max: int | None = Field(default=None, ge=2, le=50)
     tickets: list[OrganizerTicketUpdateIn] = Field(min_length=1, max_length=20)
 
     @model_validator(mode="after")
     def validate_entry_format(self):
-        expected = {"singles": 1, "doubles": 2}.get(self.entry_type)
-        if expected is not None and self.participants_per_entry != expected:
-            raise ValueError(f"{self.entry_type.title()} categories must have exactly {expected} participant")
-        if self.entry_type == "team" and self.participants_per_entry not in {3, 4, 5}:
-            raise ValueError("Team categories must have exactly 3, 4, or 5 participants")
+        if self.entry_type == "singles":
+            self.participants_per_entry = 1
+            self.team_size_min = None
+            self.team_size_max = None
+        elif self.entry_type == "doubles":
+            self.participants_per_entry = 2
+            self.team_size_min = None
+            self.team_size_max = None
+        else:  # team
+            if self.team_size_min is None or self.team_size_max is None:
+                raise ValueError("Team categories require team_size_min and team_size_max")
+            if self.team_size_min > self.team_size_max:
+                raise ValueError("team_size_min must be less than or equal to team_size_max")
+            # Keep participants_per_entry in sync (= min) for legacy compatibility
+            self.participants_per_entry = self.team_size_min
         return self
 
 
@@ -163,6 +191,8 @@ class OrganizerEventUpdateV1(BaseModel):
     @field_validator("field_config")
     @classmethod
     def validate_field_config(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if is_team_field_config(value):
+            return normalize_team_field_config(value)
         return normalize_field_config(value)
 
     @field_validator("addon_config")

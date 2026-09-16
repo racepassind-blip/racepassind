@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useOrganizerEventDashboard } from "@/hooks/useEvents";
 import { useOrganizerMatches } from "@/hooks/useEvents";
-import { getSportConfig } from "@/data/sportConfig";
+import { eventSupportsTournament } from "@/data/sportConfig";
 import type { OrganizerMatch } from "@/hooks/useEvents";
 
 function winnerName(match: OrganizerMatch): string {
@@ -30,7 +30,7 @@ const OrganizerEventTournamentScoring = () => {
   const { eventId } = useParams();
   const { data: dashboard, isLoading, isError } = useOrganizerEventDashboard(eventId);
   const { data: matches = [] } = useOrganizerMatches(eventId);
-  const supportsTournament = getSportConfig(dashboard?.event.sport).supports_tournament;
+  const supportsTournament = eventSupportsTournament(dashboard?.event.sport, dashboard?.event.categories);
 
   const completedMatches = useMemo(
     () => matches.filter((m) => m.status === "completed"),

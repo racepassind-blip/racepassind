@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useOrganizerEventDashboard, useOrganizerEventOptions } from "@/hooks/useEvents";
 import { apiRequest } from "@/lib/api";
-import { getSportConfig } from "@/data/sportConfig";
+import { eventSupportsTournament } from "@/data/sportConfig";
 import { buildResultsUrl } from "@/lib/eventCommunication";
 
 function formatINR(amountPaise: number) {
@@ -69,7 +69,7 @@ const OrganizerEventDashboard = () => {
   }
 
   const { event, inventory, registrations, overview, byCategory, signupTrend, recentRegistrations } = data;
-  const eventSportConfig = getSportConfig(event.sport);
+  const supportsTournament = eventSupportsTournament(event.sport, event.categories);
   const resultsUrl = buildResultsUrl(event.id);
   const copyResultsLink = async () => {
     try {
@@ -140,7 +140,7 @@ const OrganizerEventDashboard = () => {
               </div>
               <Button variant="outline" size="sm" className="gap-2" onClick={() => void refetch()} disabled={isFetching}><RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh</Button>
               <Button variant="outline" size="sm" className="gap-2" onClick={() => void updateRegistrationStatus()}><Power className="h-4 w-4" />{event.registrationStatus === "open" ? "Close registration" : "Open registration"}</Button>
-              {eventSportConfig.supports_tournament && <><Button asChild variant="outline" size="sm" className="gap-2"><a href={resultsUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /> Public results</a></Button><Button variant="outline" size="sm" className="gap-2" onClick={() => void copyResultsLink()}><Copy className="h-4 w-4" />{resultsCopied ? "Copied" : "Copy results link"}</Button></>}
+              {supportsTournament && <><Button asChild variant="outline" size="sm" className="gap-2"><a href={resultsUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /> Public results</a></Button><Button variant="outline" size="sm" className="gap-2" onClick={() => void copyResultsLink()}><Copy className="h-4 w-4" />{resultsCopied ? "Copied" : "Copy results link"}</Button></>}
               <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" onClick={() => void updateArchiveState()}><Trash2 className="h-4 w-4" /> Delete event</Button>
               <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ScanLine className="h-4 w-4" /> Check-in matrix</Button>
               <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate(`/organizer/events/${event.id}/checkpoints`)}><ClipboardList className="h-4 w-4" /> Checkpoints</Button>

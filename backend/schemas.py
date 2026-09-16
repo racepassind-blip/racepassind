@@ -17,6 +17,8 @@ class TicketTierOut(BaseModel):
     available: int
     entryType: Literal["singles", "doubles", "team"] = "singles"
     participantsPerEntry: int = 1
+    teamSizeMin: int | None = None
+    teamSizeMax: int | None = None
 
 
 class EventOut(BaseModel):

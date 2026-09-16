@@ -48,7 +48,7 @@ interface OrganizerRegistration {
   registrationReference: string;
   event: { id: string; name: string };
   participant: { name: string; email: string | null; phone: string | null };
-  participants?: Array<{ index: number; participant: { name: string; email: string | null; phone: string | null } }>;
+  participants?: Array<{ index: number; participant: { name: string; email: string | null; phone: string | null }; responses?: Record<string, unknown> }>;
   participantCount?: number;
   ticket: { id: string; name: string; category: string | null };
   amountPaise: number;
@@ -112,7 +112,57 @@ function formatDate(value: string) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
+const HIDDEN_RESPONSE_KEYS = ["full_name", "email", "phone", "team_name", "captain_name", "captain_email", "captain_phone"];
+
+function formatResponseValue(value: unknown): string {
+  if (value === true) return "Yes";
+  if (value === false) return "No";
+  return String(value);
+}
+
+function teamRosterSummary(registration: OrganizerRegistration) {
+  const responses = registration.responses ?? {};
+  const teamName = responses.team_name as string | undefined;
+  const captainName = responses.captain_name as string | undefined;
+  const members = registration.participants ?? [];
+  const isTeam = Boolean(teamName) || (registration.participantCount ?? 1) > 1;
+  if (!isTeam) return null;
+
+  const captainInfoEntries = Object.entries(responses).filter(([key]) => ["captain_name", "captain_email", "captain_phone"].includes(key));
+  return (
+    <details className="mt-2 text-xs">
+      <summary className="cursor-pointer text-primary">Team roster ({members.length || registration.participantCount || 0} members)</summary>
+      <div className="mt-2 space-y-3 rounded-md bg-muted/40 p-2">
+        <div className="space-y-1">
+          {teamName && <p><span className="font-medium">Team:</span> {teamName}</p>}
+          {captainName && <p><span className="font-medium">Captain:</span> {captainName}</p>}
+          {captainInfoEntries.filter(([key]) => key !== "captain_name").map(([key, value]) => (
+            <p key={key}><span className="font-medium">{key.replaceAll("_", " ")}:</span> {formatResponseValue(value)}</p>
+          ))}
+        </div>
+        {members.length > 0 && (
+          <div className="space-y-2">
+            {members.map((member) => {
+              const memberResponses = Object.entries(member.responses ?? {}).filter(([key]) => !HIDDEN_RESPONSE_KEYS.includes(key));
+              return (
+                <div key={member.index} className="rounded border bg-background p-2">
+                  <p className="font-semibold">Member {member.index}: {member.participant.name}</p>
+                  {memberResponses.map(([key, value]) => (
+                    <p key={key}><span className="font-medium">{key.replaceAll("_", " ")}:</span> {formatResponseValue(value)}</p>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function dynamicRegistrationSummary(registration: OrganizerRegistration) {
+  const teamSummary = teamRosterSummary(registration);
+  if (teamSummary) return teamSummary;
   const responseEntries = Object.entries(registration.responses ?? {}).filter(([key]) => !["full_name", "email", "phone"].includes(key));
   const addonEntries = Object.entries(registration.selections ?? {});
   if (responseEntries.length === 0 && addonEntries.length === 0) return null;

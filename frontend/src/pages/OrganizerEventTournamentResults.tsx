@@ -3,12 +3,13 @@ import { CalendarDays, Check, CheckCircle2, Clock3, Copy, ExternalLink, Medal, R
 import { useNavigate, useParams } from "react-router-dom";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
+import TeamStandingsCard from "@/components/TeamStandingsCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useOrganizerEventDashboard, useOrganizerMatches } from "@/hooks/useEvents";
-import { getSportConfig } from "@/data/sportConfig";
+import { eventSupportsTournament } from "@/data/sportConfig";
 import { buildResultsUrl } from "@/lib/eventCommunication";
 import { toast } from "sonner";
 
@@ -23,7 +24,7 @@ const OrganizerEventTournamentResults = () => {
   const { eventId } = useParams();
   const { data: dashboard, isLoading: isLoadingEvent, isError: isEventError } = useOrganizerEventDashboard(eventId);
   const event = dashboard?.event;
-  const supportsTournament = getSportConfig(event?.sport).supports_tournament;
+  const supportsTournament = eventSupportsTournament(event?.sport, event?.categories);
   const { data: matches = [], isLoading: isLoadingMatches, isError: isMatchesError, refetch, isFetching } = useOrganizerMatches(eventId);
   const [categoryId, setCategoryId] = useState("all");
   const [resultsCopied, setResultsCopied] = useState(false);
@@ -91,6 +92,8 @@ const OrganizerEventTournamentResults = () => {
             </div>
           </CardContent>
         </Card>
+
+        <TeamStandingsCard eventId={event.id} categories={event.categories} />
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Tournament archive</p><h2 className="mt-1 text-2xl font-black tracking-tight">Find a result by category</h2></div><p className="text-sm text-muted-foreground">{visibleMatches.length === 1 ? "1 completed match" : `${visibleMatches.length} completed matches`} shown</p></div>
         <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Result categories"><button type="button" role="tab" aria-selected={categoryId === "all"} onClick={() => setCategoryId("all")} className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-bold transition-colors ${categoryId === "all" ? "border-primary bg-primary text-primary-foreground shadow-sm" : "bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>All results<Badge variant={categoryId === "all" ? "secondary" : "outline"} className="px-1.5">{completedMatches.length}</Badge></button>{categories.map((category) => { const count = completedMatches.filter((match) => match.category.id === category.id).length; return <button key={category.id} type="button" role="tab" aria-selected={categoryId === category.id} onClick={() => setCategoryId(category.id)} className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-bold transition-colors ${categoryId === category.id ? "border-primary bg-primary text-primary-foreground shadow-sm" : "bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>{category.name}<Badge variant={categoryId === category.id ? "secondary" : "outline"} className="px-1.5">{count}</Badge></button>; })}</div>

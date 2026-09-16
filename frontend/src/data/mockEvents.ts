@@ -11,6 +11,8 @@ export interface TicketTier {
   available: number;
   entryType?: "singles" | "doubles" | "team";
   participantsPerEntry?: number;
+  teamSizeMin?: number | null;
+  teamSizeMax?: number | null;
 }
 
 export type ParticipantFieldType = "text" | "email" | "phone" | "date" | "select" | "number" | "dropdown" | "yes_no";
@@ -38,6 +40,9 @@ export interface AddonDefinition {
 
 export interface EventFieldConfig {
   fields: ParticipantFieldConfig[];
+  // Team registration: two-section layout (present only for team-format events)
+  main_registrant_fields?: ParticipantFieldConfig[];
+  participant_fields?: ParticipantFieldConfig[];
 }
 
 export interface EventAddonConfig {

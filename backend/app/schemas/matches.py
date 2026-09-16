@@ -47,3 +47,37 @@ class MatchIn(BaseModel):
         if not normalized or any(ord(character) < 32 or ord(character) == 127 for character in normalized):
             raise ValueError("Round label contains unsupported characters")
         return normalized
+
+
+BoutStatus = Literal["scheduled", "in_progress", "completed"]
+BoutWinner = Literal["player_a", "player_b", "draw"]
+TeamMatchWinnerBy = Literal["bouts", "manual"]
+
+
+class BoutIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    player_a_reg_participant_id: UUID | None = None
+    player_b_reg_participant_id: UUID | None = None
+    player_a_name: str | None = Field(default=None, max_length=160)
+    player_b_name: str | None = Field(default=None, max_length=160)
+    court_id: UUID | None = None
+    status: BoutStatus = "scheduled"
+    winner: BoutWinner | None = None
+    score_a: int | None = Field(default=None, ge=0)
+    score_b: int | None = Field(default=None, ge=0)
+    scheduled_time: dt.datetime | None = None
+
+    @field_validator("player_a_name", "player_b_name", mode="before")
+    @classmethod
+    def strip_name(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
+
+
+class TeamMatchScoringIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    points_for_win: int = Field(default=3, ge=0, le=100)
+    points_for_draw: int = Field(default=1, ge=0, le=100)
+    points_for_loss: int = Field(default=0, ge=0, le=100)
+    winner_by: TeamMatchWinnerBy = "bouts"

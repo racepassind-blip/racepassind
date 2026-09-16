@@ -46,6 +46,8 @@ export interface OrganizerEventCategory {
   description: string | null;
   entryType: "singles" | "doubles" | "team";
   participantsPerEntry: number;
+  teamSizeMin?: number | null;
+  teamSizeMax?: number | null;
   tickets: OrganizerEventTicket[];
 }
 
@@ -78,10 +80,29 @@ export interface OrganizerMatchEntry {
   categoryId: string | null;
 }
 
+export interface MatchBout {
+  id: string;
+  matchId: string;
+  eventId: string;
+  courtId: string | null;
+  court: { id: string; name: string } | null;
+  playerARegParticipantId: string | null;
+  playerBRegParticipantId: string | null;
+  playerAName: string | null;
+  playerBName: string | null;
+  status: "scheduled" | "in_progress" | "completed";
+  winner: "player_a" | "player_b" | "draw" | null;
+  scoreA: number | null;
+  scoreB: number | null;
+  scheduledTime: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface OrganizerMatch {
   id: string;
   eventId: string;
-  category: { id: string; name: string };
+  category: { id: string; name: string; entryType?: "singles" | "doubles" | "team" };
   entryA: OrganizerMatchEntry;
   entryB: OrganizerMatchEntry;
   court: { id: string; name: string };
@@ -91,11 +112,26 @@ export interface OrganizerMatch {
   scheduledTime: string | null;
   status: "scheduled" | "in_progress" | "completed";
   winner: "entry_a" | "entry_b" | null;
+  winnerBy?: "bouts" | "manual" | null;
   createdAt: string;
   updatedAt: string;
   gamesToWin: number;
   pointsPerGame: number;
   games: Array<{ gameNumber: number; scoreA: number; scoreB: number }>;
+  bouts?: MatchBout[];
+}
+
+export interface TeamStanding {
+  registrationId: string;
+  teamName: string;
+  captainName: string;
+  matchesPlayed: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  boutsWon: number;
+  boutsLost: number;
+  points: number;
 }
 
 export interface PublicMatchResult {
@@ -117,7 +153,7 @@ export interface PublicMatchResult {
 
 export interface PublicEventResults {
   event: { id: string; title: string; date: string; category: string };
-  categories: Array<{ id: string; name: string; distance: string | null }>;
+  categories: Array<{ id: string; name: string; distance: string | null; entryType?: "singles" | "doubles" | "team" }>;
   matches: PublicMatchResult[];
 }
 
@@ -326,6 +362,30 @@ export function useOrganizerMatches(eventId: string | undefined) {
     queryKey: ["organizer-matches", eventId],
     enabled: Boolean(eventId),
     queryFn: () => apiRequest<OrganizerMatch[]>(`/organizer/events/${eventId}/matches`),
+  });
+}
+
+export function useOrganizerBouts(eventId: string | undefined, matchId: string | undefined) {
+  return useQuery({
+    queryKey: ["organizer-bouts", eventId, matchId],
+    enabled: Boolean(eventId && matchId),
+    queryFn: () => apiRequest<MatchBout[]>(`/organizer/events/${eventId}/matches/${matchId}/bouts`),
+  });
+}
+
+export function useOrganizerStandings(eventId: string | undefined, categoryId: string | undefined) {
+  return useQuery({
+    queryKey: ["organizer-standings", eventId, categoryId],
+    enabled: Boolean(eventId && categoryId),
+    queryFn: () => apiRequest<TeamStanding[]>(`/organizer/events/${eventId}/categories/${categoryId}/standings`),
+  });
+}
+
+export function usePublicStandings(eventId: string | undefined, categoryId: string | undefined) {
+  return useQuery({
+    queryKey: ["public-standings", eventId, categoryId],
+    enabled: Boolean(eventId && categoryId),
+    queryFn: () => apiRequest<TeamStanding[]>(`/events/${eventId}/categories/${categoryId}/standings`),
   });
 }
 

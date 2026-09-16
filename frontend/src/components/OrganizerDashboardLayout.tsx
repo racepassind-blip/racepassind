@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganizerEventDashboard } from "@/hooks/useEvents";
-import { getSportConfig } from "@/data/sportConfig";
+import { getSportConfig, eventSupportsTournament } from "@/data/sportConfig";
 import { cn } from "@/lib/utils";
 
 type OrganizerDashboardLayoutProps = {
@@ -29,9 +29,10 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const { data: eventDashboard } = useOrganizerEventDashboard(eventId);
   const eventQuery = eventId ? `?event_id=${eventId}&status=all` : "";
   const currentSportConfig = getSportConfig(eventDashboard?.event.sport);
+  const supportsTournament = eventSupportsTournament(eventDashboard?.event.sport, eventDashboard?.event.categories);
   const availableItems: NavItem[] = [
     ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: "Events", icon: CalendarDays, to: "/organizer" }, { label: "Plans & pricing", icon: CreditCard, to: "/organizer/pricing" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }]),
-    ...(eventId && currentSportConfig.supports_tournament ? [
+    ...(eventId && supportsTournament ? [
       { label: "Tournament setup", icon: Settings2, to: `/organizer/events/${eventId}/tournament` },
       { label: "Matches", icon: Trophy, to: `/organizer/events/${eventId}/tournament/matches` },
       { label: "Scoring", icon: Gauge, to: `/organizer/events/${eventId}/tournament/scoring` },

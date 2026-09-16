@@ -107,6 +107,8 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
                 "gender": category.gender,
                 "entryType": category.entry_type,
                 "participantsPerEntry": category.participants_per_entry,
+                "teamSizeMin": category.team_size_min,
+                "teamSizeMax": category.team_size_max,
                 "tickets": [
                     {
                         "id": str(ticket.id),
@@ -252,6 +254,8 @@ def create_event(
             gender=category_payload.gender,
             entry_type=category_payload.entry_type,
             participants_per_entry=category_payload.participants_per_entry,
+            team_size_min=category_payload.team_size_min,
+            team_size_max=category_payload.team_size_max,
         )
         db.add(category)
         db.flush()
@@ -476,6 +480,8 @@ def update_event(
                 gender=category_payload.gender,
                 entry_type=category_payload.entry_type,
                 participants_per_entry=category_payload.participants_per_entry,
+                team_size_min=category_payload.team_size_min,
+                team_size_max=category_payload.team_size_max,
             )
             db.add(category)
             db.flush()
@@ -496,6 +502,8 @@ def update_event(
         category.gender = category_payload.gender
         category.entry_type = category_payload.entry_type
         category.participants_per_entry = category_payload.participants_per_entry
+        category.team_size_min = category_payload.team_size_min
+        category.team_size_max = category_payload.team_size_max
 
         existing_tickets = {ticket.id: ticket for ticket in category.tickets}
         submitted_ticket_ids: set[UUID] = set()

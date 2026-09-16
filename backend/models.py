@@ -272,12 +272,18 @@ class EventCategory(Base):
     entry_type: Mapped[str] = mapped_column(String(20), nullable=False, default="singles", server_default="singles")
     participants_per_entry: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     max_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Team size range — only populated when entry_type == "team"
+    team_size_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    team_size_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     event: Mapped[Event] = relationship(back_populates="categories")
     matches: Mapped[list["Match"]] = relationship(back_populates="category")
     tournament_rounds: Mapped[list["TournamentRound"]] = relationship(back_populates="category", cascade="all, delete-orphan")
     scoring_config: Mapped["BadmintonCategoryScoring | None"] = relationship(
+        back_populates="category", cascade="all, delete-orphan", uselist=False
+    )
+    team_scoring_config: Mapped["TeamMatchScoring | None"] = relationship(
         back_populates="category", cascade="all, delete-orphan", uselist=False
     )
     tickets: Mapped[list["Ticket"]] = relationship(back_populates="category")
@@ -317,6 +323,28 @@ class BadmintonCategoryScoring(Base):
     )
 
     category: Mapped[EventCategory] = relationship(back_populates="scoring_config")
+
+
+class TeamMatchScoring(Base):
+    """Flexible point rules for team-format tournament categories."""
+
+    __tablename__ = "team_match_scoring"
+    __table_args__ = (UniqueConstraint("category_id", name="uq_team_match_scoring_category"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
+    category_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("event_categories.id"), nullable=False, index=True)
+    points_for_win: Mapped[int] = mapped_column(Integer, nullable=False, server_default="3")
+    points_for_draw: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    points_for_loss: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # 'bouts' = winner determined by bout majority; 'manual' = organiser sets winner directly
+    winner_by: Mapped[str] = mapped_column(String(20), nullable=False, server_default="bouts")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    category: Mapped[EventCategory] = relationship(back_populates="team_scoring_config")
 
 
 class OrganizerEventBilling(Base):
@@ -507,6 +535,7 @@ class Match(Base):
     scheduled_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="scheduled")
     winner: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    winner_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
     games_to_win: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
     points_per_game: Mapped[int] = mapped_column(Integer, nullable=False, server_default="21")
     games: Mapped[list[dict[str, int]]] = mapped_column(JSON_CONFIG, nullable=False, default=list, server_default=text("'[]'"))
@@ -521,6 +550,46 @@ class Match(Base):
     round: Mapped["TournamentRound | None"] = relationship(back_populates="matches")
     entry_a_registration: Mapped[Registration] = relationship(foreign_keys=[entry_a_registration_id])
     entry_b_registration: Mapped[Registration] = relationship(foreign_keys=[entry_b_registration_id])
+    bouts: Mapped[list["MatchBout"]] = relationship(
+        back_populates="match", cascade="all, delete-orphan", order_by="MatchBout.scheduled_time, MatchBout.created_at"
+    )
+
+
+class MatchBout(Base):
+    """A single player-vs-player bout inside a team match."""
+
+    __tablename__ = "match_bouts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    match_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("matches.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
+    court_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("courts.id", ondelete="SET NULL"), nullable=True
+    )
+    player_a_reg_participant_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("registration_participants.id", ondelete="SET NULL"), nullable=True
+    )
+    player_b_reg_participant_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("registration_participants.id", ondelete="SET NULL"), nullable=True
+    )
+    player_a_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    player_b_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="scheduled")
+    winner: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    score_a: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    score_b: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    scheduled_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    match: Mapped[Match] = relationship(back_populates="bouts")
+    court: Mapped["Court | None"] = relationship()
+    player_a: Mapped["RegistrationParticipant | None"] = relationship(foreign_keys=[player_a_reg_participant_id])
+    player_b: Mapped["RegistrationParticipant | None"] = relationship(foreign_keys=[player_b_reg_participant_id])
 
 
 class Order(Base):

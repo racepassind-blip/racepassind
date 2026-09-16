@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { OrganizerMatch } from "@/hooks/useEvents";
 import { useOrganizerEventDashboard, useOrganizerMatches } from "@/hooks/useEvents";
-import { getSportConfig } from "@/data/sportConfig";
+import { eventSupportsTournament } from "@/data/sportConfig";
 
 const ROUND_ORDER = ["round of 128", "round of 64", "round of 32", "round of 16", "quarterfinal", "semifinal", "final"];
 
@@ -39,7 +39,7 @@ const OrganizerEventTournamentBracket = () => {
   const { eventId } = useParams();
   const { data: dashboard, isLoading: isLoadingEvent, isError: isEventError } = useOrganizerEventDashboard(eventId);
   const event = dashboard?.event;
-  const supportsTournament = getSportConfig(event?.sport).supports_tournament;
+  const supportsTournament = eventSupportsTournament(event?.sport, event?.categories);
   const { data: matches = [], isLoading: isLoadingMatches, isError: isMatchesError, refetch, isFetching } = useOrganizerMatches(eventId);
   const [categoryId, setCategoryId] = useState("all");
 

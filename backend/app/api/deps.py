@@ -127,3 +127,26 @@ def get_authorized_event(db: Session, user: User, event_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     get_authorized_organization(db, user, event.organization_id)
     return event
+
+
+def require_tournament_capable(event, db: Session) -> None:
+    """Raise 404 unless the event is badminton or has at least one team-format category."""
+    from models import EventCategory
+
+    if event.category.casefold() == "badminton":
+        return
+    loaded_cats = event.categories if hasattr(event, "categories") else []
+    if any(cat.entry_type == "team" for cat in loaded_cats):
+        return
+    has_team = db.scalar(
+        select(EventCategory.id).where(
+            EventCategory.event_id == event.id,
+            EventCategory.entry_type == "team",
+        )
+    )
+    if has_team:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Tournament features are only available for badminton events or events with team categories",
+    )
