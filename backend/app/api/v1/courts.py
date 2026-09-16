@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_authorized_event, require_csrf, require_roles, require_tournament_capable
+from app.api.deps import get_authorized_event, require_csrf, require_roles
 from app.schemas.courts import CourtIn
 from db import get_db
 from models import Court, Event, Match, User
@@ -38,7 +38,6 @@ def list_courts(
     db: Session = Depends(get_db),
 ) -> list[dict[str, str]]:
     event = get_authorized_event(db, user, event_id)
-    _require_tournament_capable(event, db)
     courts = db.scalars(select(Court).where(Court.event_id == event.id).order_by(Court.name, Court.id)).all()
     return [_serialize_court(court) for court in courts]
 
@@ -52,7 +51,6 @@ def create_court(
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     event = get_authorized_event(db, user, event_id)
-    _require_tournament_capable(event, db)
     court = Court(event_id=event.id, name=payload.name)
     db.add(court)
     try:
@@ -74,7 +72,6 @@ def update_court(
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     event = get_authorized_event(db, user, event_id)
-    _require_tournament_capable(event, db)
     court = _get_court(db, event, court_id)
     court.name = payload.name
     try:
@@ -95,7 +92,6 @@ def delete_court(
     db: Session = Depends(get_db),
 ) -> None:
     event = get_authorized_event(db, user, event_id)
-    _require_tournament_capable(event, db)
     court = _get_court(db, event, court_id)
     if db.scalar(select(Match.id).where(Match.court_id == court.id)) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Court cannot be deleted while matches use it")
