@@ -23,9 +23,24 @@ type ScoreRow = { gameNumber: number; scoreA: string; scoreB: string };
 const emptyRows = (count: number): ScoreRow[] =>
   Array.from({ length: count }, (_, index) => ({ gameNumber: index + 1, scoreA: "", scoreB: "" }));
 
+// For team matches with specific players picked, show "Rahul & Priya (Team A)".
+function matchSideLabel(entry: OrganizerMatch["entryA"], players: OrganizerMatch["playersA"]): string {
+  if (players && players.length > 0) {
+    const names = players.map((player) => player.name).join(" & ");
+    return entry.teamName ? `${names} (${entry.teamName})` : names;
+  }
+  return entry.displayName;
+}
+
+function matchTypeLabel(match: OrganizerMatch): string {
+  return match.matchType ? (match.matchType === "singles" ? "Singles" : "Doubles") : "";
+}
+
 function winnerName(match: OrganizerMatch): string {
   if (!match.winner) return "—";
-  return match.winner === "entry_a" ? match.entryA.displayName : match.entryB.displayName;
+  return match.winner === "entry_a"
+    ? matchSideLabel(match.entryA, match.playersA)
+    : matchSideLabel(match.entryB, match.playersB);
 }
 
 function scoresSummary(match: OrganizerMatch): string {
@@ -172,7 +187,7 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
                 >
                   {activeMatches.map((match) => (
                     <option key={match.id} value={match.id}>
-                      {match.status === "in_progress" ? "▶ " : ""}{match.roundLabel} · {match.entryA.displayName} vs {match.entryB.displayName}
+                      {match.status === "in_progress" ? "▶ " : ""}{match.roundLabel}{match.matchType ? ` · ${matchTypeLabel(match)}` : ""} · {matchSideLabel(match.entryA, match.playersA)} vs {matchSideLabel(match.entryB, match.playersB)}
                     </option>
                   ))}
                 </select>
@@ -181,14 +196,26 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
 
               {selectedMatch && (
                 <>
+                  {selectedMatch.matchType && (
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">{matchTypeLabel(selectedMatch)}</span>
+                      <span className="text-xs text-muted-foreground">Team match — specific players selected</span>
+                    </div>
+                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-lg border p-3">
                       <p className="text-xs uppercase tracking-wide text-muted-foreground">Entry A</p>
                       <p className="mt-1 font-semibold">{selectedMatch.entryA.displayName}</p>
+                      {selectedMatch.playersA && selectedMatch.playersA.length > 0 && (
+                        <p className="mt-0.5 text-sm text-muted-foreground">{selectedMatch.playersA.map((player) => player.name).join(" & ")}</p>
+                      )}
                     </div>
                     <div className="rounded-lg border p-3">
                       <p className="text-xs uppercase tracking-wide text-muted-foreground">Entry B</p>
                       <p className="mt-1 font-semibold">{selectedMatch.entryB.displayName}</p>
+                      {selectedMatch.playersB && selectedMatch.playersB.length > 0 && (
+                        <p className="mt-0.5 text-sm text-muted-foreground">{selectedMatch.playersB.map((player) => player.name).join(" & ")}</p>
+                      )}
                     </div>
                   </div>
 
@@ -206,8 +233,8 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
                             onChange={(e) => setWinner(e.target.value as "entry_a" | "entry_b" | "")}
                           >
                             <option value="">Select winner</option>
-                            <option value="entry_a">Entry A — {selectedMatch.entryA.displayName}</option>
-                            <option value="entry_b">Entry B — {selectedMatch.entryB.displayName}</option>
+                            <option value="entry_a">Entry A — {matchSideLabel(selectedMatch.entryA, selectedMatch.playersA)}</option>
+                            <option value="entry_b">Entry B — {matchSideLabel(selectedMatch.entryB, selectedMatch.playersB)}</option>
                           </select>
                           {selectedMatch.winnerBy !== "manual" && <p className="text-xs text-muted-foreground">The winner is decided automatically by bout majority. Switch scoring to “manual” in Tournament setup to override.</p>}
                         </div>
@@ -290,8 +317,11 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
                 {completedMatches.map((match) => (
                   <div key={match.id} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{match.roundLabel} · {match.category.name}</p>
-                      <p className="mt-0.5 text-sm font-medium">{match.entryA.displayName} vs {match.entryB.displayName}</p>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {match.roundLabel} · {match.category.name}
+                        {match.matchType ? ` · ${matchTypeLabel(match)}` : ""}
+                      </p>
+                      <p className="mt-0.5 text-sm font-medium">{matchSideLabel(match.entryA, match.playersA)} vs {matchSideLabel(match.entryB, match.playersB)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Scores</p>

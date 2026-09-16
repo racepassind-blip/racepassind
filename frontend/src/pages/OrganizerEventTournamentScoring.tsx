@@ -13,9 +13,20 @@ import { useOrganizerMatches } from "@/hooks/useEvents";
 import { eventSupportsTournament } from "@/data/sportConfig";
 import type { OrganizerMatch } from "@/hooks/useEvents";
 
+// For team matches with specific players picked, show "Rahul & Priya (Team A)".
+function matchSideLabel(entry: OrganizerMatch["entryA"], players: OrganizerMatch["playersA"]): string {
+  if (players && players.length > 0) {
+    const names = players.map((player) => player.name).join(" & ");
+    return entry.teamName ? `${names} (${entry.teamName})` : names;
+  }
+  return entry.displayName;
+}
+
 function winnerName(match: OrganizerMatch): string {
   if (!match.winner) return "—";
-  return match.winner === "entry_a" ? match.entryA.displayName : match.entryB.displayName;
+  return match.winner === "entry_a"
+    ? matchSideLabel(match.entryA, match.playersA)
+    : matchSideLabel(match.entryB, match.playersB);
 }
 
 function scoresSummary(match: OrganizerMatch): string {
@@ -88,8 +99,11 @@ const OrganizerEventTournamentScoring = () => {
                     {completedMatches.map((match) => (
                       <div key={match.id} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{match.roundLabel} · {match.category.name}</p>
-                          <p className="mt-0.5 text-sm font-medium">{match.entryA.displayName} vs {match.entryB.displayName}</p>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {match.roundLabel} · {match.category.name}
+                            {match.matchType ? ` · ${match.matchType === "singles" ? "Singles" : "Doubles"}` : ""}
+                          </p>
+                          <p className="mt-0.5 text-sm font-medium">{matchSideLabel(match.entryA, match.playersA)} vs {matchSideLabel(match.entryB, match.playersB)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground">Scores</p>
