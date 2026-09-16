@@ -143,8 +143,6 @@ export interface TeamStanding {
   wins: number;
   draws: number;
   losses: number;
-  boutsWon: number;
-  boutsLost: number;
   points: number;
 }
 

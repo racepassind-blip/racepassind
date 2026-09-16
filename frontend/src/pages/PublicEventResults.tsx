@@ -29,8 +29,6 @@ function PublicStandings({ eventId, categoryId, categoryName }: { eventId: strin
                 <TableHead className="text-center">W</TableHead>
                 <TableHead className="text-center">D</TableHead>
                 <TableHead className="text-center">L</TableHead>
-                <TableHead className="text-center">BW</TableHead>
-                <TableHead className="text-center">BL</TableHead>
                 <TableHead className="text-center font-bold">Pts</TableHead>
               </TableRow>
             </TableHeader>
@@ -42,8 +40,6 @@ function PublicStandings({ eventId, categoryId, categoryName }: { eventId: strin
                   <TableCell className="text-center">{row.wins}</TableCell>
                   <TableCell className="text-center">{row.draws}</TableCell>
                   <TableCell className="text-center">{row.losses}</TableCell>
-                  <TableCell className="text-center">{row.boutsWon}</TableCell>
-                  <TableCell className="text-center">{row.boutsLost}</TableCell>
                   <TableCell className="text-center font-bold">{row.points}</TableCell>
                 </TableRow>
               ))}

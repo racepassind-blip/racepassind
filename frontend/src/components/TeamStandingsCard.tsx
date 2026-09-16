@@ -57,8 +57,6 @@ const TeamStandingsCard = ({ eventId, categories }: TeamStandingsCardProps) => {
                   <TableHead className="text-center">W</TableHead>
                   <TableHead className="text-center">D</TableHead>
                   <TableHead className="text-center">L</TableHead>
-                  <TableHead className="text-center">BW</TableHead>
-                  <TableHead className="text-center">BL</TableHead>
                   <TableHead className="text-center font-bold">Pts</TableHead>
                 </TableRow>
               </TableHeader>
@@ -75,14 +73,12 @@ const TeamStandingsCard = ({ eventId, categories }: TeamStandingsCardProps) => {
                     <TableCell className="text-center">{row.wins}</TableCell>
                     <TableCell className="text-center">{row.draws}</TableCell>
                     <TableCell className="text-center">{row.losses}</TableCell>
-                    <TableCell className="text-center">{row.boutsWon}</TableCell>
-                    <TableCell className="text-center">{row.boutsLost}</TableCell>
                     <TableCell className="text-center font-bold">{row.points}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-3 text-xs text-muted-foreground">P: played · W: wins · D: draws · L: losses · BW: bouts won · BL: bouts lost · Pts: points</p>
+            <p className="mt-3 text-xs text-muted-foreground">P: played · W: wins · D: draws · L: losses · Pts: points</p>
           </div>
         )}
       </CardContent>

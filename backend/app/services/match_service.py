@@ -729,7 +729,6 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID) -> list[di
         .options(
             joinedload(Match.entry_a_registration).joinedload(Registration.participant),
             joinedload(Match.entry_b_registration).joinedload(Registration.participant),
-            joinedload(Match.bouts),
         )
         .where(
             Match.event_id == event_id,
@@ -752,8 +751,6 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID) -> list[di
                 "wins": 0,
                 "draws": 0,
                 "losses": 0,
-                "boutsWon": 0,
-                "boutsLost": 0,
                 "points": 0,
             }
         return stats[rid]
@@ -782,19 +779,5 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID) -> list[di
             sb["draws"] += 1
             sb["points"] += pts_draw
 
-        # Bouts
-        for bout in match.bouts:
-            if bout.status != "completed":
-                continue
-            if bout.winner == "player_a":
-                sa["boutsWon"] += 1
-                sb["boutsLost"] += 1
-            elif bout.winner == "player_b":
-                sb["boutsWon"] += 1
-                sa["boutsLost"] += 1
-
-    # Sort: points DESC, boutsWon DESC, boutsLost ASC
-    return sorted(
-        stats.values(),
-        key=lambda r: (-r["points"], -r["boutsWon"], r["boutsLost"]),
-    )
+    # Sort by points only (descending)
+    return sorted(stats.values(), key=lambda r: -r["points"])

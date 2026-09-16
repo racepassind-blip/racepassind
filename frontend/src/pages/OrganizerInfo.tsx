@@ -106,14 +106,16 @@ const sportPlaybooks: Record<SportKey, SportPlaybook> = {
   },
   badminton: {
     label: "Badminton tournaments",
-    summary: "Badminton is the first sport with a live tournament console, from court setup to public results.",
+    summary: "Badminton has a live tournament console for both individual and team formats, from court setup to public results.",
     live: [
       { title: "Set up the tournament", description: "Configure categories, rounds, courts, and scoring rules by event category.", icon: Settings2 },
-      { title: "Schedule matches", description: "Create matches, assign entries and courts, set times, and update match status.", icon: CalendarDays },
-      { title: "Score and publish results", description: "Enter game scores, record winners, view brackets, and expose public results.", icon: Trophy },
+      { title: "Singles and doubles draws", description: "Run individual entry categories with full match scheduling, court assignment, and live scoring.", icon: CalendarDays },
+      { title: "Team competitions", description: "Support squad-based formats like the Thomas Cup style, where two teams meet across a tie made up of several singles and doubles matches.", icon: Users },
+      { title: "Named players per team match", description: "For each tie, pick the exact players from every team's roster for singles or doubles, so results show real player names, not just the team.", icon: ListChecks },
+      { title: "Score and publish results", description: "Enter game scores, record winners, track team standings by points, and expose public results.", icon: Trophy },
     ],
     next: [
-      { title: "More tournament templates", description: "Extend the tournament workflow beyond the current badminton implementation.", icon: ArrowRight },
+      { title: "More tournament templates", description: "Extend the tournament workflow with additional draw and league formats.", icon: ArrowRight },
       { title: "Faster draw operations", description: "Add deeper automation around seeding and progression as the console grows.", icon: Activity },
     ],
   },
