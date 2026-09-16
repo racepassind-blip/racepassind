@@ -575,11 +575,11 @@ const OrganizerEventCreate = () => {
 
     const fieldConfig = participantConfigPayload();
     const addonConfig = addonConfigPayload();
-    if (!fieldConfig.fields.some((field) => field.id === "email" && field.required) && !fieldConfig.fields.some((field) => field.id === "phone" && field.required)) {
+    if (!hasTeamCategory && !fieldConfig.fields.some((field) => field.id === "email" && field.required) && !fieldConfig.fields.some((field) => field.id === "phone" && field.required)) {
       toast.error("Make email or phone required.");
       return;
     }
-    if (fieldConfig.fields.some((field) => (field.type === "select" || field.type === "dropdown") && (!field.options || field.options.length === 0))) {
+    if (!hasTeamCategory && fieldConfig.fields.some((field) => (field.type === "select" || field.type === "dropdown") && (!field.options || field.options.length === 0))) {
       toast.error("Add at least one option to every select field.");
       return;
     }
