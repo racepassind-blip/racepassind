@@ -23,6 +23,14 @@ interface TeamScoringConfigProps {
   categories: OrganizerEventCategory[];
 }
 
+// Team match winners are decided per match by the organizer (Match type +
+// selected players determine who plays; the organizer records the result).
+// The legacy "winner decided by" bout model is no longer surfaced in the UI,
+// but the backend field is preserved for compatibility, so we always send a
+// fixed value. "manual" keeps the backend from auto-recomputing winners from
+// bouts, which is the correct behaviour for the current match-type flow.
+const FIXED_WINNER_BY = "manual" as const;
+
 const TeamScoringConfig = ({ eventId, categories }: TeamScoringConfigProps) => {
   const queryClient = useQueryClient();
   const teamCategories = categories.filter((category) => category.entryType === "team");
@@ -30,7 +38,6 @@ const TeamScoringConfig = ({ eventId, categories }: TeamScoringConfigProps) => {
   const [pointsForWin, setPointsForWin] = useState("3");
   const [pointsForDraw, setPointsForDraw] = useState("1");
   const [pointsForLoss, setPointsForLoss] = useState("0");
-  const [winnerBy, setWinnerBy] = useState<"bouts" | "manual">("bouts");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -48,7 +55,6 @@ const TeamScoringConfig = ({ eventId, categories }: TeamScoringConfigProps) => {
         setPointsForWin(String(config.pointsForWin));
         setPointsForDraw(String(config.pointsForDraw));
         setPointsForLoss(String(config.pointsForLoss));
-        setWinnerBy(config.winnerBy);
       })
       .catch(() => undefined)
       .finally(() => { if (!cancelled) setIsLoading(false); });
@@ -65,7 +71,7 @@ const TeamScoringConfig = ({ eventId, categories }: TeamScoringConfigProps) => {
           points_for_win: Number(pointsForWin) || 0,
           points_for_draw: Number(pointsForDraw) || 0,
           points_for_loss: Number(pointsForLoss) || 0,
-          winner_by: winnerBy,
+          winner_by: FIXED_WINNER_BY,
         }),
       });
       await queryClient.invalidateQueries({ queryKey: ["organizer-standings", eventId] });
@@ -83,7 +89,10 @@ const TeamScoringConfig = ({ eventId, categories }: TeamScoringConfigProps) => {
     <Card>
       <CardHeader>
         <CardTitle>Team points system</CardTitle>
-        <CardDescription>Set how league points are awarded and how the winner of each team match is decided.</CardDescription>
+        <CardDescription>
+          Set how league points are awarded for standings when a category has multiple teams. Each match winner is
+          recorded by the organizer from the match result.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="max-w-sm space-y-2">
@@ -107,13 +116,10 @@ const TeamScoringConfig = ({ eventId, categories }: TeamScoringConfigProps) => {
               <div className="space-y-1"><Label>Points for draw</Label><Input type="number" min={0} max={100} value={pointsForDraw} onChange={(e) => setPointsForDraw(e.target.value)} /></div>
               <div className="space-y-1"><Label>Points for loss</Label><Input type="number" min={0} max={100} value={pointsForLoss} onChange={(e) => setPointsForLoss(e.target.value)} /></div>
             </div>
-            <div className="space-y-2">
-              <Label>Winner decided by</Label>
-              <div className="flex gap-4 text-sm">
-                <label className="flex items-center gap-2"><input type="radio" name="winner-by" checked={winnerBy === "bouts"} onChange={() => setWinnerBy("bouts")} /> Bout majority</label>
-                <label className="flex items-center gap-2"><input type="radio" name="winner-by" checked={winnerBy === "manual"} onChange={() => setWinnerBy("manual")} /> Manual</label>
-              </div>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Standings rank teams by total points across completed matches in the category. Points above are applied
+              per match result.
+            </p>
             <Button type="button" onClick={() => void save()} disabled={isSaving}>
               <Save className="mr-2 h-4 w-4" /> Save points system
             </Button>

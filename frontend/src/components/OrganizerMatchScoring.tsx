@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { OrganizerMatch } from "@/hooks/useEvents";
 import { useOrganizerMatches } from "@/hooks/useEvents";
-import MatchBoutPanel from "@/components/MatchBoutPanel";
 import { apiRequest } from "@/lib/api";
 
 interface OrganizerMatchScoringProps {
@@ -102,14 +101,10 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
 
   const saveScores = async (complete: boolean) => {
     if (!selectedMatch) return;
-    // A team match with a picked match type (singles/doubles + specific players) is
-    // scored like a normal game — winner is chosen manually, no bout aggregation.
-    const usesBoutModel = selectedMatch.category.entryType === "team" && !selectedMatch.matchType;
-    const isTeamAuto = usesBoutModel && selectedMatch.winnerBy !== "manual";
-    // For whole-team matches decided by bouts, the winner is auto-computed server-side.
-    const effectiveWinner = isTeamAuto ? (selectedMatch.winner ?? winner) : winner;
-    if (complete && !isTeamAuto && !winner) { toast.error("Select the winner before completing the match."); return; }
-    if (complete && isTeamAuto && !effectiveWinner) { toast.error("Record bout results so a winner can be determined, or use manual scoring."); return; }
+    // Every match — singles, doubles, team (with or without a match type) — is now
+    // scored the same way: the organizer records game scores and picks the winner
+    // manually. The legacy bout-aggregation model has been retired.
+    if (complete && !winner) { toast.error("Select the winner before completing the match."); return; }
     const games = [];
     for (const row of rows) {
       if (row.scoreA === "" && row.scoreB === "") continue;
@@ -146,7 +141,7 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
           round_label: selectedMatch.roundLabel,
           scheduled_time: selectedMatch.scheduledTime,
           status: complete ? "completed" : "in_progress",
-          winner: complete ? effectiveWinner : null,
+          winner: complete ? winner : null,
           games,
           ...playerPayload,
         }),
@@ -231,34 +226,7 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
                     </div>
                   </div>
 
-                  {selectedMatch.category.entryType === "team" && !selectedMatch.matchType ? (
-                    <>
-                      <MatchBoutPanel eventId={eventId} match={selectedMatch} />
-                      <div className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-end sm:justify-between">
-                        <div className="space-y-2">
-                          <Label htmlFor={`score-winner-${selectedMatch.id}`}>Winner {selectedMatch.winnerBy === "manual" ? "(manual)" : "(auto from bouts)"}</Label>
-                          <select
-                            id={`score-winner-${selectedMatch.id}`}
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-64 disabled:opacity-60"
-                            value={winner}
-                            disabled={selectedMatch.winnerBy !== "manual"}
-                            onChange={(e) => setWinner(e.target.value as "entry_a" | "entry_b" | "")}
-                          >
-                            <option value="">Select winner</option>
-                            <option value="entry_a">Entry A — {matchSideLabel(selectedMatch.entryA, selectedMatch.playersA)}</option>
-                            <option value="entry_b">Entry B — {matchSideLabel(selectedMatch.entryB, selectedMatch.playersB)}</option>
-                          </select>
-                          {selectedMatch.winnerBy !== "manual" && <p className="text-xs text-muted-foreground">The winner is decided automatically by bout majority. Switch scoring to “manual” in Tournament setup to override.</p>}
-                        </div>
-                        <div className="flex gap-2">
-                          <Button type="button" onClick={() => void saveScores(true)} disabled={isSaving || (selectedMatch.winnerBy === "manual" && !winner)}>
-                            <CheckCircle2 className="mr-2 h-4 w-4" />Complete match
-                          </Button>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
+                  <>
                       <div className="space-y-3">
                         {rows.map((row, index) => (
                           <div key={row.gameNumber} className="grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3">
@@ -301,7 +269,6 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
                         </div>
                       </div>
                     </>
-                  )}
                 </>
               )}
             </>

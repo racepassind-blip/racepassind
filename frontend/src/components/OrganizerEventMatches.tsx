@@ -109,6 +109,12 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
     if (hasConfiguredRounds && !rounds.some((round) => round.id === roundId)) setRoundId(rounds[0]?.id ?? "");
   }, [hasConfiguredRounds, roundId, rounds]);
 
+  // Team categories must always have a match type (singles/doubles) — the plain
+  // whole-team option was removed. Default to singles when none is selected.
+  useEffect(() => {
+    if (isTeamCategory && !matchType) setMatchType("singles");
+  }, [isTeamCategory, matchType]);
+
   const resetForm = () => {
     setEntryAId("");
     setEntryBId("");
@@ -166,10 +172,14 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
       return;
     }
 
-    // Team-mode player selection. Only enforced when the organizer has picked a
-    // match type; a plain team-vs-team match (no type) is still allowed.
+    // Team-mode player selection. Team categories require a match type
+    // (singles/doubles) with specific players — the whole-team option was removed.
     let playerPayload: Record<string, unknown> = {};
-    if (isTeamCategory && matchType) {
+    if (isTeamCategory) {
+      if (!matchType) {
+        toast.error("Select a match type (singles or doubles).");
+        return;
+      }
       const needed = matchType === "singles" ? 1 : 2;
       const cleanA = playerAIds.filter(Boolean).slice(0, needed);
       const cleanB = playerBIds.filter(Boolean).slice(0, needed);
@@ -246,23 +256,23 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
           {isTeamCategory && (
             <div className="space-y-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
               <div className="space-y-2">
-                <Label htmlFor="match-type">Match type (optional)</Label>
+                <Label htmlFor="match-type">Match type</Label>
                 <select
                   id="match-type"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-64"
                   value={matchType}
                   onChange={(event) => {
-                    const value = event.target.value as "" | "singles" | "doubles";
+                    const value = event.target.value as "singles" | "doubles";
                     setMatchType(value);
                     setPlayerAIds([]);
                     setPlayerBIds([]);
                   }}
+                  required
                 >
-                  <option value="">Whole team vs team (no player pick)</option>
                   <option value="singles">Singles — 1 player per team</option>
                   <option value="doubles">Doubles — 2 players per team</option>
                 </select>
-                <p className="text-xs text-muted-foreground">Pick specific players from each team's roster. Leave as "Whole team" to schedule a plain team-vs-team tie.</p>
+                <p className="text-xs text-muted-foreground">Pick specific players from each team's roster for this match.</p>
               </div>
 
               {matchType && (
