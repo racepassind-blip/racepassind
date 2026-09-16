@@ -195,69 +195,62 @@ const Checkout = () => {
   }, [cart, event, riders.length]);
 
   // Auto-fill captain fields from team info for the first member
-  useEffect(() => {
-    if (!event) return;
-    const firstRider = riders[0];
-    const firstTier = firstRider ? event.tiers.find((tier) => tier.id === firstRider.ticketId) : undefined;
-    
-    if (firstTier?.entryType !== "team") return;
-    
+  const updateResponse = (riderKey: string, field: ParticipantFieldConfig, value: ResponseValue) => {
     setRiders((previous) => {
-      if (previous.length === 0) return previous;
-      
-      // Group riders by entry to find all riders in the first entry
-      const entryMap = new Map<string, RiderDraft[]>();
-      previous.forEach((r) => {
-        const entry = entryMap.get(r.entryKey) || [];
-        entry.push(r);
-        entryMap.set(r.entryKey, entry);
+      let updatedRiders = previous.map((rider) => {
+        if (rider.key !== riderKey) return rider;
+        const responses = { ...rider.responses };
+        if (value === "") delete responses[field.id];
+        else responses[field.id] = value;
+        return { ...rider, responses };
       });
       
-      const firstEntryKey = previous[0].entryKey;
-      const entryRiders = entryMap.get(firstEntryKey) || [];
-      if (entryRiders.length === 0) return previous;
-      
-      // Get the first rider (participantIndex 0) who has the team info fields
-      const firstRiderInEntry = entryRiders.find((r) => r.participantIndex === 0);
-      if (!firstRiderInEntry) return previous;
-      
-      const captainName = firstRiderInEntry.responses["captain_name"];
-      const captainEmail = firstRiderInEntry.responses["captain_email"];
-      const captainPhone = firstRiderInEntry.responses["captain_phone"];
-      
-      // Find the first member rider (participantIndex 0, same entry) to update
-      const firstMemberIndex = previous.findIndex(
-        (r) => r.entryKey === firstEntryKey && r.participantIndex === 0
-      );
-      if (firstMemberIndex === -1) return previous;
-      
-      const updatedFirstMember = { ...previous[firstMemberIndex] };
-      // Auto-fill full_name from captain_name (only if not already set)
-      if (captainName && !updatedFirstMember.responses["full_name"]) {
-        updatedFirstMember.responses["full_name"] = captainName;
+      // For team events, auto-fill captain fields to the first member
+      const firstRider = updatedRiders[0];
+      if (firstRider) {
+        const firstTier = event?.tiers.find((tier) => tier.id === firstRider.ticketId);
+        if (firstTier?.entryType === "team") {
+          // Group by entry to find riders in the same entry
+          const entryMap = new Map<string, RiderDraft[]>();
+          updatedRiders.forEach((r) => {
+            const entry = entryMap.get(r.entryKey) || [];
+            entry.push(r);
+            entryMap.set(r.entryKey, entry);
+          });
+          
+          const firstEntryKey = firstRider.entryKey;
+          const entryRiders = entryMap.get(firstEntryKey) || [];
+          const firstRiderInEntry = entryRiders.find((r) => r.participantIndex === 0);
+          
+          if (firstRiderInEntry) {
+            const captainName = firstRiderInEntry.responses["captain_name"];
+            const captainEmail = firstRiderInEntry.responses["captain_email"];
+            const captainPhone = firstRiderInEntry.responses["captain_phone"];
+            
+            // Find the first member (participantIndex 0) and update their fields
+            const firstMemberIndex = updatedRiders.findIndex(
+              (r) => r.entryKey === firstEntryKey && r.participantIndex === 0
+            );
+            
+            if (firstMemberIndex !== -1) {
+              const updatedFirstMember = { ...updatedRiders[firstMemberIndex] };
+              if (captainName && !updatedFirstMember.responses["full_name"]) {
+                updatedFirstMember.responses["full_name"] = captainName;
+              }
+              if (captainEmail && !updatedFirstMember.responses["email"]) {
+                updatedFirstMember.responses["email"] = captainEmail;
+              }
+              if (captainPhone && !updatedFirstMember.responses["phone"]) {
+                updatedFirstMember.responses["phone"] = captainPhone;
+              }
+              updatedRiders[firstMemberIndex] = updatedFirstMember;
+            }
+          }
+        }
       }
-      if (captainEmail && !updatedFirstMember.responses["email"]) {
-        updatedFirstMember.responses["email"] = captainEmail;
-      }
-      if (captainPhone && !updatedFirstMember.responses["phone"]) {
-        updatedFirstMember.responses["phone"] = captainPhone;
-      }
       
-      if (updatedFirstMember !== previous[firstMemberIndex]) {
-        return previous.map((r, i) => (i === firstMemberIndex ? updatedFirstMember : r));
-      }
-      return previous;
+      return updatedRiders;
     });
-  }, [event, riders]);
-
-  const updateResponse = (riderKey: string, field: ParticipantFieldConfig, value: ResponseValue) => {
-    setRiders((previous) => previous.map((rider) => {
-      if (rider.key !== riderKey) return rider;
-      const responses = { ...rider.responses };
-      if (value === "") delete responses[field.id];
-      else responses[field.id] = value;
-      return { ...rider, responses };
-    }));
   };
 
   const membersInEntry = (entryKey: string) => riders.filter((rider) => rider.entryKey === entryKey);
