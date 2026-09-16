@@ -47,12 +47,15 @@ const EventDetail = () => {
   }
 
   const registrationClosed = event.registrationStatus === "closed";
+  // Team categories: only one team entry can be registered at a time.
+  const tierMaxQty = (tier?: { entryType?: string; available: number }) =>
+    tier?.entryType === "team" ? Math.min(tier.available, 1) : Math.min(tier?.available ?? 0, 10);
   const updateQty = (tierId: string, delta: number) => {
     if (registrationClosed) return;
     setQuantities((prev) => {
       const tier = event.tiers.find((t) => t.id === tierId);
       const current = prev[tierId] || 0;
-      const next = Math.max(0, Math.min(current + delta, tier?.available ?? 0, 10));
+      const next = Math.max(0, Math.min(current + delta, tierMaxQty(tier)));
       return { ...prev, [tierId]: next };
     });
   };
@@ -247,13 +250,20 @@ const EventDetail = () => {
                             </span>
                             <button
                               onClick={() => updateQty(tier.id, 1)}
-                              disabled={registrationClosed || qty >= Math.min(tier.available, 10)}
+                              disabled={registrationClosed || qty >= tierMaxQty(tier)}
                               className="h-7 w-7 rounded-md border flex items-center justify-center text-muted-foreground hover:bg-muted disabled:opacity-30 transition-colors"
                             >
                               <Plus className="h-3.5 w-3.5" />
                             </button>
                           </div>
                         </div>
+
+                        {tier.entryType === "team" && (
+                          <p className="text-xs text-muted-foreground">
+                            Only one team can be registered per registration
+                            {tier.teamSizeMin && tier.teamSizeMax ? ` (${tier.teamSizeMin}–${tier.teamSizeMax} members).` : "."}
+                          </p>
+                        )}
                       </div>
                     );
                   })}

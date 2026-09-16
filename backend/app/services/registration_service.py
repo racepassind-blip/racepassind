@@ -1281,6 +1281,11 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
     for ticket_id, requested in requested_by_ticket.items():
         if tickets[ticket_id].available < requested:
             raise ValueError(f"Not enough spots left for {tickets[ticket_id].name}")
+        # Team categories: only one team entry may be registered per order.
+        ticket = tickets[ticket_id]
+        is_team_ticket = ticket.category is not None and ticket.category.entry_type == "team"
+        if is_team_ticket and requested > 1:
+            raise ValueError("Only one team can be registered per order")
 
     field_config, addon_config = normalize_event_configs(event.field_config, event.addon_config)
     prepared: list[dict] = []
