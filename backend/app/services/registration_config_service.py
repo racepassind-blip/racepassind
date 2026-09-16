@@ -415,7 +415,12 @@ def calculate_registration_total(
         require_contact = True
 
     known_fields = {field["id"]: field for field in fields}
-    unknown_fields = set(responses) - set(known_fields)
+    # ``email`` and ``phone`` are shared-contact keys merged onto every member row
+    # by the registration service (see _merge_shared_contact). They are entry-level
+    # contact values, not per-member fields, so they are always allowed even when
+    # the field config exposes contact as ``captain_email``/``captain_phone`` only.
+    SHARED_CONTACT_KEYS = {"email", "phone"}
+    unknown_fields = set(responses) - set(known_fields) - SHARED_CONTACT_KEYS
     if unknown_fields:
         raise ValueError("Unknown participant information field")
     normalized_responses: dict[str, Any] = {}
@@ -426,6 +431,18 @@ def calculate_registration_total(
                 raise ValueError(f"{field['label']} is required")
             continue
         normalized_responses[field["id"]] = _response_value(value, field)
+    # Carry through the merged shared-contact keys so the participant record and the
+    # contact check below can see them, even when they are not declared fields (a
+    # team config exposes contact as captain_email/captain_phone).
+    for contact_key in ("email", "phone"):
+        raw_contact = responses.get(contact_key)
+        if contact_key not in normalized_responses and raw_contact not in (None, ""):
+            normalized_responses[contact_key] = _clean_text(raw_contact, contact_key.capitalize(), max_length=320)
+    # Mirror captain contact onto the plain email/phone keys used by the participant record.
+    if not normalized_responses.get("email") and normalized_responses.get("captain_email"):
+        normalized_responses["email"] = normalized_responses["captain_email"]
+    if not normalized_responses.get("phone") and normalized_responses.get("captain_phone"):
+        normalized_responses["phone"] = normalized_responses["captain_phone"]
     if require_contact and not normalized_responses.get("email") and not normalized_responses.get("phone") \
             and not normalized_responses.get("captain_email") and not normalized_responses.get("captain_phone"):
         raise ValueError("At least one of email or phone is required")
