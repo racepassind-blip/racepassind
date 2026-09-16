@@ -18,16 +18,16 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("matches", recreate="always") as batch_op:
-        # "singles" or "doubles" — only set for team-category matches, else NULL
-        batch_op.add_column(sa.Column("match_type", sa.String(length=20), nullable=True))
-        # JSON arrays of registration_participant ids chosen from each team's roster
-        batch_op.add_column(sa.Column("player_a_participant_ids", sa.JSON(), nullable=True))
-        batch_op.add_column(sa.Column("player_b_participant_ids", sa.JSON(), nullable=True))
+    # Plain ADD COLUMN works natively on PostgreSQL and avoids rebuilding the
+    # matches table (which would fail because match_bouts has an FK on matches_pkey).
+    # "match_type" is "singles" or "doubles" — only set for team-category matches.
+    op.add_column("matches", sa.Column("match_type", sa.String(length=20), nullable=True))
+    # JSON arrays of registration_participant ids chosen from each team's roster.
+    op.add_column("matches", sa.Column("player_a_participant_ids", sa.JSON(), nullable=True))
+    op.add_column("matches", sa.Column("player_b_participant_ids", sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("matches", recreate="always") as batch_op:
-        batch_op.drop_column("player_b_participant_ids")
-        batch_op.drop_column("player_a_participant_ids")
-        batch_op.drop_column("match_type")
+    op.drop_column("matches", "player_b_participant_ids")
+    op.drop_column("matches", "player_a_participant_ids")
+    op.drop_column("matches", "match_type")
