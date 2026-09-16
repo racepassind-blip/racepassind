@@ -13,6 +13,8 @@ const categoryColors: Record<string, string> = {
 
 export function EventCard({ event }: { event: SportEvent }) {
   const lowestPrice = Math.min(...event.tiers.map((t) => t.price));
+  const locationName = event.locationDetails?.name || event.location;
+  const cityState = [event.locationDetails?.city, event.locationDetails?.state].filter(Boolean).join(", ");
 
   return (
     <Link
@@ -48,14 +50,19 @@ export function EventCard({ event }: { event: SportEvent }) {
           </span>
           <span className="flex items-center gap-2">
             <MapPin className="h-4 w-4" />
-            {event.location}
+            <span className="font-medium">{locationName}</span>
           </span>
+          {cityState && (
+            <span className="flex items-center gap-2 pl-6 text-xs text-muted-foreground">
+              <span className="h-1 w-1 rounded-full bg-muted-foreground" />
+              {cityState}
+            </span>
+          )}
           <span className="flex items-center gap-2">
             <Users className="h-4 w-4" />
             {event.participants.toLocaleString()} / {event.maxParticipants.toLocaleString()}
           </span>
         </div>
-
         <div className="flex items-center justify-between pt-2 border-t">
           <span className="text-sm text-muted-foreground">{event.distance}</span>
           <span className="font-bold text-primary">From ₹{lowestPrice.toLocaleString("en-IN")}</span>
