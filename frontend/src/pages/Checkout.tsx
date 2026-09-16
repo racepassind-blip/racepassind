@@ -379,13 +379,24 @@ const Checkout = () => {
           event_id: eventId,
           entries: entryGroups.map((group) => {
             const primaryResponses = group[0].responses;
+            // Main-registrant-only fields live on the captain (index 0). They must
+            // not be sent on other members, whose rows are validated against the
+            // per-member field list only.
+            const MAIN_REGISTRANT_ONLY_IDS = ["team_name", "captain_name", "captain_email", "captain_phone"];
             return {
               ticket_id: group[0].ticketId,
               email: (primaryResponses.email ?? primaryResponses.captain_email) as string | undefined,
               phone: (primaryResponses.phone ?? primaryResponses.captain_phone) as string | undefined,
-              participants: group.map(({ responses }) => ({
-                // Strip only the plain shared-contact keys; keep captain_* which are real fields
-                responses: Object.fromEntries(Object.entries(responses).filter(([fieldId]) => fieldId !== "email" && fieldId !== "phone")),
+              participants: group.map(({ responses }, memberIndex) => ({
+                // Strip the plain shared-contact keys for everyone; keep captain_* on the captain only.
+                // For non-captain members, also strip main-registrant-only fields (e.g. team_name).
+                responses: Object.fromEntries(
+                  Object.entries(responses).filter(([fieldId]) => {
+                    if (fieldId === "email" || fieldId === "phone") return false;
+                    if (memberIndex > 0 && MAIN_REGISTRANT_ONLY_IDS.includes(fieldId)) return false;
+                    return true;
+                  }),
+                ),
               })),
               selections: group[0].selections,
             };
