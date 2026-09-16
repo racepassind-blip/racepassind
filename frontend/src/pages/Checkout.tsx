@@ -202,27 +202,37 @@ const Checkout = () => {
     
     if (firstTier?.entryType !== "team") return;
     
-    // Find the first rider in the first entry to update
     setRiders((previous) => {
       if (previous.length === 0) return previous;
-      const firstEntryKey = previous[0].entryKey;
-      const firstMember = previous.find((r) => r.entryKey === firstEntryKey && r.participantIndex === 0);
-      if (!firstMember) return previous;
       
-      // Check if captain_name was updated in team info
-      const entryRiders = previous.filter((r) => r.entryKey === firstEntryKey);
+      // Group riders by entry to find all riders in the first entry
+      const entryMap = new Map<string, RiderDraft[]>();
+      previous.forEach((r) => {
+        const entry = entryMap.get(r.entryKey) || [];
+        entry.push(r);
+        entryMap.set(r.entryKey, entry);
+      });
+      
+      const firstEntryKey = previous[0].entryKey;
+      const entryRiders = entryMap.get(firstEntryKey) || [];
       if (entryRiders.length === 0) return previous;
       
-      const entryRider = entryRiders[0];
-      const captainName = entryRider.responses["captain_name"];
-      const captainEmail = entryRider.responses["captain_email"];
-      const captainPhone = entryRider.responses["captain_phone"];
+      // Get the first rider (participantIndex 0) who has the team info fields
+      const firstRiderInEntry = entryRiders.find((r) => r.participantIndex === 0);
+      if (!firstRiderInEntry) return previous;
       
-      // Update first member to have captain's info
-      const firstMemberIndex = previous.findIndex((r) => r.entryKey === firstEntryKey && r.participantIndex === 0);
+      const captainName = firstRiderInEntry.responses["captain_name"];
+      const captainEmail = firstRiderInEntry.responses["captain_email"];
+      const captainPhone = firstRiderInEntry.responses["captain_phone"];
+      
+      // Find the first member rider (participantIndex 0, same entry) to update
+      const firstMemberIndex = previous.findIndex(
+        (r) => r.entryKey === firstEntryKey && r.participantIndex === 0
+      );
       if (firstMemberIndex === -1) return previous;
       
       const updatedFirstMember = { ...previous[firstMemberIndex] };
+      // Auto-fill full_name from captain_name (only if not already set)
       if (captainName && !updatedFirstMember.responses["full_name"]) {
         updatedFirstMember.responses["full_name"] = captainName;
       }
