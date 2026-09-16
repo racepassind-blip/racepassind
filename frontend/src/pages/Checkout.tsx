@@ -186,12 +186,59 @@ const Checkout = () => {
       for (let entryIndex = 0; entryIndex < line.quantity; entryIndex += 1) {
         const entryKey = `${lineIndex}-${line.ticketId}-entry-${entryIndex}`;
         for (let participantIndex = 0; participantIndex < initialMembers; participantIndex += 1) {
-          nextRiders.push({ key: `${entryKey}-member-${participantIndex}`, entryKey, participantIndex, ticketId: line.ticketId, responses: {}, selections: {} });
+          const responses: Record<string, ResponseValue> = {};
+          nextRiders.push({ key: `${entryKey}-member-${participantIndex}`, entryKey, participantIndex, ticketId: line.ticketId, responses, selections: {} });
         }
       }
     });
     setRiders(nextRiders);
   }, [cart, event, riders.length]);
+
+  // Auto-fill captain fields from team info for the first member
+  useEffect(() => {
+    if (!event) return;
+    const firstRider = riders[0];
+    const firstTier = firstRider ? event.tiers.find((tier) => tier.id === firstRider.ticketId) : undefined;
+    
+    if (firstTier?.entryType !== "team") return;
+    
+    // Find the first rider in the first entry to update
+    setRiders((previous) => {
+      if (previous.length === 0) return previous;
+      const firstEntryKey = previous[0].entryKey;
+      const firstMember = previous.find((r) => r.entryKey === firstEntryKey && r.participantIndex === 0);
+      if (!firstMember) return previous;
+      
+      // Check if captain_name was updated in team info
+      const entryRiders = previous.filter((r) => r.entryKey === firstEntryKey);
+      if (entryRiders.length === 0) return previous;
+      
+      const entryRider = entryRiders[0];
+      const captainName = entryRider.responses["captain_name"];
+      const captainEmail = entryRider.responses["captain_email"];
+      const captainPhone = entryRider.responses["captain_phone"];
+      
+      // Update first member to have captain's info
+      const firstMemberIndex = previous.findIndex((r) => r.entryKey === firstEntryKey && r.participantIndex === 0);
+      if (firstMemberIndex === -1) return previous;
+      
+      const updatedFirstMember = { ...previous[firstMemberIndex] };
+      if (captainName && !updatedFirstMember.responses["full_name"]) {
+        updatedFirstMember.responses["full_name"] = captainName;
+      }
+      if (captainEmail && !updatedFirstMember.responses["email"]) {
+        updatedFirstMember.responses["email"] = captainEmail;
+      }
+      if (captainPhone && !updatedFirstMember.responses["phone"]) {
+        updatedFirstMember.responses["phone"] = captainPhone;
+      }
+      
+      if (updatedFirstMember !== previous[firstMemberIndex]) {
+        return previous.map((r, i) => (i === firstMemberIndex ? updatedFirstMember : r));
+      }
+      return previous;
+    });
+  }, [event, riders]);
 
   const updateResponse = (riderKey: string, field: ParticipantFieldConfig, value: ResponseValue) => {
     setRiders((previous) => previous.map((rider) => {
@@ -432,6 +479,17 @@ const Checkout = () => {
                   </section>
                 )}
 
+                {/* Captain contact (collected once per entry) - now after team info */}
+                {contactFields.length > 0 && (
+                  <section className="space-y-4 border-b pb-6">
+                    <div>
+                      <h4 className="font-bold">Captain contact</h4>
+                      <p className="text-sm text-muted-foreground">One email or phone number is used for this entire team.</p>
+                    </div>
+                    {renderFieldGrid(entryRider, contactFields)}
+                  </section>
+                )}
+
                 {/* All member details in a single row per member */}
                 <section className="space-y-4 border-b pb-6">
                   <div className="flex items-center justify-between">
@@ -440,14 +498,14 @@ const Checkout = () => {
                       <p className="text-sm text-muted-foreground">Use the person who will participate in this event.</p>
                     </div>
                     <div className="flex gap-2">
+                      {entryRiders.length > minMembers && (
+                        <Button type="button" variant="outline" size="sm" onClick={() => removeTeamMember(entryRiders[entryRiders.length - 1].key)}>
+                          <Trash2 className="mr-1 h-4 w-4" /> Remove last
+                        </Button>
+                      )}
                       {entryRiders.length < maxMembers && (
                         <Button type="button" variant="outline" size="sm" onClick={() => addTeamMember(entryKey, firstRider?.ticketId || "")}>
                           <Plus className="mr-1 h-4 w-4" /> Add member
-                        </Button>
-                      )}
-                      {entryRiders.length > minMembers && (
-                        <Button type="button" variant="outline" size="sm" onClick={() => removeTeamMember(entryRiders[entryRiders.length - 1].key)}>
-                          <Trash2 className="mr-1 h-4 w-4" /> Remove
                         </Button>
                       )}
                     </div>
@@ -471,17 +529,6 @@ const Checkout = () => {
                     })}
                   </div>
                 </section>
-
-                {/* Captain contact (collected once per entry) */}
-                {contactFields.length > 0 && (
-                  <section className="space-y-4 border-b pb-6">
-                    <div>
-                      <h4 className="font-bold">Captain contact</h4>
-                      <p className="text-sm text-muted-foreground">One email or phone number is used for this entire team.</p>
-                    </div>
-                    {renderFieldGrid(entryRider, contactFields)}
-                  </section>
-                )}
 
                 {/* Other fields (if any remain) */}
                 {allOtherFields.length > 0 && entryRiders.some((r) => otherFields.some((f) => r.responses[f.id] !== undefined)) && (
