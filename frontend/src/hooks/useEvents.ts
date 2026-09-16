@@ -68,11 +68,17 @@ export interface OrganizerCourt {
   createdAt: string;
 }
 
+export interface OrganizerMatchMember {
+  regParticipantId: string;
+  name: string;
+}
+
 export interface OrganizerMatchEntry {
   registrationId: string;
   registrationReference: string | null;
   participantName: string;
   participantNames?: string[];
+  members?: OrganizerMatchMember[];
   participantCount?: number;
   teamName: string | null;
   displayName: string;
@@ -99,12 +105,20 @@ export interface MatchBout {
   updatedAt: string;
 }
 
+export interface OrganizerMatchPlayer {
+  regParticipantId: string;
+  name: string;
+}
+
 export interface OrganizerMatch {
   id: string;
   eventId: string;
   category: { id: string; name: string; entryType?: "singles" | "doubles" | "team" };
   entryA: OrganizerMatchEntry;
   entryB: OrganizerMatchEntry;
+  matchType?: "singles" | "doubles" | null;
+  playersA?: OrganizerMatchPlayer[] | null;
+  playersB?: OrganizerMatchPlayer[] | null;
   court: { id: string; name: string };
   roundId: string | null;
   round: { id: string; name: string; position: number } | null;

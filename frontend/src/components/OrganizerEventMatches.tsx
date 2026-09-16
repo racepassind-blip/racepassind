@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { OrganizerCourt, OrganizerEventCategory, OrganizerMatch } from "@/hooks/useEvents";
+import type { OrganizerCourt, OrganizerEventCategory, OrganizerMatch, OrganizerMatchEntry } from "@/hooks/useEvents";
 import { useOrganizerMatchEntries, useOrganizerMatches, useOrganizerTournamentRounds } from "@/hooks/useEvents";
 import { apiRequest } from "@/lib/api";
 
@@ -30,6 +30,15 @@ const statusLabels: Record<OrganizerMatch["status"], string> = {
 function entryMemberNames(entry: { participantNames?: string[]; participantName: string }) {
   const names = entry.participantNames && entry.participantNames.length > 0 ? entry.participantNames : [entry.participantName];
   return names.join(" / ");
+}
+
+// For team matches with specific players picked, show "Rahul & Priya (Team A)".
+function matchSideLabel(entry: OrganizerMatch["entryA"], players: OrganizerMatch["playersA"]): string {
+  if (players && players.length > 0) {
+    const names = players.map((player) => player.name).join(" & ");
+    return entry.teamName ? `${names} (${entry.teamName})` : names;
+  }
+  return entry.displayName;
 }
 
 function entryOptionLabel(entry: { displayName: string; participantName: string; participantNames?: string[]; teamName: string | null; registrationReference: string | null }) {
@@ -61,9 +70,31 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
   const [winner, setWinner] = useState<"entry_a" | "entry_b" | "">("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  // Team-mode only: match type + selected player ids per team.
+  const [matchType, setMatchType] = useState<"" | "singles" | "doubles">("");
+  const [playerAIds, setPlayerAIds] = useState<string[]>([]);
+  const [playerBIds, setPlayerBIds] = useState<string[]>([]);
   const { data: entries = [], isLoading: isLoadingEntries } = useOrganizerMatchEntries(eventId, categoryId || undefined);
   const { data: rounds = [], isLoading: isLoadingRounds } = useOrganizerTournamentRounds(eventId, categoryId || undefined, supportsTournament);
   const hasConfiguredRounds = rounds.length > 0;
+
+  // Team-mode helpers. For non-team categories these stay inert so existing flow is unchanged.
+  const selectedCategory = categories.find((category) => category.id === categoryId);
+  const isTeamCategory = selectedCategory?.entryType === "team";
+  const entryA = entries.find((entry) => entry.registrationId === entryAId);
+  const entryB = entries.find((entry) => entry.registrationId === entryBId);
+  const requiredPlayers = matchType === "singles" ? 1 : matchType === "doubles" ? 2 : 0;
+  const rosterA: OrganizerMatchEntry["members"] = entryA?.members ?? [];
+  const rosterB: OrganizerMatchEntry["members"] = entryB?.members ?? [];
+
+  const setPlayerAt = (team: "a" | "b", slot: number, value: string) => {
+    const setter = team === "a" ? setPlayerAIds : setPlayerBIds;
+    setter((current) => {
+      const next = [...current];
+      next[slot] = value;
+      return next.slice(0, requiredPlayers);
+    });
+  };
 
   useEffect(() => {
     if (!categoryId && categories[0]) setCategoryId(categories[0].id);
@@ -85,6 +116,9 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
     setScheduledTime("");
     setMatchStatus("scheduled");
     setWinner("");
+    setMatchType("");
+    setPlayerAIds([]);
+    setPlayerBIds([]);
     setEditingId(null);
   };
 
@@ -93,6 +127,9 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
     setEntryAId("");
     setEntryBId("");
     setRoundId("");
+    setMatchType("");
+    setPlayerAIds([]);
+    setPlayerBIds([]);
   };
 
   const editMatch = (match: OrganizerMatch) => {
@@ -106,6 +143,9 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
     setScheduledTime(inputDateTime(match.scheduledTime));
     setMatchStatus(match.status);
     setWinner(match.winner ?? "");
+    setMatchType(match.matchType ?? "");
+    setPlayerAIds((match.playersA ?? []).map((player) => player.regParticipantId));
+    setPlayerBIds((match.playersB ?? []).map((player) => player.regParticipantId));
   };
 
   const submitMatch = async (event: FormEvent<HTMLFormElement>) => {
@@ -124,6 +164,29 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
       toast.error("Select the winner for a completed match.");
       return;
     }
+
+    // Team-mode player selection. Only enforced when the organizer has picked a
+    // match type; a plain team-vs-team match (no type) is still allowed.
+    let playerPayload: Record<string, unknown> = {};
+    if (isTeamCategory && matchType) {
+      const needed = matchType === "singles" ? 1 : 2;
+      const cleanA = playerAIds.filter(Boolean).slice(0, needed);
+      const cleanB = playerBIds.filter(Boolean).slice(0, needed);
+      if (cleanA.length !== needed || cleanB.length !== needed) {
+        toast.error(`Select ${needed} player${needed > 1 ? "s" : ""} from each team.`);
+        return;
+      }
+      if (new Set(cleanA).size !== cleanA.length || new Set(cleanB).size !== cleanB.length) {
+        toast.error("A player cannot be selected twice in the same match.");
+        return;
+      }
+      playerPayload = {
+        match_type: matchType,
+        player_a_participant_ids: cleanA,
+        player_b_participant_ids: cleanB,
+      };
+    }
+
     setIsSaving(true);
     try {
       await apiRequest(editingId ? `/organizer/events/${eventId}/matches/${editingId}` : `/organizer/events/${eventId}/matches`, {
@@ -138,6 +201,7 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
           scheduled_time: scheduledTime ? new Date(scheduledTime).toISOString() : null,
           status: matchStatus,
           winner: matchStatus === "completed" ? winner : null,
+          ...playerPayload,
         }),
       });
       await queryClient.invalidateQueries({ queryKey: ["organizer-matches", eventId] });
@@ -177,10 +241,82 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
             <div className="space-y-2"><Label htmlFor="match-status">Status</Label><select id="match-status" className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={matchStatus} onChange={(event) => { const value = event.target.value as OrganizerMatch["status"]; setMatchStatus(value); if (value !== "completed") setWinner(""); }}><option value="scheduled">Scheduled</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></div>
             {matchStatus === "completed" && <div className="space-y-2"><Label htmlFor="match-winner">Winner</Label><select id="match-winner" className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={winner} onChange={(event) => setWinner(event.target.value as "entry_a" | "entry_b" | "")} required><option value="">Select winner</option><option value="entry_a">Entry A</option><option value="entry_b">Entry B</option></select></div>}
           </div>
+
+          {isTeamCategory && (
+            <div className="space-y-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
+              <div className="space-y-2">
+                <Label htmlFor="match-type">Match type (optional)</Label>
+                <select
+                  id="match-type"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-64"
+                  value={matchType}
+                  onChange={(event) => {
+                    const value = event.target.value as "" | "singles" | "doubles";
+                    setMatchType(value);
+                    setPlayerAIds([]);
+                    setPlayerBIds([]);
+                  }}
+                >
+                  <option value="">Whole team vs team (no player pick)</option>
+                  <option value="singles">Singles — 1 player per team</option>
+                  <option value="doubles">Doubles — 2 players per team</option>
+                </select>
+                <p className="text-xs text-muted-foreground">Pick specific players from each team's roster. Leave as "Whole team" to schedule a plain team-vs-team tie.</p>
+              </div>
+
+              {matchType && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>{entryA?.teamName ?? "Team A"} players</Label>
+                    {!entryAId ? (
+                      <p className="text-xs text-muted-foreground">Select Entry A first.</p>
+                    ) : (
+                      Array.from({ length: requiredPlayers }).map((_, slot) => (
+                        <select
+                          key={`a-${slot}`}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                          value={playerAIds[slot] ?? ""}
+                          onChange={(event) => setPlayerAt("a", slot, event.target.value)}
+                          required
+                        >
+                          <option value="">Select player {slot + 1}</option>
+                          {rosterA?.map((member) => (
+                            <option key={member.regParticipantId} value={member.regParticipantId}>{member.name}</option>
+                          ))}
+                        </select>
+                      ))
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{entryB?.teamName ?? "Team B"} players</Label>
+                    {!entryBId ? (
+                      <p className="text-xs text-muted-foreground">Select Entry B first.</p>
+                    ) : (
+                      Array.from({ length: requiredPlayers }).map((_, slot) => (
+                        <select
+                          key={`b-${slot}`}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                          value={playerBIds[slot] ?? ""}
+                          onChange={(event) => setPlayerAt("b", slot, event.target.value)}
+                          required
+                        >
+                          <option value="">Select player {slot + 1}</option>
+                          {rosterB?.map((member) => (
+                            <option key={member.regParticipantId} value={member.regParticipantId}>{member.name}</option>
+                          ))}
+                        </select>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2"><Button type="submit" disabled={isSaving || isLoadingEntries}><Plus className="mr-2 h-4 w-4" />{isSaving ? "Saving…" : editingId ? "Save match" : "Schedule match"}</Button>{editingId && <Button type="button" variant="ghost" onClick={resetForm}>Cancel</Button>}</div>
         </form>}
 
-        {isLoadingMatches ? <p className="py-6 text-center text-sm text-muted-foreground">Loading matches…</p> : isMatchesError ? <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">Could not load matches.</div> : matches.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No matches scheduled yet. Use the form above to create the first match.</div> : <Table><TableHeader><TableRow><TableHead>Round</TableHead><TableHead>Entries</TableHead><TableHead>Court / time</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{matches.map((match) => <TableRow key={match.id}><TableCell><div className="font-medium">{match.roundLabel}</div><div className="text-xs text-muted-foreground">{match.category.name}</div></TableCell><TableCell><div>{match.entryA.displayName} <span className="text-muted-foreground">vs</span> {match.entryB.displayName}</div>{(match.entryA.teamName || match.entryB.teamName) && <div className="text-xs text-muted-foreground">{match.entryA.teamName ? entryMemberNames(match.entryA) : "No team"} <span className="text-muted-foreground">vs</span> {match.entryB.teamName ? entryMemberNames(match.entryB) : "No team"}</div>}</TableCell><TableCell><div>{match.court.name}</div><div className="text-xs text-muted-foreground">{match.scheduledTime ? new Date(match.scheduledTime).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Time not set"}</div></TableCell><TableCell><Badge variant={match.status === "completed" ? "default" : match.status === "in_progress" ? "outline" : "secondary"}>{statusLabels[match.status]}{match.winner ? ` · ${match.winner === "entry_a" ? "A wins" : "B wins"}` : ""}</Badge></TableCell><TableCell><div className="flex justify-end gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => editMatch(match)}><Pencil className="mr-2 h-4 w-4" />Edit</Button><Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => void deleteMatch(match)}><Trash2 className="mr-2 h-4 w-4" />Delete</Button></div></TableCell></TableRow>)}</TableBody></Table>}
+        {isLoadingMatches ? <p className="py-6 text-center text-sm text-muted-foreground">Loading matches…</p> : isMatchesError ? <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">Could not load matches.</div> : matches.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No matches scheduled yet. Use the form above to create the first match.</div> : <Table><TableHeader><TableRow><TableHead>Round</TableHead><TableHead>Entries</TableHead><TableHead>Court / time</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{matches.map((match) => <TableRow key={match.id}><TableCell><div className="font-medium">{match.roundLabel}</div><div className="text-xs text-muted-foreground">{match.category.name}</div></TableCell><TableCell><div>{matchSideLabel(match.entryA, match.playersA)} <span className="text-muted-foreground">vs</span> {matchSideLabel(match.entryB, match.playersB)}</div>{match.matchType && <div className="text-xs font-medium text-primary">{match.matchType === "singles" ? "Singles" : "Doubles"}</div>}{(match.entryA.teamName || match.entryB.teamName) && !match.matchType && <div className="text-xs text-muted-foreground">{match.entryA.teamName ? entryMemberNames(match.entryA) : "No team"} <span className="text-muted-foreground">vs</span> {match.entryB.teamName ? entryMemberNames(match.entryB) : "No team"}</div>}</TableCell><TableCell><div>{match.court.name}</div><div className="text-xs text-muted-foreground">{match.scheduledTime ? new Date(match.scheduledTime).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Time not set"}</div></TableCell><TableCell><Badge variant={match.status === "completed" ? "default" : match.status === "in_progress" ? "outline" : "secondary"}>{statusLabels[match.status]}{match.winner ? ` · ${match.winner === "entry_a" ? "A wins" : "B wins"}` : ""}</Badge></TableCell><TableCell><div className="flex justify-end gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => editMatch(match)}><Pencil className="mr-2 h-4 w-4" />Edit</Button><Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => void deleteMatch(match)}><Trash2 className="mr-2 h-4 w-4" />Delete</Button></div></TableCell></TableRow>)}</TableBody></Table>}
       </CardContent>
     </Card>
   );

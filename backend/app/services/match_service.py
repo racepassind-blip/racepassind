@@ -155,7 +155,13 @@ def _validate_match_round(db: Session, event: Event, category: EventCategory, ro
 
 def _serialize_entry(registration: Registration) -> dict:
     participant = registration.participant
-    member_names = [member.participant.name for member in registration.participant_memberships] or [participant.name]
+    memberships = list(registration.participant_memberships)
+    member_names = [member.participant.name for member in memberships] or [participant.name]
+    # Roster of {id, name} so the organizer can pick specific players for team matches.
+    members = [
+        {"regParticipantId": str(member.id), "name": member.participant.name}
+        for member in memberships
+    ]
     team_name = participant.team_name
     display_name = team_name or " / ".join(member_names)
     return {
@@ -163,6 +169,7 @@ def _serialize_entry(registration: Registration) -> dict:
         "registrationReference": registration.registration_reference,
         "participantName": participant.name,
         "participantNames": member_names,
+        "members": members,
         "participantCount": registration.participant_count,
         "teamName": team_name,
         "displayName": display_name,
@@ -171,13 +178,31 @@ def _serialize_entry(registration: Registration) -> dict:
     }
 
 
+def _selected_players(registration: Registration, participant_ids: list[str] | None) -> list[dict] | None:
+    """Map selected registration_participant ids to {id, name} preserving order."""
+    if not participant_ids:
+        return None
+    by_id = {str(rp.id): rp for rp in registration.participant_memberships}
+    players: list[dict] = []
+    for pid in participant_ids:
+        rp = by_id.get(str(pid))
+        if rp is not None:
+            players.append({"regParticipantId": str(rp.id), "name": rp.participant.name})
+    return players or None
+
+
 def serialize_match(match: Match, *, include_bouts: bool = False) -> dict:
+    players_a = _selected_players(match.entry_a_registration, match.player_a_participant_ids)
+    players_b = _selected_players(match.entry_b_registration, match.player_b_participant_ids)
     result = {
         "id": str(match.id),
         "eventId": str(match.event_id),
         "category": {"id": str(match.category.id), "name": match.category.name, "entryType": match.category.entry_type},
         "entryA": _serialize_entry(match.entry_a_registration),
         "entryB": _serialize_entry(match.entry_b_registration),
+        "matchType": match.match_type,
+        "playersA": players_a,
+        "playersB": players_b,
         "court": {"id": str(match.court.id), "name": match.court.name},
         "roundId": str(match.round_id) if match.round_id else None,
         "round": {
@@ -240,9 +265,51 @@ def list_matches(db: Session, event_id: UUID, category_id: UUID | None = None, s
     return [serialize_match(match) for match in matches]
 
 
+def _resolve_team_player_selection(
+    category: EventCategory,
+    entry_a: Registration,
+    entry_b: Registration,
+    payload,
+) -> tuple[str | None, list[str] | None, list[str] | None]:
+    """Validate and normalize per-match player selection for team categories.
+
+    Returns (match_type, player_a_ids, player_b_ids). For non-team categories this
+    is a no-op that returns (None, None, None), leaving existing behaviour intact.
+    """
+    if category.entry_type != "team":
+        # Not a team category — ignore any player-selection input entirely.
+        return None, None, None
+
+    match_type = payload.match_type
+    if match_type is None:
+        # Team category but organizer scheduled a plain team-vs-team match without
+        # picking players — allowed, keeps backward compatibility.
+        if payload.player_a_participant_ids or payload.player_b_participant_ids:
+            raise MatchValidationError("Select a match type (singles or doubles) before choosing players")
+        return None, None, None
+
+    required = 1 if match_type == "singles" else 2
+    a_ids = [str(pid) for pid in (payload.player_a_participant_ids or [])]
+    b_ids = [str(pid) for pid in (payload.player_b_participant_ids or [])]
+    if len(a_ids) != required or len(b_ids) != required:
+        label = "1 player" if required == 1 else "2 players"
+        raise MatchValidationError(f"{match_type.capitalize()} matches require exactly {label} from each team")
+    if len(set(a_ids)) != len(a_ids) or len(set(b_ids)) != len(b_ids):
+        raise MatchValidationError("A player cannot be selected twice in the same match")
+
+    entry_a_member_ids = {str(rp.id) for rp in entry_a.participant_memberships}
+    entry_b_member_ids = {str(rp.id) for rp in entry_b.participant_memberships}
+    if not set(a_ids).issubset(entry_a_member_ids):
+        raise MatchValidationError("Selected players for team A must belong to team A")
+    if not set(b_ids).issubset(entry_b_member_ids):
+        raise MatchValidationError("Selected players for team B must belong to team B")
+    return match_type, a_ids, b_ids
+
+
 def create_match(db: Session, user, event: Event, payload) -> dict:
     category, court, entry_a, entry_b = _validate_match_context(db, user, event, payload)
     round_item = _validate_match_round(db, event, category, payload.round_id)
+    match_type, player_a_ids, player_b_ids = _resolve_team_player_selection(category, entry_a, entry_b, payload)
     config = _scoring_config(db, event, category.id, create=True)
     games = _normalize_games(payload.games, config.games_to_win)
     match = Match(
@@ -259,6 +326,9 @@ def create_match(db: Session, user, event: Event, payload) -> dict:
         games_to_win=config.games_to_win,
         points_per_game=config.points_per_game,
         games=games or [],
+        match_type=match_type,
+        player_a_participant_ids=player_a_ids,
+        player_b_participant_ids=player_b_ids,
     )
     db.add(match)
     db.commit()
@@ -279,6 +349,7 @@ def update_match(db: Session, user, event: Event, match_id: UUID, payload) -> di
         match.games_to_win = config.games_to_win
         match.points_per_game = config.points_per_game
         match.games = []
+    match_type, player_a_ids, player_b_ids = _resolve_team_player_selection(category, entry_a, entry_b, payload)
     normalized_games = _normalize_games(payload.games, match.games_to_win)
     if normalized_games is not None:
         match.games = normalized_games
@@ -291,6 +362,9 @@ def update_match(db: Session, user, event: Event, match_id: UUID, payload) -> di
     match.scheduled_time = payload.scheduled_time
     match.status = payload.status
     match.winner = payload.winner
+    match.match_type = match_type
+    match.player_a_participant_ids = player_a_ids
+    match.player_b_participant_ids = player_b_ids
     db.commit()
     return _get_serialized_match(db, event.id, match.id)
 

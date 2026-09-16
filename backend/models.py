@@ -538,6 +538,13 @@ class Match(Base):
     winner_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
     games_to_win: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
     points_per_game: Mapped[int] = mapped_column(Integer, nullable=False, server_default="21")
+    # Per-match player selection — only populated for team-category matches.
+    # match_type is "singles" or "doubles"; the *_participant_ids arrays hold the
+    # registration_participant ids chosen from each team's roster. NULL for
+    # singles/doubles categories (behaviour unchanged there).
+    match_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    player_a_participant_ids: Mapped[list[str] | None] = mapped_column(JSON_CONFIG, nullable=True)
+    player_b_participant_ids: Mapped[list[str] | None] = mapped_column(JSON_CONFIG, nullable=True)
     games: Mapped[list[dict[str, int]]] = mapped_column(JSON_CONFIG, nullable=False, default=list, server_default=text("'[]'"))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[dt.datetime] = mapped_column(

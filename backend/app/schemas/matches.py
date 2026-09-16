@@ -26,6 +26,9 @@ class ScoringConfigIn(BaseModel):
     points_per_game: int = Field(ge=1, le=30)
 
 
+MatchType = Literal["singles", "doubles"]
+
+
 class MatchIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -39,6 +42,12 @@ class MatchIn(BaseModel):
     status: MatchStatus = "scheduled"
     winner: MatchWinner | None = None
     games: list[MatchGameIn] | None = Field(default=None, max_length=9)
+    # Team-mode only: which specific players play this match. Ignored for
+    # singles/doubles categories. When provided, match_type decides how many
+    # players are required per team (1 for singles, 2 for doubles).
+    match_type: MatchType | None = None
+    player_a_participant_ids: list[UUID] | None = Field(default=None, max_length=2)
+    player_b_participant_ids: list[UUID] | None = Field(default=None, max_length=2)
 
     @field_validator("round_label")
     @classmethod
