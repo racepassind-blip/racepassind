@@ -87,9 +87,9 @@ const Index = () => {
             <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Events worth showing up for</h2>
             <p className="mt-2 text-muted-foreground">Discover your next challenge and the community behind it.</p>
           </div>
-          <Link to="/" className="hidden items-center gap-1 text-sm font-bold text-primary transition-colors hover:text-primary/80 sm:flex">
+          <a href="#all-events" className="hidden items-center gap-1 text-sm font-bold text-primary transition-colors hover:text-primary/80 sm:flex">
             View all <ArrowRight className="h-4 w-4" />
-          </Link>
+          </a>
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -101,7 +101,7 @@ const Index = () => {
         <CategoriesSection />
       </div>
 
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+      <section id="all-events" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
             <p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-primary">The sports calendar</p>

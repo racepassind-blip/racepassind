@@ -3,6 +3,10 @@ export interface SportConfig {
   supports_distance: boolean;
   supports_bib: boolean;
   supports_tournament: boolean;
+  // Allocation / number configuration
+  numberEnabled: boolean;
+  numberLabel: string;
+  scope: "individual" | "team_member";
 }
 
 export const sportConfig = {
@@ -11,18 +15,45 @@ export const sportConfig = {
     supports_distance: true,
     supports_bib: true,
     supports_tournament: false,
+    numberEnabled: true,
+    numberLabel: "Bib Number",
+    scope: "individual",
   },
   cycling: {
     participant_label: "Rider",
     supports_distance: true,
     supports_bib: true,
     supports_tournament: false,
+    numberEnabled: true,
+    numberLabel: "Bib Number",
+    scope: "individual",
   },
   badminton: {
     participant_label: "Player",
     supports_distance: false,
     supports_bib: false,
     supports_tournament: true,
+    numberEnabled: true,
+    numberLabel: "Jersey Number",
+    scope: "team_member",
+  },
+  tennis: {
+    participant_label: "Player",
+    supports_distance: false,
+    supports_bib: false,
+    supports_tournament: true,
+    numberEnabled: true,
+    numberLabel: "Player ID",
+    scope: "individual",
+  },
+  squash: {
+    participant_label: "Player",
+    supports_distance: false,
+    supports_bib: false,
+    supports_tournament: true,
+    numberEnabled: true,
+    numberLabel: "Jersey Number",
+    scope: "team_member",
   },
 } as const satisfies Record<string, SportConfig>;
 
@@ -33,6 +64,9 @@ const DEFAULT_SPORT_CONFIG: SportConfig = {
   supports_distance: true,
   supports_bib: true,
   supports_tournament: false,
+  numberEnabled: true,
+  numberLabel: "Bib Number",
+  scope: "individual",
 };
 
 export function getSportConfig(

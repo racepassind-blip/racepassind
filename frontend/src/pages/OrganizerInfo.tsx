@@ -24,6 +24,14 @@ import {
   Users,
   WalletCards,
   X,
+  ArrowUp,
+  Zap,
+  Users2,
+  Mail,
+  Ticket,
+  BarChart4,
+  AlertCircle,
+  Lock,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -80,7 +88,7 @@ const sportTabs: Array<{ key: SportKey; label: string }> = [
 const sportPlaybooks: Record<SportKey, SportPlaybook> = {
   running: {
     label: "Road races",
-    summary: "Build the registration and race-day operations layer first. Timing and bib workflows are the next natural step.",
+    summary: "Build the registration and event-day operations layer first. Timing and bib workflows are the next natural step.",
     live: [
       { title: "Categories and race packages", description: "Set distances, ticket tiers, capacity, sale windows, forms, and add-ons.", icon: Settings2 },
       { title: "UPI review and participant list", description: "Review payment references, approve entries, export data, and add offline participants.", icon: WalletCards },
@@ -100,7 +108,7 @@ const sportPlaybooks: Record<SportKey, SportPlaybook> = {
       { title: "Event-day check-in", description: "Use QR credentials, registration references, checkpoints, and duplicate-scan protection.", icon: QrCode },
     ],
     next: [
-      { title: "Bib allocation", description: "Assign rider bibs and manage them from the event workflow.", icon: CreditCard },
+      { title: "Bib allocation for riders", description: "Assign rider bibs and manage them from the event workflow.", icon: CreditCard },
       { title: "Manual result upload", description: "Bring finish results into the public event record after the ride.", icon: Upload },
     ],
   },
@@ -147,6 +155,50 @@ const sportPlaybooks: Record<SportKey, SportPlaybook> = {
   },
 };
 
+const eventJourneySteps = [
+  { icon: ClipboardCheck, title: "Registration", color: "bg-blue-100 text-blue-700" },
+  { icon: CreditCard, title: "Payments", color: "bg-purple-100 text-purple-700" },
+  { icon: Users2, title: "Participants", color: "bg-orange-100 text-orange-700" },
+  { icon: Mail, title: "Communication", color: "bg-pink-100 text-pink-700" },
+  { icon: Ticket, title: "Tickets", color: "bg-cyan-100 text-cyan-700" },
+  { icon: QrCode, title: "Check-In", color: "bg-green-100 text-green-700" },
+  { icon: BarChart4, title: "Event Mgmt", color: "bg-indigo-100 text-indigo-700" },
+  { icon: Trophy, title: "Results", color: "bg-red-100 text-red-700" },
+];
+
+const organizerValuePoints = [
+  {
+    icon: ClipboardCheck,
+    title: "One registration flow",
+    description: "Share a single public link for entries. No forms scattered across email, WhatsApp, or Google Forms.",
+  },
+  {
+    icon: CreditCard,
+    title: "Payment verification in one place",
+    description: "Review UPI references, approve entries, and reconcile payments. No payment screenshots in WhatsApp.",
+  },
+  {
+    icon: Users,
+    title: "One participant record",
+    description: "All entries, confirmations, and participant data live in one place. Export anything, anytime.",
+  },
+  {
+    icon: Mail,
+    title: "Keep everyone informed",
+    description: "Send event updates and confirmations without managing email lists or message threads.",
+  },
+  {
+    icon: QrCode,
+    title: "Event-day check-in",
+    description: "Scan QR tickets, track check-ins across multiple stations, monitor participation in real time.",
+  },
+  {
+    icon: BarChart4,
+    title: "Organizer dashboard",
+    description: "See registrations, payments, participant status, check-in counts, and add-ons at a glance.",
+  },
+];
+
 const workflowSteps = [
   { number: "01", title: "Build", description: "Configure the event, products, participant questions, and payment instructions." },
   { number: "02", title: "Collect", description: "Share one public link and let participants submit structured entries." },
@@ -156,25 +208,6 @@ const workflowSteps = [
 
 function formatINR(paise: number) {
   return `₹${(paise / 100).toLocaleString("en-IN")}`;
-}
-
-function formatRange(plan: PublicPlan) {
-  return plan.maxConfirmedRegistrations === null ? `${plan.minConfirmedRegistrations}+ registrations` : `${plan.minConfirmedRegistrations}–${plan.maxConfirmedRegistrations} registrations`;
-}
-
-function formatRate(plan: PublicPlan) {
-  if (plan.pricePaise === 0) return { amount: "Free", suffix: "forever" };
-  return { amount: formatINR(plan.pricePaise), suffix: plan.billingUnit === "per_registration" ? "/ registration" : "/ event" };
-}
-
-function PlanCard({ plan }: { plan: PublicPlan }) {
-  const rate = formatRate(plan);
-  const featured = plan.code === "growth";
-  return <Card className={`relative flex h-full flex-col overflow-hidden transition-transform duration-200 hover:-translate-y-1 hover:shadow-lg ${featured ? "border-primary shadow-md ring-1 ring-primary/20" : "border-border/80"}`}>
-    {featured && <Badge className="absolute right-5 top-5 bg-primary text-primary-foreground">Popular for growing events</Badge>}
-    <CardHeader className="min-h-[185px] border-b bg-muted/20 pb-6"><div className="flex items-center gap-2"><CardTitle className="text-xl">{plan.name}</CardTitle>{plan.code === "community" && <Badge variant="secondary">Start here</Badge>}</div><CardDescription className="pt-1">{formatRange(plan)}</CardDescription><div className="mt-auto pt-7"><span className="text-4xl font-black tracking-tight">{rate.amount}</span><span className="ml-1 text-sm font-medium text-muted-foreground">{rate.suffix}</span></div></CardHeader>
-    <CardContent className="flex flex-1 flex-col justify-between p-6"><ul className="space-y-3 text-sm text-muted-foreground"><li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" /> No monthly subscription</li><li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" /> Participant payments stay with you</li></ul>{plan.billingUnit === "per_registration" && <p className="mt-6 rounded-xl bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">For larger events, the fee scales with registrations: {formatINR(plan.pricePaise)} per registration.</p>}</CardContent>
-  </Card>;
 }
 
 function PlaybookFeature({ feature, state }: { feature: SportFeature; state: "live" | "next" }) {
@@ -194,18 +227,598 @@ const OrganizerInfo = () => {
   }, []);
 
   return <Layout>
-    <section className="relative isolate overflow-hidden bg-[#101b35] text-white"><div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" /><div className="absolute -right-32 top-0 -z-10 h-96 w-96 rounded-full bg-[#ff9933]/15 blur-3xl" /><div className="absolute -bottom-40 left-1/4 -z-10 h-96 w-96 rounded-full bg-[#138808]/15 blur-3xl" /><div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8 lg:py-24"><div><div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-bold uppercase tracking-[0.16em] backdrop-blur-sm"><Sparkles className="h-4 w-4 text-[#ff9933]" /> Built for the people behind the event</div><h1 className="max-w-3xl text-5xl font-black leading-[1.02] tracking-tight sm:text-6xl">Your event should feel like an event. Not a spreadsheet emergency.</h1><p className="mt-6 max-w-xl text-lg leading-8 text-white/75 sm:text-xl">SportPass turns the messy path from registration to event day into one visible operating flow—built around how Indian organizers actually work.</p><div className="mt-8 flex flex-wrap gap-3"><Button asChild size="lg" className="rounded-xl bg-[#ff9933] px-6 font-bold text-[#101b35] hover:bg-[#ffad5c]"><Link to="/signup?type=organizer">Build your first event <ArrowRight className="ml-2 h-4 w-4" /></Link></Button><Button asChild size="lg" variant="outline" className="rounded-xl border-white/30 bg-white/5 font-bold text-white hover:bg-white/15 hover:text-white"><a href="#sport-playbooks">Explore by sport</a></Button></div><div className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-sm text-white/70"><span className="flex items-center gap-2"><IndianRupee className="h-4 w-4 text-[#ff9933]" /> Direct UPI payments</span><span className="flex items-center gap-2"><ScanLine className="h-4 w-4 text-[#138808]" /> QR check-in</span></div></div><div className="relative"><div className="mb-3 inline-flex w-fit items-center rounded-xl border border-red-300/20 bg-red-400/10 px-3 py-2 text-xs font-semibold text-red-100 shadow-lg">Before: “Who has actually paid?”</div><div className="rounded-3xl border border-white/15 bg-white/10 p-4 shadow-2xl backdrop-blur-md sm:p-6"><div className="rounded-2xl bg-[#f7f8fb] p-4 text-slate-900 sm:p-5"><div className="flex items-center justify-between border-b pb-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Saturday · Event console</p><p className="mt-1 font-black">The messy middle, made visible</p></div><Badge className="bg-green-600 text-white">Live board</Badge></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border bg-white p-3"><div className="flex items-center gap-2 text-xs text-muted-foreground"><ClipboardCheck className="h-3.5 w-3.5 text-primary" /> Registrations</div><p className="mt-2 text-2xl font-black">248</p><div className="mt-2 h-1.5 rounded-full bg-muted"><div className="h-full w-3/4 rounded-full bg-primary" /></div><p className="mt-1 text-[10px] text-muted-foreground">42 awaiting payment review</p></div><div className="rounded-xl border bg-white p-3"><div className="flex items-center gap-2 text-xs text-muted-foreground"><ListChecks className="h-3.5 w-3.5 text-primary" /> Fulfilment counts</div><div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px]"><div className="rounded-lg bg-orange-50 p-2 text-orange-800"><p className="font-bold">Breakfast</p><p className="mt-1 text-lg font-black leading-none">180</p></div><div className="rounded-lg bg-blue-50 p-2 text-blue-800"><p className="font-bold">T-shirts · XL</p><p className="mt-1 text-lg font-black leading-none">48</p></div></div><p className="mt-2 text-[10px] text-muted-foreground">Ready for vendor planning</p></div></div><div className="mt-3 rounded-xl border bg-white p-3"><div className="flex items-center justify-between"><div className="flex items-center gap-2 text-xs font-semibold"><QrCode className="h-3.5 w-3.5 text-green-600" /> Check-in checkpoints</div><span className="text-xs font-bold text-green-600">142 checked in</span></div><div className="mt-3 grid grid-cols-3 gap-2 text-center text-[10px]"><div className="rounded-lg bg-green-50 p-2 text-green-700"><p className="font-bold">Start</p><p className="mt-1">82%</p></div><div className="rounded-lg bg-green-50 p-2 text-green-700"><p className="font-bold">Water</p><p className="mt-1">61%</p></div><div className="rounded-lg bg-amber-50 p-2 text-amber-700"><p className="font-bold">Finish</p><p className="mt-1">Pending</p></div></div></div></div></div><div className="absolute -bottom-5 -right-4 rounded-xl border border-green-300/20 bg-green-400/10 px-3 py-2 text-xs font-semibold text-green-100 shadow-lg">After: one event console</div></div></div>
+    {/* Hero Section */}
+    <section className="relative isolate overflow-hidden bg-[#101b35] text-white">
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" />
+      <div className="absolute -right-32 top-0 -z-10 h-96 w-96 rounded-full bg-[#ff9933]/15 blur-3xl" />
+      <div className="absolute -bottom-40 left-1/4 -z-10 h-96 w-96 rounded-full bg-[#138808]/15 blur-3xl" />
+      <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8 lg:py-24">
+        <div>
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-bold uppercase tracking-[0.16em] backdrop-blur-sm">
+            <Sparkles className="h-4 w-4 text-[#ff9933]" /> Built for all sports
+          </div>
+          <h1 className="max-w-3xl text-5xl font-black leading-[1.02] tracking-tight sm:text-6xl">
+            Everything You Need to Run Your Sports Event
+          </h1>
+          <p className="mt-6 max-w-xl text-lg leading-8 text-white/75 sm:text-xl">
+            From registration to results, SportPass handles the complete sports event journey. Manage participants, collect payments, check in attendees, and more—all in one place.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Button asChild size="lg" className="rounded-xl bg-[#ff9933] px-6 font-bold text-[#101b35] hover:bg-[#ffad5c]">
+              <Link to="/signup?type=organizer">
+                Create Your Event <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline" className="rounded-xl border-white/30 bg-white/5 font-bold text-white hover:bg-white/15 hover:text-white">
+              <a href="#pricing">See pricing</a>
+            </Button>
+          </div>
+          <div className="mt-7 flex flex-col gap-2 text-xs text-white/70 sm:text-sm">
+            <span className="flex items-center gap-2">
+              <Check className="h-4 w-4 text-[#138808]" /> Free events are free • Paid events 5% + ₹10/registration • No monthly subscription
+            </span>
+          </div>
+        </div>
+        <div className="relative">
+          <div className="mb-3 inline-flex w-fit items-center rounded-xl border border-green-300/20 bg-green-400/10 px-3 py-2 text-xs font-semibold text-green-100 shadow-lg">
+            Complete event journey in one platform
+          </div>
+          <div className="rounded-3xl border border-white/15 bg-white/10 p-4 shadow-2xl backdrop-blur-md sm:p-6">
+            <div className="rounded-2xl bg-[#f7f8fb] p-4 text-slate-900 sm:p-5">
+              <div className="flex items-start justify-between gap-4 border-b pb-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Event Journey · SportPass Platform</p>
+                  <p className="mt-1 font-black">Everything from registration to results</p>
+                </div>
+                <Badge className="bg-green-600 text-white shrink-0">Complete platform</Badge>
+              </div>
+              <div className="mt-6">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-8">
+                  {eventJourneySteps.slice(0, 4).map((step, idx) => {
+                    const Icon = step.icon;
+                    return (
+                      <div key={step.title}>
+                        <div className="flex flex-col items-center gap-1">
+                          <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${step.color}`}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <p className="text-center text-[10px] font-bold leading-tight">{step.title}</p>
+                        </div>
+                        {idx < 3 && <div className="flex items-center justify-center mt-2"><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-8">
+                  {eventJourneySteps.slice(4, 8).map((step, idx) => {
+                    const Icon = step.icon;
+                    return (
+                      <div key={step.title}>
+                        <div className="flex flex-col items-center gap-1">
+                          <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${step.color}`}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <p className="text-center text-[10px] font-bold leading-tight">{step.title}</p>
+                        </div>
+                        {idx < 3 && <div className="flex items-center justify-center mt-2"><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div className="grid gap-5 lg:grid-cols-2"><Card className="border-red-200 bg-red-50/60"><CardContent className="p-6 sm:p-8"><div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.16em] text-red-700"><X className="h-4 w-4" /> The old Saturday</div><h2 className="mt-3 text-2xl font-black tracking-tight">The event is full. The information is everywhere.</h2><div className="mt-6 space-y-3">{["A form for entries", "Payment screenshots in WhatsApp", "A spreadsheet that is already out of date", "No clear count for breakfast, T-shirt sizes, or add-ons", "A separate list at the check-in desk"].map((item) => <div key={item} className="flex items-center gap-3 rounded-xl border border-red-200/70 bg-white/70 p-3 text-sm text-red-950"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-100 text-red-600">×</span>{item}</div>)}</div></CardContent></Card><Card className="border-green-200 bg-green-50/60"><CardContent className="p-6 sm:p-8"><div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.16em] text-green-700"><CheckCircle2 className="h-4 w-4" /> The SportPass Saturday</div><h2 className="mt-3 text-2xl font-black tracking-tight">One event record from first entry to final scan.</h2><div className="mt-6 space-y-3">{["One public registration flow", "One UPI review queue", "One live participant record", "One QR and checkpoint workflow"].map((item) => <div key={item} className="flex items-center gap-3 rounded-xl border border-green-200/70 bg-white/70 p-3 text-sm text-green-950"><CheckCircle2 className="h-5 w-5 shrink-0 text-green-600" />{item}</div>)}</div></CardContent></Card></div></section>
+    {/* Organizer Value Section */}
+    <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+      <div className="mb-10 text-center">
+        <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Stop managing spreadsheets</p>
+        <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">One event record. Everything in sync.</h2>
+        <p className="mt-4 max-w-2xl mx-auto text-muted-foreground">
+          Stop managing registrations across forms, spreadsheets, payment screenshots, and WhatsApp messages. SportPass keeps everything organized from the moment someone registers until after the event ends.
+        </p>
+      </div>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {organizerValuePoints.map((point) => {
+          const Icon = point.icon;
+          return (
+            <Card key={point.title} className="flex flex-col">
+              <CardContent className="p-6 flex flex-col flex-1">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary mb-4">
+                  <Icon className="h-6 w-6" />
+                </div>
+                <h3 className="font-bold mb-2">{point.title}</h3>
+                <p className="text-sm text-muted-foreground">{point.description}</p>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </section>
 
-    <section id="sport-playbooks" className="bg-muted/40"><div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div className="mx-auto max-w-3xl text-center"><p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Choose your sport</p><h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">Same foundation. A smarter next layer for each sport.</h2><p className="mt-4 text-lg leading-7 text-muted-foreground">Every organizer gets the core event workflow. Select a sport to see what is live today and what SportPass is building next.</p></div><div className="mt-10 flex gap-2 overflow-x-auto pb-2" role="tablist" aria-label="Sport playbooks">{sportTabs.map((sport) => <button key={sport.key} type="button" role="tab" aria-selected={activeSport === sport.key} onClick={() => setActiveSport(sport.key)} className={`whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-bold transition-colors ${activeSport === sport.key ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>{sport.label}</button>)}</div><div className="mt-6 rounded-3xl border bg-card p-5 shadow-sm sm:p-8"><div className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-start sm:justify-between"><div><Badge variant="outline">{playbook.label}</Badge><h3 className="mt-3 text-2xl font-black">{activeSportLabel} organizer playbook</h3><p className="mt-2 max-w-2xl text-muted-foreground">{playbook.summary}</p></div><Button asChild variant="outline" className="w-fit gap-2"><Link to="/signup?type=organizer">Talk through your workflow <ArrowRight className="h-4 w-4" /></Link></Button></div><div className="mt-6 grid gap-8 lg:grid-cols-2"><div><div className="mb-3 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-green-600" /><p className="text-sm font-bold uppercase tracking-[0.16em] text-green-700">Live today</p></div><div className="space-y-3">{playbook.live.map((feature) => <PlaybookFeature key={feature.title} feature={feature} state="live" />)}</div></div><div><div className="mb-3 flex items-center gap-2"><ArrowRight className="h-4 w-4 text-primary" /><p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Next for {activeSportLabel?.toLowerCase()}</p></div><div className="space-y-3">{playbook.next.map((feature) => <PlaybookFeature key={feature.title} feature={feature} state="next" />)}</div></div></div></div></div></section>
+    {/* Before/After Comparison */}
+    <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card className="border-red-200 bg-red-50/60">
+          <CardContent className="p-6 sm:p-8">
+            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.16em] text-red-700">
+              <X className="h-4 w-4" /> Without SportPass
+            </div>
+            <h2 className="mt-3 text-2xl font-black tracking-tight">Information scattered everywhere</h2>
+            <div className="mt-6 space-y-3">
+              {["Registration form on Google Forms", "Payment screenshots in WhatsApp", "Spreadsheet that is already out of date", "Unclear counts for add-ons and selections", "Manual checking participants at the event"].map((item) => (
+                <div key={item} className="flex items-center gap-3 rounded-xl border border-red-200/70 bg-white/70 p-3 text-sm text-red-950">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-100 text-red-600">×</span>
+                  {item}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-green-200 bg-green-50/60">
+          <CardContent className="p-6 sm:p-8">
+            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.16em] text-green-700">
+              <CheckCircle2 className="h-4 w-4" /> With SportPass
+            </div>
+            <h2 className="mt-3 text-2xl font-black tracking-tight">One record from entry to completion</h2>
+            <div className="mt-6 space-y-3">
+              {["One public registration link", "Direct UPI payment tracking", "Live participant record with status", "Add-on and selection counts ready for planning", "QR check-in and real-time monitoring"].map((item) => (
+                <div key={item} className="flex items-center gap-3 rounded-xl border border-green-200/70 bg-white/70 p-3 text-sm text-green-950">
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-green-600" />
+                  {item}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </section>
 
-    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"><div className="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:items-start"><div><p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">The operating loop</p><h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Four decisions. One calmer event day.</h2><p className="mt-4 leading-7 text-muted-foreground">The product follows the questions every organizer has to answer: what are we selling, who has paid, who is confirmed, and who has arrived?</p></div><div className="grid gap-4 sm:grid-cols-2">{workflowSteps.map((step) => <div key={step.number} className="rounded-2xl border bg-card p-5"><p className="text-sm font-black text-primary">{step.number}</p><h3 className="mt-3 font-bold">{step.title}</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">{step.description}</p></div>)}</div></div></section>
+    {/* Sport Playbooks Section */}
+    <section id="sport-playbooks" className="bg-muted/40">
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Choose your sport</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">Same foundation. A smarter next layer for each sport.</h2>
+          <p className="mt-4 text-lg leading-7 text-muted-foreground">Every organizer gets the core event workflow. Select a sport to see what is live today and what SportPass is building next.</p>
+        </div>
+        <div className="mt-10 flex gap-2 overflow-x-auto pb-2" role="tablist" aria-label="Sport playbooks">
+          {sportTabs.map((sport) => (
+            <button
+              key={sport.key}
+              type="button"
+              role="tab"
+              aria-selected={activeSport === sport.key}
+              onClick={() => setActiveSport(sport.key)}
+              className={`whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-bold transition-colors ${
+                activeSport === sport.key
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                  : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
+              }`}
+            >
+              {sport.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-6 rounded-3xl border bg-card p-5 shadow-sm sm:p-8">
+          <div className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <Badge variant="outline">{playbook.label}</Badge>
+              <h3 className="mt-3 text-2xl font-black">{activeSportLabel} organizer playbook</h3>
+              <p className="mt-2 max-w-2xl text-muted-foreground">{playbook.summary}</p>
+            </div>
+            <Button asChild variant="outline" className="w-fit gap-2">
+              <Link to="/signup?type=organizer">
+                Talk through your workflow <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+          <div className="mt-6 grid gap-8 lg:grid-cols-2">
+            <div>
+              <div className="mb-3 flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                <p className="text-sm font-bold uppercase tracking-[0.16em] text-green-700">Live today</p>
+              </div>
+              <div className="space-y-3">
+                {playbook.live.map((feature) => (
+                  <PlaybookFeature key={feature.title} feature={feature} state="live" />
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="mb-3 flex items-center gap-2">
+                <ArrowRight className="h-4 w-4 text-primary" />
+                <p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Next for {activeSportLabel?.toLowerCase()}</p>
+              </div>
+              <div className="space-y-3">
+                {playbook.next.map((feature) => (
+                  <PlaybookFeature key={feature.title} feature={feature} state="next" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-    <section id="pricing" className="border-y bg-card"><div className="mx-auto max-w-[1500px] px-4 py-20 sm:px-6 lg:px-8"><div className="mx-auto mb-10 max-w-3xl text-center"><p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">SportPass pricing</p><h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">Pay for the scale of your event.</h2><p className="mt-4 text-lg text-muted-foreground">No monthly subscription. Participant payments go directly to your UPI account; SportPass fees are event-based or based on confirmed registrations.</p><p className="mt-3 text-sm leading-6 text-muted-foreground">A paid registration counts after the form is complete and your team approves the payment. Free registrations count once confirmed; unfinished forms and pending payments do not count.</p></div>{plansError ? <Card className="mx-auto max-w-xl"><CardContent className="p-6 text-center text-sm text-muted-foreground">Pricing is temporarily unavailable. Please try again shortly.</CardContent></Card> : !plans ? <p className="py-10 text-center text-muted-foreground">Loading current pricing…</p> : <><div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{plans.plans.map((plan) => <PlanCard key={plan.id} plan={plan} />)}</div><div className="mt-8 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]"><Card className="border-primary/20 bg-primary/5"><CardContent className="p-6 sm:p-7"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.16em] text-primary"><WalletCards className="h-4 w-4" /> How payment works</div><p className="mt-3 text-2xl font-black tracking-tight">Your money comes straight to you.</p><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">No complex payment gateway setup. No T+2 settlement or waiting for a payout. Add your UPI ID, verify the payment, and confirm the registration.</p></div><Badge variant="secondary" className="w-fit shrink-0">Direct to your account</Badge></div><div className="mt-6 grid gap-3 md:grid-cols-3"><div className="rounded-2xl border bg-background p-4"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-foreground">1</span><p className="font-bold">Enter your UPI ID</p></div><p className="mt-3 text-sm leading-5 text-muted-foreground">Add the UPI ID where you want participants to pay when you set up the event.</p></div><div className="rounded-2xl border bg-background p-4"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-foreground">2</span><p className="font-bold">Get paid directly</p></div><p className="mt-3 text-sm leading-5 text-muted-foreground">Participants pay your UPI ID. The amount reaches your bank account directly—SportPass does not hold it.</p></div><div className="rounded-2xl border bg-background p-4"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-foreground">3</span><p className="font-bold">Verify and confirm</p></div><p className="mt-3 text-sm leading-5 text-muted-foreground">Check the amount and UTR or payment reference, then confirm the participant in your event console.</p></div></div><div className="mt-5 flex items-start gap-3 rounded-xl border border-primary/15 bg-background/70 p-4 text-sm text-muted-foreground"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" /><p><span className="font-bold text-foreground">Simple by design:</span> no gateway onboarding, no payout reconciliation, and no waiting to access the money participants have paid you.</p></div><p className="mt-4 text-xs leading-5 text-muted-foreground">Your bank or UPI provider may require PAN, Aadhaar or other KYC documents. SportPass does not currently collect those in the organizer profile.</p></CardContent></Card>{plans.foundingProgram.enabled && <Card className="border-[#ff9933]/30 bg-[#fff8ef]"><CardContent className="p-6"><p className="text-sm font-bold uppercase tracking-[0.16em] text-[#b45c00]">Founding organizer program</p><p className="mt-3 text-xl font-black text-[#101b35]">Eligible organizers may get {plans.foundingProgram.freeRacesCount} event{plans.foundingProgram.freeRacesCount === 1 ? "" : "s"} waived.</p><p className="mt-2 text-sm leading-6 text-[#5d4a36]">Eligibility is organization-specific and shown as part of the current program.</p></CardContent></Card>}</div></>}</div></section>
+    {/* Operating Loop Section */}
+    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+      <div className="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:items-start">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">The operating loop</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Four decisions. One calmer event day.</h2>
+          <p className="mt-4 leading-7 text-muted-foreground">The product follows the questions every organizer has to answer: what are we selling, who has paid, who is confirmed, and who has arrived?</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {workflowSteps.map((step) => (
+            <div key={step.number} className="rounded-2xl border bg-card p-5">
+              <p className="text-sm font-black text-primary">{step.number}</p>
+              <h3 className="mt-3 font-bold">{step.title}</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{step.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
 
-    <section className="relative overflow-hidden bg-[#101b35] px-4 py-16 text-center text-white sm:px-6 lg:py-20"><div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" /><div className="relative mx-auto max-w-2xl"><LineChart className="mx-auto h-8 w-8 text-[#ff9933]" /><h2 className="mt-4 text-3xl font-black sm:text-4xl">Make the next event easier to run.</h2><p className="mt-4 text-white/70">Start with the workflow that matters most, then grow into the sport tools your team needs.</p><Button asChild size="lg" className="mt-7 rounded-xl bg-white font-bold text-[#101b35] hover:bg-white/90"><Link to="/signup?type=organizer">Start your organizer application <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></div></section>
+    {/* Pricing Section */}
+    <section id="pricing" className="border-y bg-card">
+      <div className="mx-auto max-w-[1500px] px-4 py-20 sm:px-6 lg:px-8">
+        <div className="mx-auto mb-10 max-w-3xl text-center">
+          <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Simple Pricing. Built for Events of Every Size.</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">Transparent pricing that scales with your event.</h2>
+          <p className="mt-4 text-lg text-muted-foreground">From weekly community events and local tournaments to large sporting events, SportPass gives you the tools to manage your event from registration to completion.</p>
+        </div>
+
+        {/* Free vs Paid Pricing Cards with Positioning */}
+        <div className="grid gap-6 md:grid-cols-2 mb-12">
+          {/* Free Events Card */}
+          <Card className="border-2 border-green-200/50 bg-green-50/30">
+            <CardHeader className="border-b bg-green-50/50 pb-6">
+              <CardTitle className="text-2xl">Free Events</CardTitle>
+              <p className="text-sm text-muted-foreground mt-2">₹0 · Up to 100 participants</p>
+              <p className="text-xs font-semibold text-green-700 mt-3">Best for community events and simple registrations</p>
+            </CardHeader>
+            <CardContent className="p-6 sm:p-8 space-y-6">
+              <div className="rounded-lg bg-green-100/30 border border-green-200/50 p-3">
+                <p className="text-xs text-green-900 leading-relaxed">
+                  <span className="font-semibold">A Free Event means participants are not charged any registration fee.</span>
+                  {" "}Registration fee must be ₹0. No payment required to register. Limited to 100 participants. Receive Free-tier features only.
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-green-700 mb-3">Includes</p>
+                <ul className="space-y-2 text-sm">
+                  <li className="flex gap-2">
+                    <Check className="h-4 w-4 shrink-0 text-green-600 mt-0.5" />
+                    <span>Event page & registrations</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <Check className="h-4 w-4 shrink-0 text-green-600 mt-0.5" />
+                    <span>Participant/player list</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <Check className="h-4 w-4 shrink-0 text-green-600 mt-0.5" />
+                    <span>Basic organizer dashboard</span>
+                  </li>
+                </ul>
+              </div>
+              <Button asChild className="w-full">
+                <Link to="/signup?type=organizer">Create Free Event</Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Paid Events Card - More Prominent */}
+          <Card className="border-2 border-primary/50 bg-primary/5 ring-1 ring-primary/10 shadow-lg">
+            <CardHeader className="border-b bg-primary/5 pb-6">
+              <div className="flex items-baseline justify-between gap-2">
+                <CardTitle className="text-2xl">Paid Events</CardTitle>
+                <Badge className="bg-[#ff9933] text-[#101b35] text-xs">INTRODUCTORY PRICING</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground mt-2">5% + ₹10 per successful registration</p>
+              <p className="text-xs font-semibold text-primary mt-3">For organizers who need the complete event workflow</p>
+            </CardHeader>
+            <CardContent className="p-6 sm:p-8 space-y-6">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary mb-3">Everything in Free, plus:</p>
+                <ul className="space-y-2 text-sm">
+                  <li className="flex gap-2">
+                    <Check className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+                    <span>Payment tracking</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <Check className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+                    <span>Confirmation & communication</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <Check className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+                    <span>Digital tickets</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <Check className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+                    <span>Event-day check-in</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <Check className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+                    <span>Results & reports</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <Check className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+                    <span>Sport-specific event tools</span>
+                  </li>
+                </ul>
+              </div>
+              <Button asChild className="w-full" variant="default">
+                <Link to="/signup?type=organizer">Create Paid Event</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* What Paid Events Unlock Section */}
+        <div className="mb-12">
+          <h3 className="text-2xl font-black tracking-tight mb-8">What Paid Events Unlock</h3>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
+            <Card>
+              <CardContent className="p-5 sm:p-6">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 text-blue-700 shrink-0">
+                    <CreditCard className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm">Payments</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Track paid registrations and payment status.</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-5 sm:p-6">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 text-purple-700 shrink-0">
+                    <Mail className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm">Communication</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Send confirmations and important event updates.</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-5 sm:p-6">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 text-green-700 shrink-0">
+                    <Ticket className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm">Tickets & Check-In</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Digital tickets and smooth event-day check-in.</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-5 sm:p-6">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-700 shrink-0">
+                    <BarChart4 className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm">Results & Reports</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Manage results and get better event insights.</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-5 sm:p-6">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 shrink-0">
+                    <Zap className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm">Sport Tools</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Features adapt based on your sport/format.</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Built Around Your Sport Section */}
+        <div className="mb-12">
+          <h3 className="text-2xl font-black tracking-tight mb-8">Built Around Your Sport</h3>
+          <div className="grid gap-6 md:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Running & Cycling</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Bibs, categories, check-in and results.
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Badminton & Tournaments</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Players, categories and tournament/event formats.
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Community Events</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Registrations, participant management and communication.
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Payment Options Section */}
+        <div className="mt-14">
+          <div className="mb-10 text-center">
+            <h3 className="text-2xl font-black tracking-tight">Choose How You Collect Payments</h3>
+          </div>
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Direct UPI */}
+            <Card className="border-green-200/50 bg-green-50/30">
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-xl">Direct UPI</CardTitle>
+                  <Badge className="bg-green-600 text-white text-xs">AVAILABLE NOW</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Receive registration payments directly to your UPI account.
+                </p>
+                <div className="space-y-3 text-sm">
+                  <p className="font-semibold">How it works:</p>
+                  <ul className="space-y-2 text-muted-foreground">
+                    <li className="flex gap-2">
+                      <span className="font-bold text-green-600 shrink-0">•</span>
+                      <span>SportPass tracks registrations and payment status</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-bold text-green-600 shrink-0">•</span>
+                      <span>Registration money goes directly to your UPI account</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-bold text-green-600 shrink-0">•</span>
+                      <span>You verify payment references and confirm participants</span>
+                    </li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Online Payment Gateway */}
+            <Card className="border-muted/50 bg-muted/20 opacity-75">
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-xl text-muted-foreground">Online Payment Gateway</CardTitle>
+                  <Badge variant="outline" className="text-xs">COMING SOON</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Accept online payments directly through SportPass with automated payment tracking and settlement support.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Existing Plans Table */}
+        {plansError ? (
+          <Card className="mx-auto max-w-xl mt-14">
+            <CardContent className="p-6 text-center text-sm text-muted-foreground">Pricing is temporarily unavailable. Please try again shortly.</CardContent>
+          </Card>
+        ) : !plans ? (
+          <p className="py-10 text-center text-muted-foreground">Loading current pricing…</p>
+        ) : (
+          <>
+            <div className="mt-8 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+              <Card className="border-primary/20 bg-primary/5">
+                <CardContent className="p-6 sm:p-7">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.16em] text-primary">
+                        <WalletCards className="h-4 w-4" /> How Direct UPI Works
+                      </div>
+                      <p className="mt-3 text-2xl font-black tracking-tight">Your money comes straight to you.</p>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">No complex payment gateway setup. No T+2 settlement or waiting for a payout. Add your UPI ID, verify the payment, and confirm the registration.</p>
+                    </div>
+                    <Badge variant="secondary" className="w-fit shrink-0">Direct to your account</Badge>
+                  </div>
+                  <div className="mt-6 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-2xl border bg-background p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-foreground">1</span>
+                        <p className="font-bold">Enter your UPI ID</p>
+                      </div>
+                      <p className="mt-3 text-sm leading-5 text-muted-foreground">Add the UPI ID where you want participants to pay when you set up the event.</p>
+                    </div>
+                    <div className="rounded-2xl border bg-background p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-foreground">2</span>
+                        <p className="font-bold">Get paid directly</p>
+                      </div>
+                      <p className="mt-3 text-sm leading-5 text-muted-foreground">Participants pay your UPI ID. The amount reaches your bank account directly—SportPass does not hold it.</p>
+                    </div>
+                    <div className="rounded-2xl border bg-background p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-foreground">3</span>
+                        <p className="font-bold">Verify and confirm</p>
+                      </div>
+                      <p className="mt-3 text-sm leading-5 text-muted-foreground">Check the amount and UTR or payment reference, then confirm the participant in your event console.</p>
+                    </div>
+                  </div>
+                  <div className="mt-5 flex items-start gap-3 rounded-xl border border-primary/15 bg-background/70 p-4 text-sm text-muted-foreground">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+                    <p><span className="font-bold text-foreground">Simple by design:</span> no gateway onboarding, no payout reconciliation, and no waiting to access the money participants have paid you.</p>
+                  </div>
+                  <p className="mt-4 text-xs leading-5 text-muted-foreground">Your bank or UPI provider may require PAN, Aadhaar or other KYC documents. SportPass does not currently collect those in the organizer profile.</p>
+                </CardContent>
+              </Card>
+              {plans.foundingProgram.enabled && (
+                <Card className="border-[#ff9933]/30 bg-[#fff8ef]">
+                  <CardContent className="p-6">
+                    <p className="text-sm font-bold uppercase tracking-[0.16em] text-[#b45c00]">Founding organizer program</p>
+                    <p className="mt-3 text-xl font-black text-[#101b35]">Selected early organizers may receive a special introductory discount on SportPass platform fees.</p>
+                    <p className="mt-2 text-sm leading-6 text-[#5d4a36]">Discounts are organization-specific and may vary based on the event, usage and current program availability.</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+
+    {/* Large Events Section */}
+    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+      <Card className="border-2 border-primary/20">
+        <CardContent className="p-8 sm:p-12">
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-2xl font-black">Organizing a Larger Event?</h3>
+              <p className="mt-3 text-muted-foreground max-w-2xl">Running a large tournament, race, league or multi-sport event? Talk to us about custom requirements and event support.</p>
+            </div>
+            <Button asChild className="w-fit shrink-0" variant="outline">
+              <a href="mailto:hello@sportpass.in">Talk to SportPass</a>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </section>
+
+    {/* Final CTA Section */}
+    <section className="relative overflow-hidden bg-[#101b35] px-4 py-16 text-center text-white sm:px-6 lg:py-20">
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" />
+      <div className="relative mx-auto max-w-2xl">
+        <LineChart className="mx-auto h-8 w-8 text-[#ff9933]" />
+        <h2 className="mt-4 text-3xl font-black sm:text-4xl">Make the next event easier to run.</h2>
+        <p className="mt-4 text-white/70">Start with the workflow that matters most, then grow into the sport tools your team needs.</p>
+        <Button asChild size="lg" className="mt-7 rounded-xl bg-white font-bold text-[#101b35] hover:bg-white/90">
+          <Link to="/signup?type=organizer">
+            Start your organizer application <ArrowRight className="ml-2 h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
+    </section>
   </Layout>;
 };
 

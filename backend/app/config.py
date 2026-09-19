@@ -67,6 +67,9 @@ class Settings:
     storage_signed_url_ttl_seconds: int = 900
     storage_max_upload_bytes: int = 2_000_000
     storage_max_dimension: int = 4096
+    # Communication encryption key (for encrypting sensitive credentials like app passwords)
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    communication_encryption_key: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -94,6 +97,7 @@ class Settings:
             storage_signed_url_ttl_seconds=int(os.getenv("STORAGE_SIGNED_URL_TTL_SECONDS", "900")),
             storage_max_upload_bytes=int(os.getenv("STORAGE_MAX_UPLOAD_BYTES", "2000000")),
             storage_max_dimension=int(os.getenv("STORAGE_MAX_DIMENSION", "4096")),
+            communication_encryption_key=os.getenv("COMMUNICATION_ENCRYPTION_KEY"),
         )
 
     @property
@@ -151,6 +155,13 @@ class Settings:
             raise RuntimeError("Production must use S3-compatible object storage")
         if self.auto_migrate:
             raise RuntimeError("Production migrations must run as an explicit release command")
+
+        if not self.is_production:
+            return
+
+        # Production requires communication encryption key for credential security
+        if not self.communication_encryption_key:
+            raise RuntimeError("COMMUNICATION_ENCRYPTION_KEY must be set in production")
 
 
 @lru_cache(maxsize=1)

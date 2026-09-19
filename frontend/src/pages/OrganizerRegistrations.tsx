@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, Clock3, Download, ScanLine, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Clock3, Download, Mail, ScanLine, Search, UserPlus, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -57,6 +57,7 @@ interface OrganizerRegistration {
   isManualEntry: boolean;
   status: RegistrationStatus;
   paymentStatus: string;
+  emailStatus: string | null;
   checkInStatus: "checked_in" | "not_checked_in";
   checkedInAt: string | null;
   utrReference: string | null;
@@ -101,6 +102,13 @@ function paymentBadge(status: string) {
 function registrationBadge(status: RegistrationStatus) {
   const variant = status === "confirmed" || status === "checked_in" ? "default" : status === "rejected" || status === "expired" ? "destructive" : "secondary";
   return <Badge variant={variant}>{status.replaceAll("_", " ")}</Badge>;
+}
+
+function emailBadge(status: string | null) {
+  if (status === "SENT") return <Badge variant="default">Sent</Badge>;
+  if (status === "PENDING_LIMIT") return <Badge variant="secondary">Pending · limit</Badge>;
+  if (status === "FAILED") return <Badge variant="destructive">Failed</Badge>;
+  return <Badge variant="outline">Not sent</Badge>;
 }
 
 function formatINR(amountPaise: number) {
@@ -202,6 +210,7 @@ const OrganizerRegistrations = () => {
   const [decisionTarget, setDecisionTarget] = useState<{ id: string; decision: Decision } | null>(null);
   const [reason, setReason] = useState("");
   const [actionId, setActionId] = useState<string | null>(null);
+  const [resendId, setResendId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -391,6 +400,25 @@ const OrganizerRegistrations = () => {
     }
   };
 
+  const resendEmail = async (registration: OrganizerRegistration) => {
+    setResendId(registration.id);
+    try {
+      const result = await apiRequest<{ result: string; message: string }>(
+        `/organizer/events/${registration.event.id}/registrations/${registration.id}/resend-email`,
+        { method: "POST" },
+      );
+      if (result.result === "sent") toast.success("Confirmation email sent.");
+      else if (result.result === "delayed") toast.info("Email queued — will send when capacity is available.");
+      else if (result.result === "disabled") toast.error("Email is disabled in Communication settings.");
+      else toast.error(result.message || "Could not send email.");
+      setRefreshNonce((value) => value + 1);
+    } catch (resendError) {
+      toast.error(resendError instanceof Error ? resendError.message : "Could not send email");
+    } finally {
+      setResendId(null);
+    }
+  };
+
   return (
     <OrganizerDashboardLayout eventId={filters.eventId || undefined}>
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-10 sm:px-6 lg:px-8">
@@ -525,7 +553,7 @@ const OrganizerRegistrations = () => {
 
         <div className="overflow-hidden rounded-xl border bg-card">
           {loading ? <div className="p-10 text-center text-muted-foreground">Loading registrations…</div> : error ? <div className="p-10 text-center text-destructive">{error}</div> : registrations.length === 0 ? <div className="p-10 text-center text-muted-foreground">No registrations match these filters.</div> : <Table>
-            <TableHeader><TableRow><TableHead>Participant</TableHead>{!eventScoped && <TableHead>Event</TableHead>}<TableHead>Tier</TableHead><TableHead>Amount</TableHead><TableHead>Payment</TableHead><TableHead>Registration</TableHead><TableHead>Check-in</TableHead><TableHead>UTR/reference</TableHead><TableHead className="text-right">Decision</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Participant</TableHead>{!eventScoped && <TableHead>Event</TableHead>}<TableHead>Tier</TableHead><TableHead>Amount</TableHead><TableHead>Payment</TableHead><TableHead>Registration</TableHead><TableHead className="hidden">Email</TableHead><TableHead className="hidden">Check-in</TableHead><TableHead>UTR/reference</TableHead><TableHead className="text-right">Payment decision</TableHead></TableRow></TableHeader>
             <TableBody>{registrations.map((registration) => {
               const isReviewable = registration.status === "awaiting_payment" || registration.status === "pending_verification";
               return <TableRow key={registration.id}>
@@ -535,7 +563,8 @@ const OrganizerRegistrations = () => {
                 <TableCell className="font-semibold"><p>{formatINR(registration.amountPaise)}</p>{registration.receivedAmountPaise !== null && <p className="text-xs font-normal text-accent">Received {formatINR(registration.receivedAmountPaise)}</p>}</TableCell>
                 <TableCell><div className="space-y-1">{paymentBadge(registration.paymentStatus)}<p className="text-xs text-muted-foreground">{registration.paymentStatus.replaceAll("_", " ")}</p></div></TableCell>
                 <TableCell><div className="space-y-1">{registrationBadge(registration.status)}<p className="text-xs text-muted-foreground">{formatDate(registration.createdAt)}</p></div></TableCell>
-                <TableCell>{registration.checkInStatus === "checked_in" ? <span className="text-xs font-medium text-accent">Checked in</span> : <span className="text-xs text-muted-foreground">Not checked in</span>}</TableCell>
+                <TableCell className="hidden"><div className="space-y-1">{emailBadge(registration.emailStatus)}{registration.participant.email && <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => void resendEmail(registration)} disabled={resendId === registration.id}><Mail className="h-3 w-3" />{resendId === registration.id ? "Sending…" : registration.emailStatus === "SENT" ? "Resend" : "Send"}</Button>}</div></TableCell>
+                <TableCell className="hidden">{registration.checkInStatus === "checked_in" ? <span className="text-xs font-medium text-accent">Checked in</span> : <span className="text-xs text-muted-foreground">Not checked in</span>}</TableCell>
                 <TableCell>{registration.utrReference ? <span className="font-mono text-sm">{registration.utrReference}</span> : <span className="text-xs text-muted-foreground">Not provided</span>}</TableCell>
                 <TableCell className="text-right">{isReviewable ? <div className="flex justify-end gap-1"><TooltipProvider><Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => { setDecisionTarget({ id: registration.id, decision: "approve" }); setReason(""); }} disabled={actionId !== null}><Check className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Approve</p></TooltipContent></Tooltip><Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => { setDecisionTarget({ id: registration.id, decision: "reject" }); setReason(""); }} disabled={actionId !== null}><X className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Reject</p></TooltipContent></Tooltip></TooltipProvider></div> : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />No action</span>}</TableCell>
               </TableRow>;

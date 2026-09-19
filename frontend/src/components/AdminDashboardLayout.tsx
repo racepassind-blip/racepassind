@@ -15,6 +15,12 @@ type NavGroup = { label: string; items: NavItem[] };
 const navGroups: NavGroup[] = [
   { label: "Overview", items: [{ label: "Dashboard", to: "/admin", icon: LayoutDashboard }] },
   {
+    label: "Communication",
+    items: [
+      { label: "Communication settings", to: "/admin/communication", icon: ShieldCheck },
+    ],
+  },
+  {
     label: "Organizer management",
     items: [
       { label: "Onboarding requests", to: "/admin/organizer-applications", icon: UserPlus },

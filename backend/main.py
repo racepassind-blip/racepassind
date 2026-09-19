@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import CSRF_COOKIE
 from app.api.v1.admin import router as admin_router
+from app.api.v1.allocations import router as allocations_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.checkins import router as checkins_router
 from app.api.v1.courts import router as courts_router
@@ -46,6 +47,7 @@ app.include_router(matches_router, prefix="/api/v1/organizer", tags=["organizer-
 app.include_router(tournament_rounds_router, prefix="/api/v1/organizer", tags=["organizer-tournament-rounds"])
 app.include_router(organizer_router, prefix="/api/v1/organizer", tags=["organizer"])
 app.include_router(events_router, prefix="/api/v1/organizer", tags=["organizer-events"])
+app.include_router(allocations_router, prefix="/api/v1/organizer", tags=["organizer-allocation"])
 
 app.add_middleware(
     CORSMiddleware,

@@ -130,6 +130,92 @@ def get_public_results(
     }
 
 
+def _public_display_name(full_name: str | None) -> str:
+    """First name + last initial for privacy on the public number list."""
+    if not full_name:
+        return "Participant"
+    parts = full_name.strip().split()
+    if len(parts) == 1:
+        return parts[0]
+    return f"{parts[0]} {parts[-1][0]}."
+
+
+def _sport_number_label(sport: str | None) -> str:
+    """Return the number label shown publicly for a sport."""
+    normalized = (sport or "").strip().lower()
+    labels = {
+        "running": "Bib Number",
+        "cycling": "Bib Number",
+        "badminton": "Jersey Number",
+        "tennis": "Player ID",
+        "squash": "Jersey Number",
+    }
+    if normalized in labels:
+        return labels[normalized]
+    if "badminton" in normalized or "squash" in normalized:
+        return "Jersey Number"
+    return "Bib Number"
+
+
+@router.get("/events/{event_id}/number-list")
+def get_public_number_list(
+    event_id: UUID,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Public, read-only view of PUBLISHED number allocations for an event.
+
+    Only published allocations are exposed. Draft/unassigned entries and
+    private contact details are never returned here. Names are reduced to
+    first name + last initial for privacy.
+    """
+    from models import Registration
+
+    event = db.scalar(
+        select(Event)
+        .options(selectinload(Event.categories))
+        .where(Event.id == event_id, Event.status == "published", Event.archived_at.is_(None))
+    )
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    rows = db.scalars(
+        select(Registration)
+        .options(selectinload(Registration.participant), selectinload(Registration.category))
+        .where(
+            Registration.event_id == event_id,
+            Registration.allocation_status == "published",
+            Registration.allocation_number.isnot(None),
+        )
+        .order_by(Registration.allocation_number)
+    ).all()
+
+    entries = [
+        {
+            "allocationNumber": reg.allocation_number,
+            "displayName": _public_display_name(reg.participant.name if reg.participant else None),
+            "categoryName": reg.category.name if reg.category else None,
+            "teamName": reg.participant.team_name if reg.participant else None,
+        }
+        for reg in rows
+    ]
+
+    return {
+        "event": {
+            "id": str(event.id),
+            "title": event.title,
+            "date": event.date,
+            "sport": event.category,
+            "location": event.location,
+        },
+        "numberLabel": _sport_number_label(event.category),
+        "categories": [
+            {"id": str(category.id), "name": category.name}
+            for category in event.categories
+        ],
+        "entries": entries,
+    }
+
+
 @router.get("/events/{event_id}", response_model=EventOut)
 def get_public_event(
     event_id: UUID,

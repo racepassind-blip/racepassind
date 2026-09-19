@@ -130,6 +130,7 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
             for category in event.categories
         ],
         "paymentSettings": payment_settings,
+        "paymentCollectionMethod": event.payment_collection_method,
     }
 
 
@@ -238,6 +239,7 @@ def create_event(
         schedule=[item.model_dump() for item in payload.schedule],
         field_config=field_config,
         addon_config=addon_config,
+        payment_collection_method=payload.payment_collection_method,
     )
     db.add(event)
     db.flush()
@@ -464,6 +466,8 @@ def update_event(
     event.registration_open = payload.registration_open
     event.registration_close = payload.registration_close
     event.distance = _legacy_event_distance(payload)
+    if payload.payment_collection_method is not None:
+        event.payment_collection_method = payload.payment_collection_method
 
     for category_payload in payload.categories:
         category = existing_categories.get(category_payload.id) if category_payload.id else None
@@ -700,8 +704,9 @@ def publish_event(
     if not event.categories or not any(category.tickets for category in event.categories):
         raise HTTPException(status_code=422, detail="Event needs at least one category and ticket")
     has_paid_tickets = any(ticket.price > 0 for category in event.categories for ticket in category.tickets)
-    if has_paid_tickets and (event.payment_settings is None or not event.payment_settings.is_active or not event.payment_settings.upi_id):
-        raise HTTPException(status_code=422, detail="Active manual UPI payment settings are required before publishing paid tickets")
+    if has_paid_tickets:
+        if event.payment_collection_method == "DIRECT_UPI" and (event.payment_settings is None or not event.payment_settings.is_active or not event.payment_settings.upi_id):
+            raise HTTPException(status_code=422, detail="Active manual UPI payment settings are required before publishing paid tickets with Direct UPI method")
     event.status = "published"
     record_audit(db, actor_user_id=user.id, action="event_published", resource_type="event", resource_id=event.id)
     db.commit()

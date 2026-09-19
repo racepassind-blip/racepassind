@@ -38,10 +38,45 @@ from app.schemas.registrations import (
     PaymentReferenceIn,
     RegistrationCreateIn,
 )
+from app.services.email_service import send_registration_confirmation
 from db import get_db
 from models import Event, User
 
 router = APIRouter()
+
+
+def _send_confirmation_email_safe(db: Session, registration) -> str:
+    """Send confirmation email without ever failing the registration.
+
+    Returns a user-facing email status: "sent", "delayed", or "failed".
+    """
+    try:
+        result = send_registration_confirmation(db, registration)
+    except Exception:
+        # Registration must never depend on email. Swallow any unexpected error.
+        db.rollback()
+        return "failed"
+
+    if result.status == "SENT":
+        return "sent"
+    if result.status == "PENDING_LIMIT":
+        return "delayed"
+    if result.status == "SKIPPED_DISABLED":
+        return "disabled"
+    return "failed"
+
+
+def _combine_email_statuses(statuses: list[str]) -> str:
+    """Combine per-registration email statuses into one overall status.
+
+    Priority (worst first): failed > delayed > disabled > sent.
+    """
+    if not statuses:
+        return "disabled"
+    for candidate in ("failed", "delayed", "disabled"):
+        if candidate in statuses:
+            return candidate
+    return "sent"
 
 
 def _participant_user_id(user: User | None):
@@ -182,7 +217,14 @@ def create_registration(
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    return _confirmation_response(db, registration, confirmation_token=confirmation_token or None, claim_code=claim_code or None)
+
+    # Send confirmation email after successful registration.
+    # This NEVER fails the registration - errors are logged and reflected in email_status.
+    email_status = _send_confirmation_email_safe(db, registration)
+
+    response = _confirmation_response(db, registration, confirmation_token=confirmation_token or None, claim_code=claim_code or None)
+    response["emailStatus"] = email_status
+    return response
 
 
 @router.post("/registrations/batch", status_code=status.HTTP_201_CREATED)
@@ -218,12 +260,20 @@ def create_batch_registration(
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    return _batch_confirmation_response(
+
+    # Send a confirmation email per registration. Never fails the registration.
+    email_statuses = [_send_confirmation_email_safe(db, reg) for reg in registrations]
+    # Overall email status: worst-case wins (failed > delayed > disabled > sent).
+    overall_email_status = _combine_email_statuses(email_statuses)
+
+    response = _batch_confirmation_response(
         db,
         registrations,
         confirmation_tokens=confirmation_tokens,
         claim_codes=claim_codes,
     )
+    response["emailStatus"] = overall_email_status
+    return response
 
 
 @router.post("/registrations/payment-reference")

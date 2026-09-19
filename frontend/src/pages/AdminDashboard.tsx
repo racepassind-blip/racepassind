@@ -6,6 +6,7 @@ import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiRequest } from "@/lib/api";
 
 interface PendingApplication {
@@ -31,6 +32,23 @@ interface DashboardMetrics {
   organizerBillingCollectedThisMonthPaise: number;
 }
 interface MonthlyTrend { month: string; label: string; registrations: number; participantSalesPaise: number; racesPublished: number; }
+interface EmailUsage {
+  used: number;
+  warningLimit: number;
+  hardLimit: number;
+  status: "normal" | "warning" | "limit_reached";
+  sent: number;
+  pending: number;
+  failed: number;
+}
+interface TopEventByEmail {
+  eventId: string;
+  eventName: string;
+  total: number;
+  sent: number;
+  failed: number;
+  failureRate: number;
+}
 interface AdminDashboardResponse {
   generatedAt: string;
   period: { label: string; start: string; end: string };
@@ -38,6 +56,8 @@ interface AdminDashboardResponse {
   pendingApplications: PendingApplication[];
   incompleteOrganizations: IncompleteOrganization[];
   monthlyTrend: MonthlyTrend[];
+  emailUsage: EmailUsage;
+  topEventsByEmail: TopEventByEmail[];
 }
 
 function formatINR(paise: number) { return `₹${(paise / 100).toLocaleString("en-IN")}`; }
@@ -76,6 +96,61 @@ const AdminDashboard = () => {
             <MetricCard title="Races published this month" value={data.metrics.racesPublishedThisMonth.toLocaleString("en-IN")} description={`${data.metrics.activeRaces.toLocaleString("en-IN")} active races overall`} icon={CalendarDays} tone="blue" href="/organizer" />
             <MetricCard title="Participant sales" value={formatINR(data.metrics.participantSalesThisMonthPaise)} description={`${data.period.label} approved registration value`} icon={CircleDollarSign} />
           </section>
+
+          {data.emailUsage && (
+            <section>
+              <Link to="/admin/communication" className="block">
+                <Card className={`transition-shadow hover:shadow-md ${data.emailUsage.status === "limit_reached" ? "border-destructive" : data.emailUsage.status === "warning" ? "border-orange-400" : ""}`}>
+                  <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-4">
+                      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${data.emailUsage.status === "limit_reached" ? "bg-destructive/10 text-destructive" : data.emailUsage.status === "warning" ? "bg-orange-100 text-orange-700" : "bg-primary/10 text-primary"}`}>
+                        <Ticket className="h-6 w-6" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Email Usage</p>
+                        <p className="mt-1 text-2xl font-black tracking-tight">{data.emailUsage.used} / {data.emailUsage.hardLimit}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">Last 24 hours</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:items-end">
+                      <Badge variant={data.emailUsage.status === "limit_reached" ? "destructive" : "secondary"} className={data.emailUsage.status === "warning" ? "bg-orange-100 text-orange-700" : ""}>
+                        {data.emailUsage.status === "limit_reached" ? "Sending Paused" : data.emailUsage.status === "warning" ? "Warning" : "Normal"}
+                      </Badge>
+                      <div className="flex gap-4 text-xs text-muted-foreground">
+                        <span>Sent: <span className="font-semibold text-emerald-600">{data.emailUsage.sent}</span></span>
+                        <span>Pending: <span className="font-semibold text-orange-600">{data.emailUsage.pending}</span></span>
+                        <span>Failed: <span className="font-semibold text-destructive">{data.emailUsage.failed}</span></span>
+                      </div>
+                    </div>
+                  </CardContent>
+                  {data.emailUsage.status === "limit_reached" && (
+                    <div className="border-t border-destructive/20 bg-destructive/5 px-5 py-3 text-sm text-destructive">
+                      <p className="font-semibold">Email sending temporarily stopped</p>
+                      <p className="mt-0.5 text-xs">{data.emailUsage.hardLimit} / {data.emailUsage.hardLimit} application email limit reached. Pending emails will be sent when email capacity becomes available.</p>
+                    </div>
+                  )}
+                </Card>
+              </Link>
+            </section>
+          )}
+
+          {data.topEventsByEmail && data.topEventsByEmail.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold text-card-foreground">Top events by email volume</h2>
+              <div className="mt-4 overflow-hidden rounded-xl border bg-card">
+                <Table>
+                  <TableHeader><TableRow><TableHead>Event</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">Sent</TableHead><TableHead className="text-right">Failed</TableHead><TableHead className="text-right">Failure rate</TableHead></TableRow></TableHeader>
+                  <TableBody>{data.topEventsByEmail.map((event) => <TableRow key={event.eventId}>
+                    <TableCell><Link to={`/organizer/events/${event.eventId}/registrations`} className="font-medium hover:underline">{event.eventName}</Link></TableCell>
+                    <TableCell className="text-right font-mono">{event.total}</TableCell>
+                    <TableCell className="text-right font-mono text-emerald-600">{event.sent}</TableCell>
+                    <TableCell className="text-right font-mono text-destructive">{event.failed}</TableCell>
+                    <TableCell className="text-right font-mono">{event.failureRate > 0 ? `${event.failureRate}%` : "-"}</TableCell>
+                  </TableRow>)}</TableBody>
+                </Table>
+              </div>
+            </section>
+          )}
 
           <section className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
             <Card><CardHeader className="flex flex-row items-start justify-between gap-4"><div><CardTitle>Monthly performance</CardTitle><CardDescription>Confirmed participant entries over the last six months.</CardDescription></div><Badge variant="secondary">{data.period.label}</Badge></CardHeader><CardContent><div className="flex h-56 items-end gap-2 border-b border-l px-2 pb-0 pt-5 sm:gap-4">{data.monthlyTrend.map((item) => <div key={item.month} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div className="group relative flex h-full w-full items-end justify-center"><div className="w-full max-w-12 rounded-t-lg bg-primary/80 transition-colors group-hover:bg-primary" style={{ height: `${Math.max((item.registrations / maxRegistrations) * 100, item.registrations ? 8 : 2)}%` }} title={`${item.registrations.toLocaleString("en-IN")} entries`} /></div><span className="text-[11px] text-muted-foreground">{item.label}</span></div>)}</div><div className="mt-4 flex flex-wrap gap-4 text-xs text-muted-foreground"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-primary" /> Confirmed entries</span><span>{data.metrics.registrationsThisMonth.toLocaleString("en-IN")} this month</span><span>{data.metrics.racesPublishedThisMonth.toLocaleString("en-IN")} races published</span></div></CardContent></Card>

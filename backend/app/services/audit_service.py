@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from models import AuditLog
+from models import AllocationHistory, AuditLog
 
 _SENSITIVE_METADATA_PARTS = (
     "password",
@@ -61,5 +61,26 @@ def record_audit(
             resource_type=resource_type,
             resource_id=str(resource_id) if resource_id is not None else None,
             metadata_json=safe_audit_metadata(metadata),
+        )
+    )
+
+
+def record_allocation_change(
+    db: Session,
+    *,
+    event_id: UUID,
+    registration_id: UUID,
+    old_number: int | None,
+    new_number: int | None,
+    changed_by_user_id: UUID,
+) -> None:
+    """Record an allocation number change in the history table."""
+    db.add(
+        AllocationHistory(
+            event_id=event_id,
+            registration_id=registration_id,
+            old_number=old_number,
+            new_number=new_number,
+            changed_by=changed_by_user_id,
         )
     )

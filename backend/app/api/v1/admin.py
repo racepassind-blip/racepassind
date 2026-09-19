@@ -13,6 +13,12 @@ from app.api.deps import require_csrf, require_roles
 from app.services.admin_dashboard_service import get_admin_dashboard
 from app.services.audit_service import record_audit
 from app.services.auth_service import hash_password, normalize_email, normalize_phone, public_user, utc_now
+from app.services.communication_service import (
+    get_communication_settings,
+    send_test_email,
+    update_email_settings,
+)
+from app.services.email_service import get_email_limit_status, retry_pending_emails, EMAIL_HARD_LIMIT, EMAIL_WARNING_LIMIT
 from app.services.organization_fee_service import (
     OrganizationFeeValidationError,
     OrganizationNotFoundError,
@@ -494,3 +500,115 @@ def waive_billing_endpoint(
         db.rollback()
         code = status.HTTP_404_NOT_FOUND if str(exc) == "Billing record not found" else status.HTTP_422_UNPROCESSABLE_ENTITY
         raise HTTPException(status_code=code, detail=str(exc)) from exc
+@router.post("/billing/{billing_id}/waive")
+def waive_billing_endpoint(
+    billing_id: UUID,
+    payload: BillingPaymentIn = BillingPaymentIn(),
+    admin: User = Depends(require_roles("admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        return waive_billing(
+            db,
+            billing_id=billing_id,
+            actor_user_id=admin.id,
+            notes=payload.notes,
+        )
+    except BillingValidationError as exc:
+        db.rollback()
+        code = status.HTTP_404_NOT_FOUND if str(exc) == "Billing record not found" else status.HTTP_422_UNPROCESSABLE_ENTITY
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+
+class EmailSettingsIn(BaseModel):
+    sender_name: str | None = Field(default=None, max_length=120)
+    gmail_address: str | None = Field(default=None, max_length=320)
+    gmail_app_password: str | None = Field(default=None, max_length=256)
+    enabled: bool | None = None
+
+
+class SendTestEmailIn(BaseModel):
+    recipient_email: str = Field(min_length=3, max_length=320)
+
+
+@router.get("/communication")
+def get_communication_settings_endpoint(
+    _: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get current communication settings."""
+    return get_communication_settings(db)
+
+
+@router.put("/communication")
+def update_communication_settings_endpoint(
+    payload: EmailSettingsIn,
+    admin: User = Depends(require_roles("admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Update email communication settings."""
+    try:
+        return update_email_settings(
+            db,
+            actor_user_id=admin.id,
+            sender_name=payload.sender_name,
+            gmail_address=payload.gmail_address,
+            gmail_app_password=payload.gmail_app_password,
+            enabled=payload.enabled,
+        )
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.post("/communication/test-email")
+def send_test_email_endpoint(
+    payload: SendTestEmailIn,
+    admin: User = Depends(require_roles("admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Send a test email to verify configuration."""
+    success, message = send_test_email(
+        db,
+        recipient_email=payload.recipient_email,
+    )
+    if success:
+        return {"success": True, "message": message}
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+
+
+@router.get("/email-usage")
+def get_email_usage_endpoint(
+    _: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get current email usage and limit status."""
+    status_value, count = get_email_limit_status(db)
+    return {
+        "used": count,
+        "warningLimit": EMAIL_WARNING_LIMIT,
+        "hardLimit": EMAIL_HARD_LIMIT,
+        "status": status_value.value,
+    }
+
+
+@router.post("/email-usage/retry-pending")
+def retry_pending_emails_endpoint(
+    _: User = Depends(require_roles("admin")),
+    __: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Retry pending emails that were queued due to the rate limit."""
+    results = retry_pending_emails(db)
+    sent = sum(1 for r in results if r.status == "SENT")
+    failed = sum(1 for r in results if r.status == "FAILED")
+    still_pending = sum(1 for r in results if r.status == "PENDING_LIMIT")
+    return {
+        "retried": len(results),
+        "sent": sent,
+        "failed": failed,
+        "stillPending": still_pending,
+    }

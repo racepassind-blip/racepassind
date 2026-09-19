@@ -172,6 +172,7 @@ class Event(Base):
     schedule: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
     field_config: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False, default=dict, server_default=text("'{}'"))
     addon_config: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False, default=dict, server_default=text("'{}'"))
+    payment_collection_method: Mapped[str] = mapped_column(String(20), nullable=False, server_default="DIRECT_UPI")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
@@ -197,6 +198,10 @@ class Event(Base):
     matches: Mapped[list["Match"]] = relationship(back_populates="event", cascade="all, delete-orphan")
     checkpoints: Mapped[list["EventCheckpoint"]] = relationship(
         back_populates="event", cascade="all, delete-orphan", order_by="EventCheckpoint.position"
+    )
+    # Allocation history entries for this event
+    allocation_history: Mapped[list["AllocationHistory"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan"
     )
 
     @property
@@ -275,6 +280,9 @@ class EventCategory(Base):
     # Team size range — only populated when entry_type == "team"
     team_size_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     team_size_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Number allocation range for this category (optional)
+    number_range_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    number_range_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     event: Mapped[Event] = relationship(back_populates="categories")
@@ -287,6 +295,43 @@ class EventCategory(Base):
         back_populates="category", cascade="all, delete-orphan", uselist=False
     )
     tickets: Mapped[list["Ticket"]] = relationship(back_populates="category")
+    # Registration entries in this category (for allocation lookups)
+    registrations: Mapped[list["Registration"]] = relationship(back_populates="category")
+
+
+class EmailLog(Base):
+    """Centralized email log for tracking all outgoing emails."""
+
+    __tablename__ = "email_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    recipient: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Email type: REGISTRATION_CONFIRMATION, TICKET, PAYMENT_CONFIRMATION, ADMIN_LIMIT_WARNING
+    email_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    # Reference type and ID for linking to entities (REGISTRATION, EVENT, etc.)
+    reference_type: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    reference_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # Event mapping: allows querying all emails/recipients for an event (broadcasts).
+    event_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("events.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Status: PENDING, SENT, FAILED, PENDING_LIMIT, SKIPPED_DISABLED
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending", index=True)
+    # Failure reason for FAILED status
+    failure_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Provider (email service used)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, server_default="gmail_smtp")
+    # Attempted at is when the send was attempted
+    attempted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Sent at is when the email was successfully sent
+    sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Resend flag: true when the email was sent via manual resend (not original send)
+    is_resend: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
 
 class TournamentRound(Base):
@@ -487,11 +532,18 @@ class Registration(Base):
     ticket_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tickets.id"), nullable=False, index=True)
     category_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("event_categories.id"), nullable=True, index=True)
     user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
-    bib_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Allocation number (generalized from bib_number for use across all sports)
+    allocation_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Allocation status: unassigned, draft, published
+    allocation_status: Mapped[str] = mapped_column(String, nullable=False, default="unassigned", server_default="unassigned")
+    allocation_assigned_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    allocation_updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     qr_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)
     payment_status: Mapped[str] = mapped_column(String, nullable=False, server_default="pending")
     source: Mapped[str] = mapped_column(String, nullable=False, server_default="online", index=True)
+    # Email status for quick UI queries (PENDING/SENT/FAILED/PENDING_LIMIT)
+    email_status: Mapped[str | None] = mapped_column(String(20), nullable=True, server_default=None, index=True)
     participant_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     unit_price_paise: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -516,9 +568,14 @@ class Registration(Base):
     )
     user: Mapped[User | None] = relationship(back_populates="registrations")
     ticket: Mapped[Ticket] = relationship(back_populates="registrations")
+    category: Mapped[EventCategory | None] = relationship(back_populates="registrations")
     order_items: Mapped[list["OrderItem"]] = relationship(back_populates="registration")
     checkins: Mapped[list["Checkin"]] = relationship(back_populates="registration", cascade="all, delete-orphan")
     payment: Mapped["Payment | None"] = relationship(back_populates="registration", uselist=False)
+    # Allocation history entries for this registration
+    allocation_history: Mapped[list["AllocationHistory"]] = relationship(
+        back_populates="registration", cascade="all, delete-orphan"
+    )
 
 
 class Match(Base):
@@ -784,6 +841,24 @@ class AuditLog(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class CommunicationConfig(Base):
+    """Centralized configuration for communication channels (email, WhatsApp, SMS, etc.)."""
+
+    __tablename__ = "communication_config"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    channel: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # JSON configuration specific to each channel
+    # For EMAIL: {sender_name, gmail_address, gmail_app_password_encrypted}
+    # For WHATSAPP: {api_key, phone_number, template_ids}
+    configuration: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False, default=dict, server_default=text("'{}'"))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class RateLimitBucket(Base):
     __tablename__ = "rate_limit_buckets"
 
@@ -791,3 +866,65 @@ class RateLimitBucket(Base):
     window_started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AllocationHistory(Base):
+    """Audit trail for allocation number changes."""
+
+    __tablename__ = "allocation_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
+    registration_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("registrations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # NULL for new allocations
+    old_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # NULL for deletions
+    new_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    changed_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    changed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    # Relationships
+    event: Mapped[Event] = relationship(back_populates="allocation_history")
+    registration: Mapped[Registration] = relationship(back_populates="allocation_history")
+    changed_by_user: Mapped[User] = relationship()
+
+# Export all models
+__all__ = [
+    "User",
+    "OrganizerApplication",
+    "Organization",
+    "PricingPlan",
+    "FoundingProgram",
+    "FoundingProgramOrganization",
+    "Event",
+    "Court",
+    "EventCategory",
+    "TournamentRound",
+    "BadmintonCategoryScoring",
+    "TeamMatchScoring",
+    "OrganizerEventBilling",
+    "Ticket",
+    "Participant",
+    "EventCheckpoint",
+    "RegistrationParticipant",
+    "Registration",
+    "Match",
+    "MatchBout",
+    "Order",
+    "OrderItem",
+    "Payment",
+    "Checkin",
+    "EventDocument",
+    "DiscountCode",
+    "RaceResult",
+    "OrganizationMember",
+    "EventPaymentSettings",
+    "AuthSession",
+    "AuditLog",
+    "CommunicationConfig",
+    "EmailLog",
+    "RateLimitBucket",
+    "AllocationHistory",
+]

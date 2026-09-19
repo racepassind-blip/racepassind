@@ -481,6 +481,7 @@ def serialize_organizer_registration(registration: Registration, event: Event) -
         "currency": "INR",
         "status": registration.status,
         "paymentStatus": registration.payment_status,
+        "emailStatus": registration.email_status,
         "source": registration.source,
         "isManualEntry": registration.source == "manual",
         "receivedAmountPaise": payment.received_amount_paise if payment else None,

@@ -42,9 +42,9 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
     { label: "Registrations", icon: ClipboardList, to: `/organizer/registrations${eventQuery}` },
     ...(eventId ? [{ label: "Communications", icon: MessageSquare, to: `/organizer/events/${eventId}/communications` }] : []),
     { label: "Check-in", icon: ScanLine, to: eventId ? `/organizer/check-in?event_id=${encodeURIComponent(eventId)}` : "/organizer/check-in" },
+    ...(eventId ? [{ label: "Bib Management", icon: Package, to: `/organizer/events/${eventId}/allocations` }] : []),
   ];
   const comingSoonItems: NavItem[] = [
-    ...(eventId && !currentSportConfig.supports_bib ? [] : [{ label: "Bib & kit", icon: Package }]),
     { label: "Reports", icon: BarChart3 },
   ];
   const initials = user?.name?.split(" ").map((part) => part[0]).join("").toUpperCase() ?? "RP";

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.services.auth_service import utc_now
-from models import Event, OrganizerApplication, OrganizerEventBilling, Organization, Registration
+from app.services.email_service import EMAIL_HARD_LIMIT, EMAIL_WARNING_LIMIT, get_email_limit_status
+from models import EmailLog, Event, OrganizerApplication, OrganizerEventBilling, Organization, Registration
 
 _CONFIRMED_REGISTRATION_STATUSES = ("confirmed", "checked_in")
 _CONFIRMED_PAYMENT_STATUSES = ("approved", "not_required")
@@ -98,6 +99,79 @@ def _monthly_trend(db: Session, current_month: dt.datetime) -> list[dict]:
     return trend
 
 
+def _email_usage(db: Session) -> dict:
+    """Get email usage metrics for the current 24-hour window."""
+    status, count = get_email_limit_status(db)
+
+    window_start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
+
+    # Count by status in the window
+    sent = _number(
+        db.scalar(
+            select(func.count(EmailLog.id)).where(
+                EmailLog.created_at >= window_start, EmailLog.status == "sent"
+            )
+        )
+    )
+    pending = _number(
+        db.scalar(
+            select(func.count(EmailLog.id)).where(
+                EmailLog.created_at >= window_start, EmailLog.status == "pending_limit"
+            )
+        )
+    )
+    failed = _number(
+        db.scalar(
+            select(func.count(EmailLog.id)).where(
+                EmailLog.created_at >= window_start, EmailLog.status == "failed"
+            )
+        )
+    )
+
+    return {
+        "used": count,
+        "warningLimit": EMAIL_WARNING_LIMIT,
+        "hardLimit": EMAIL_HARD_LIMIT,
+        "status": status.value,
+        "sent": sent,
+        "pending": pending,
+        "failed": failed,
+    }
+
+
+def _top_events_by_email_volume(db: Session, limit: int = 5) -> list[dict]:
+    """Get top events by email volume in the last 24 hours."""
+    window_start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
+
+    results = db.execute(
+        select(
+            Event.id,
+            Event.name,
+            func.count(EmailLog.id).label("total"),
+            func.sum(case((EmailLog.status == "sent", 1), else_=0)).label("sent"),
+            func.sum(case((EmailLog.status == "failed", 1), else_=0)).label("failed"),
+        )
+        .select_from(EmailLog)
+        .join(Event, Event.id == EmailLog.event_id)
+        .where(EmailLog.created_at >= window_start)
+        .group_by(Event.id, Event.name)
+        .order_by(desc("total"))
+        .limit(limit)
+    ).all()
+
+    return [
+        {
+            "eventId": str(row.id),
+            "eventName": row.name,
+            "total": row.total,
+            "sent": row.sent,
+            "failed": row.failed,
+            "failureRate": row.total > 0 and round((row.failed / row.total) * 100, 1) or 0,
+        }
+        for row in results
+    ]
+
+
 def get_admin_dashboard(db: Session) -> dict:
     now = utc_now()
     month_start, next_month_start = _date_range(now)
@@ -169,4 +243,6 @@ def get_admin_dashboard(db: Session) -> dict:
             for item in incomplete_organizations
         ],
         "monthlyTrend": _monthly_trend(db, month_start),
+        "emailUsage": _email_usage(db),
+        "topEventsByEmail": _top_events_by_email_volume(db),
     }

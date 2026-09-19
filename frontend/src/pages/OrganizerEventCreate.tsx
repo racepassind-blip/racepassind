@@ -122,6 +122,7 @@ interface OrganizerEventResponse {
     tickets: Array<{ id: string; name: string; description: string; pricePaise: number; quantityTotal: number; saleStart: string | null; saleEnd: string | null; maxPerUser: number | null }>;
   }>;
   paymentSettings: { upiId: string; payeeName: string; instructions: string } | null;
+  paymentCollectionMethod: "DIRECT_UPI" | "PAYMENT_GATEWAY";
 }
 
 const MAX_IMAGE_BYTES = 2_000_000;
@@ -179,7 +180,7 @@ const OrganizerEventCreate = () => {
   const [upiId, setUpiId] = useState("");
   const [payeeName, setPayeeName] = useState("");
   const [paymentInstructions, setPaymentInstructions] = useState("Pay the exact amount using UPI, then submit your UTR/reference.");
-  const [qrImageFile, setQrImageFile] = useState<File | null>(null);
+  const [paymentCollectionMethod, setPaymentCollectionMethod] = useState<"DIRECT_UPI" | "PAYMENT_GATEWAY">("DIRECT_UPI");
   const [categories, setCategories] = useState<CategoryForm[]>([newCategory()]);
   const [fieldEditors, setFieldEditors] = useState<ParticipantFieldEditor[]>(defaultFieldEditors);
   const [mainRegistrantFields, setMainRegistrantFields] = useState<TeamFieldEditorItem[]>(() => DEFAULT_MAIN_REGISTRANT_FIELDS.map((f) => ({ ...f })));
@@ -263,6 +264,7 @@ const OrganizerEventCreate = () => {
         setUpiId(event.paymentSettings?.upiId ?? "");
         setPayeeName(event.paymentSettings?.payeeName ?? "");
         setPaymentInstructions(event.paymentSettings?.instructions ?? "Pay the exact amount using UPI, then submit your UTR/reference.");
+        setPaymentCollectionMethod(event.paymentCollectionMethod);
         setCategories(event.categories.map((category) => ({
           id: category.id,
           persisted: true,
@@ -512,7 +514,7 @@ const OrganizerEventCreate = () => {
         return false;
       }
     }
-    if (step === 4 && hasPaidTickets && (!upiId.trim() || !payeeName.trim())) {
+    if (step === 4 && hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI" && (!upiId.trim() || !payeeName.trim())) {
       toast.error("Add UPI ID and payee name for paid ticket tiers.");
       return false;
     }
@@ -536,7 +538,7 @@ const OrganizerEventCreate = () => {
       toast.error(`Missing: ${missingFields.join(", ")}.`);
       return;
     }
-    if (hasPaidTickets && (!upiId || !payeeName)) {
+    if (hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI" && (!upiId || !payeeName)) {
       toast.error("Add UPI payment details for paid ticket tiers.");
       return;
     }
@@ -608,6 +610,7 @@ const OrganizerEventCreate = () => {
         schedule: normalizedSchedule,
         field_config: fieldConfig,
         addon_config: addonConfig,
+        payment_collection_method: paymentCollectionMethod,
         address: address || null,
         whatsapp_group_url: whatsappGroupUrl.trim() || null,
         banner_url: null,
@@ -671,10 +674,6 @@ const OrganizerEventCreate = () => {
             })
           : Promise.resolve(),
       ]);
-
-      if (qrImageFile) {
-        await uploadFile(`/organizer/events/${savedEventId}/payment-settings/qr`, qrImageFile);
-      }
       if (publish) await apiRequest(`/organizer/events/${savedEventId}/publish`, { method: "POST", body: "{}" });
       await queryClient.invalidateQueries({ queryKey: ["organizer-events"] });
       await queryClient.invalidateQueries({ queryKey: ["events"] });
@@ -767,7 +766,29 @@ const OrganizerEventCreate = () => {
 
           {currentStep === 4 && <section className="space-y-5 rounded-xl border bg-card p-6">
             <div><h2 className="text-lg font-bold">Payment details</h2><p className="text-sm text-muted-foreground">{hasPaidTickets ? "Paid ticket tiers use manual UPI. Participants submit a UTR and you approve payment." : "All ticket tiers are free. Participants can register without payment or UPI details."}</p></div>
-            <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>UPI ID {hasPaidTickets ? "*" : "(optional)"}</Label><Input value={upiId} onChange={(e) => setUpiId(e.target.value)} placeholder="yourname@upi" /></div><div className="space-y-2"><Label>Payee name {hasPaidTickets ? "*" : "(optional)"}</Label><Input value={payeeName} onChange={(e) => setPayeeName(e.target.value)} placeholder="Your club or organization" /></div><div className="space-y-2 sm:col-span-2"><Label>Payment instructions *</Label><Textarea value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} /></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="qr-image">Organizer QR image (optional)</Label><Input id="qr-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = validateImageFile(event.target.files?.[0], "Organizer QR image"); setQrImageFile(file); if (!file) event.currentTarget.value = ""; }} /><p className="text-xs text-muted-foreground">PNG, JPEG, or WebP. Maximum size: {formatFileSize(MAX_IMAGE_BYTES)}. SportPass also generates a QR from the UPI ID.</p>{qrImageFile && <p className="text-xs text-muted-foreground">Selected: {qrImageFile.name} ({formatFileSize(qrImageFile.size)})</p>}</div></div>
+            <div className="space-y-3">
+              <Label>Payment Collection Method {hasPaidTickets ? "*" : "(optional)"}</Label>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 rounded-lg border p-3">
+                  <input type="radio" name="paymentCollectionMethod" value="DIRECT_UPI" checked={paymentCollectionMethod === "DIRECT_UPI"} onChange={() => setPaymentCollectionMethod("DIRECT_UPI")} className="h-4 w-4 text-primary focus:ring-primary" />
+                  <div>
+                    <div className="font-medium">Direct UPI — Available Now</div>
+                    <div className="text-xs text-muted-foreground">Use your UPI ID for manual payment collection. Participants submit UTR and you approve payment.</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 rounded-lg border p-3 opacity-70">
+                  <input type="radio" name="paymentCollectionMethod" value="PAYMENT_GATEWAY" checked={paymentCollectionMethod === "PAYMENT_GATEWAY"} onChange={() => setPaymentCollectionMethod("PAYMENT_GATEWAY")} disabled className="h-4 w-4 text-muted-foreground focus:ring-muted-foreground" />
+                  <div className="flex-1">
+                    <div className="font-medium flex items-center gap-2">
+                      <span>Online Payment Gateway</span>
+                      <span className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">Coming Soon</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">Automated payment processing via Payment Gateway. (Available soon)</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {paymentCollectionMethod === "DIRECT_UPI" && <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>UPI ID {hasPaidTickets ? "*" : "(optional)"}</Label><Input value={upiId} onChange={(e) => setUpiId(e.target.value)} placeholder="yourname@upi" /></div><div className="space-y-2"><Label>Payee name {hasPaidTickets ? "*" : "(optional)"}</Label><Input value={payeeName} onChange={(e) => setPayeeName(e.target.value)} placeholder="Your club or organization" /></div><div className="space-y-2 sm:col-span-2"><Label>Payment instructions *</Label><Textarea value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} /></div></div>}
           </section>}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-6">

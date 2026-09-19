@@ -4,6 +4,7 @@ import { Layout } from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { getSportConfig } from "@/data/sportConfig";
 import { useEvent } from "@/hooks/useEvents";
 import {
   Calendar,
@@ -18,6 +19,7 @@ import {
   Plus,
   ShieldCheck,
   Info,
+  FileText,
 } from "lucide-react";
 
 const EventDetail = () => {
@@ -83,6 +85,11 @@ const EventDetail = () => {
     { icon: Trophy, label: "Distance", value: event.distance },
     { icon: Users, label: "Participants Limit", value: `${event.maxParticipants.toLocaleString()} max` },
   ];
+
+  // Check if bib numbers are enabled for this sport
+  const eventSportConfig = getSportConfig(event.category);
+  const hasNumberAllocation = eventSportConfig.numberEnabled;
+  const numberLabel = eventSportConfig.numberLabel || "Bib Number";
 
   return (
     <Layout>
@@ -291,6 +298,26 @@ const EventDetail = () => {
                   >
                     {registrationClosed ? "Registration Closed" : totalTickets === 0 ? "Select Tickets to Continue" : `Register Now — ₹${totalPrice}`}
                   </Button>
+
+                  {/* Show Bib Number Link if allocations are enabled */}
+                  {hasNumberAllocation && (
+                    <div className="pt-4">
+                      <Separator />
+                      <div className="mt-4 text-center">
+                        <p className="text-sm text-muted-foreground mb-2">
+                          {numberLabel}
+                        </p>
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => navigate(`/event/${event.id}/number-list`)}
+                        >
+                          <FileText className="mr-2 h-4 w-4" />
+                          View {numberLabel} List
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

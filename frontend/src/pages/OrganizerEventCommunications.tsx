@@ -1,5 +1,5 @@
-import { ArrowLeft, MessageSquare, RefreshCw } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Mail, MessageSquare, RefreshCw } from "lucide-react";
 
 import { EventCommunicationPanel } from "@/components/EventCommunicationPanel";
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
@@ -47,6 +47,19 @@ const OrganizerEventCommunications = () => {
 
         {event.isArchived && <Card className="border-amber-300 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/20"><CardHeader><CardTitle className="text-amber-950 dark:text-amber-100">This event is archived</CardTitle><CardDescription className="text-amber-900/80 dark:text-amber-100/80">The link and message are preserved for your records, but participants cannot register until the event is restored.</CardDescription></CardHeader></Card>}
         <EventCommunicationPanel event={event} />
+        <section>
+          <h2 className="mb-2 text-lg font-semibold text-card-foreground">Bulk email sender</h2>
+          <div className="rounded-xl border border-dashed bg-muted p-8 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary"><Mail className="h-6 w-6" /></div>
+            <h3 className="text-lg font-semibold">Coming soon</h3>
+            <p className="mt-1 max-w-xl text-sm text-muted-foreground">Bulk email sender will let you communicate with all registrants of this event at once.</p>
+            <ul className="mt-3 space-y-2 text-xs text-muted-foreground">
+              <li className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Send email to all registrants with email addresses</li>
+              <li className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Include event updates, schedule changes, and important announcements</li>
+              <li className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Track sent, failed, and pending emails per event</li>
+            </ul>
+          </div>
+        </section>
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="flex items-start gap-3 p-5"><MessageSquare className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div><p className="font-semibold">Keep this page bookmarked for {event.name}</p><p className="mt-1 text-sm text-muted-foreground">The link and message are generated from this event, so switching events in the selector always changes the shared details.</p></div></CardContent>
         </Card>

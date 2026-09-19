@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
-from typing import Any, Literal, Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -86,6 +86,7 @@ class OrganizerEventCreateV1(BaseModel):
     schedule: list[EventScheduleItem] = Field(default_factory=list, max_length=50)
     field_config: dict[str, Any] = Field(default_factory=lambda: normalize_field_config(None))
     addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
+    payment_collection_method: Literal["DIRECT_UPI", "PAYMENT_GATEWAY"] = Field(default="DIRECT_UPI")
     categories: list[RaceCategoryCreateIn] = Field(min_length=1, max_length=20)
 
     @field_validator("field_config")
@@ -186,6 +187,7 @@ class OrganizerEventUpdateV1(BaseModel):
     registration_close: dt.datetime | None = None
     field_config: dict[str, Any] = Field(default_factory=lambda: normalize_field_config(None))
     addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
+    payment_collection_method: Literal["DIRECT_UPI", "PAYMENT_GATEWAY"] | None = None
     categories: list[OrganizerCategoryUpdateIn] = Field(min_length=1, max_length=20)
 
     @field_validator("field_config")

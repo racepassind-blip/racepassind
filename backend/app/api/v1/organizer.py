@@ -3,7 +3,8 @@ from __future__ import annotations
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -218,10 +219,11 @@ def delete_checkpoint(
     user: User = Depends(require_roles("organizer", "admin")),
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
-) -> None:
+) -> Response:
     try:
         delete_event_checkpoint(db, user, event_id, checkpoint_id)
         db.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     except ValueError as exc:
         db.rollback()
         code = status.HTTP_404_NOT_FOUND if str(exc) in {"Event not found", "Checkpoint not found"} else status.HTTP_409_CONFLICT
@@ -479,3 +481,127 @@ def upload_organization_logo(
         "width": uploaded.width,
         "height": uploaded.height,
     }
+
+
+class EventUpdateEmailIn(BaseModel):
+    subject: str = Field(min_length=3, max_length=200)
+    message: str = Field(min_length=1, max_length=10000)
+
+
+@router.get("/events/{event_id}/email-recipients")
+def get_event_email_recipients(
+    event_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Return the number of unique registrant emails for an event."""
+    from app.services.email_service import get_event_recipients
+
+    get_authorized_event(db, user, event_id)
+    recipients = get_event_recipients(db, event_id)
+    return {"eventId": str(event_id), "recipientCount": len(recipients)}
+
+
+@router.post("/events/{event_id}/registrations/{registration_id}/resend-email")
+def resend_registration_email(
+    event_id: UUID,
+    registration_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Re-send the confirmation (ticket) email to a single registrant."""
+    from app.services.email_service import send_registration_confirmation
+    from models import Registration
+
+    get_authorized_event(db, user, event_id)
+    registration = db.get(Registration, registration_id)
+    if registration is None or registration.event_id != event_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registration not found")
+
+    result = send_registration_confirmation(db, registration, is_resend=True)
+    # Map to a user-facing status the organizer UI can display.
+    ui_status = {
+        "SENT": "sent",
+        "PENDING_LIMIT": "delayed",
+        "SKIPPED_DISABLED": "disabled",
+        "FAILED": "failed",
+    }.get(result.status, "failed")
+    return {
+        "registrationId": str(registration_id),
+        "emailStatus": registration.email_status,
+        "result": ui_status,
+        "message": result.message,
+    }
+
+
+@router.post("/events/{event_id}/resend-failed-emails")
+def resend_failed_event_emails(
+    event_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Re-send confirmation emails for registrations whose email FAILED or is PENDING_LIMIT."""
+    from app.services.email_service import send_registration_confirmation
+    from models import Registration
+
+    get_authorized_event(db, user, event_id)
+
+    registrations = db.scalars(
+        select(Registration).where(
+            Registration.event_id == event_id,
+            Registration.email_status.in_(("FAILED", "PENDING_LIMIT")),
+        )
+    ).all()
+
+    sent = 0
+    delayed = 0
+    failed = 0
+    for registration in registrations:
+        result = send_registration_confirmation(db, registration, is_resend=True)
+        if result.status == "SENT":
+            sent += 1
+        elif result.status == "PENDING_LIMIT":
+            delayed += 1
+        else:
+            failed += 1
+
+    return {
+        "eventId": str(event_id),
+        "attempted": len(registrations),
+        "sent": sent,
+        "delayed": delayed,
+        "failed": failed,
+    }
+
+
+@router.post("/events/{event_id}/broadcast-email")
+def broadcast_event_email(
+    event_id: UUID,
+    payload: EventUpdateEmailIn,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Send an update email to all registrants of an event."""
+    from app.services.email_service import broadcast_event_update
+
+    get_authorized_event(db, user, event_id)
+
+    # Simple HTML wrapper so the message renders nicely; the plain body is the raw message.
+    html_body = (
+        '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111;">'
+        f"<p>{payload.message.replace(chr(10), '<br>')}</p>"
+        '<p style="color:#666;font-size:13px;margin-top:16px;">Sent via SportPass India.</p>'
+        "</div>"
+    )
+
+    summary = broadcast_event_update(
+        db,
+        event_id=event_id,
+        subject=payload.subject,
+        body=payload.message,
+        html_body=html_body,
+    )
+    return summary
