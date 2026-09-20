@@ -18,6 +18,13 @@ _ALLOWED = {
     "image/webp": "webp",
 }
 
+# Some browsers/OS report .jpeg as the extension for image/jpeg — accept both
+_ALLOWED_EXTENSIONS: dict[str, set[str]] = {
+    "image/png": {"png"},
+    "image/jpeg": {"jpg", "jpeg"},
+    "image/webp": {"webp"},
+}
+
 
 class ImageValidationError(ValueError):
     """Raised when an uploaded image is not a supported bounded QR image."""
@@ -80,7 +87,7 @@ def validate_image(
     extension = _ALLOWED.get(normalized_type)
     if extension is None:
         raise ImageValidationError("Only PNG, JPEG, or WebP images are supported")
-    if not filename or "." not in filename or filename.rsplit(".", 1)[1].lower() != extension:
+    if not filename or "." not in filename or filename.rsplit(".", 1)[1].lower() not in _ALLOWED_EXTENSIONS.get(normalized_type, set()):
         raise ImageValidationError("The file extension must match the image type")
     if not payload or len(payload) > max_upload_bytes:
         raise ImageValidationError(f"Image must be between 1 byte and {max_upload_bytes} bytes")
