@@ -38,14 +38,17 @@ import FederationsAssociationsComingSoon from "./pages/FederationsAssociationsCo
 import OrganizerSetup from "./pages/OrganizerSetup";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminEventRecovery from "./pages/AdminEventRecovery";
+import AdminEventFeatures from "./pages/AdminEventFeatures";
 import AdminOrganizerFees from "./pages/AdminOrganizerFees";
 import AdminPlans from "./pages/AdminPlans";
 import AdminBilling from "./pages/AdminBilling";
 import AdminOrganizerApplications from "./pages/AdminOrganizerApplications";
+import AdminOrganizers from "./pages/AdminOrganizers";
 import AdminCommunication from "./pages/AdminCommunication";
 import Signup from "./pages/Signup";
 import Confirmation from "./pages/Confirmation";
 import NotFound from "./pages/NotFound";
+import TermsAndConditions from "./pages/TermsAndConditions";
 
 const queryClient = new QueryClient();
 
@@ -80,10 +83,12 @@ const App = () => (
             <Route path="/admin" element={<ProtectedRoute allowedRoles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
             <Route path="/admin/communication" element={<ProtectedRoute allowedRoles={["admin"]}><AdminCommunication /></ProtectedRoute>} />
             <Route path="/admin/events" element={<ProtectedRoute allowedRoles={["admin"]}><AdminEventRecovery /></ProtectedRoute>} />
+            <Route path="/admin/event-features" element={<ProtectedRoute allowedRoles={["admin"]}><AdminEventFeatures /></ProtectedRoute>} />
             <Route path="/admin/organizer-fees" element={<ProtectedRoute allowedRoles={["admin"]}><AdminOrganizerFees /></ProtectedRoute>} />
             <Route path="/admin/plans" element={<ProtectedRoute allowedRoles={["admin"]}><AdminPlans /></ProtectedRoute>} />
             <Route path="/admin/billing" element={<ProtectedRoute allowedRoles={["admin"]}><AdminBilling /></ProtectedRoute>} />
             <Route path="/admin/organizer-applications" element={<ProtectedRoute allowedRoles={["admin"]}><AdminOrganizerApplications /></ProtectedRoute>} />
+            <Route path="/admin/organizers" element={<ProtectedRoute allowedRoles={["admin"]}><AdminOrganizers /></ProtectedRoute>} />
 
             {/* Admin/Organizer routes */}
             <Route path="/organizer" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerDashboard /></ProtectedRoute>} />
@@ -105,6 +110,7 @@ const App = () => (
             <Route path="/organizer/events/:eventId" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventDashboard /></ProtectedRoute>} />
             <Route path="/organizer/pricing" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerPricing /></ProtectedRoute>} />
             <Route path="/organizer/setup" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerSetup /></ProtectedRoute>} />
+            <Route path="/terms-and-conditions" element={<TermsAndConditions />} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

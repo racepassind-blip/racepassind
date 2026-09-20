@@ -28,7 +28,7 @@ from app.services.registration_config_service import normalize_event_configs
 from app.services.storage_service import StorageError, StorageService
 from app.config import get_settings
 from db import get_db
-from models import Event, EventCategory, EventCheckpoint, EventPaymentSettings, OrganizationMember, Registration, Ticket, User
+from models import Event, EventCategory, EventCheckpoint, EventPaymentSettings, Organization, OrganizationMember, Registration, Ticket, User
 
 router = APIRouter()
 
@@ -131,6 +131,15 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
         ],
         "paymentSettings": payment_settings,
         "paymentCollectionMethod": event.payment_collection_method,
+        "platformFeeBearer": event.platform_fee_bearer,
+        # The fee bearer is locked once a priced ticket has sold, matching the
+        # backend guard that blocks changes after paid registrations start.
+        "platformFeeBearerLocked": any(
+            (ticket.price or 0) > 0 and (ticket.quantity_sold or 0) > 0
+            for category in event.categories
+            for ticket in category.tickets
+        ),
+        "adminFeatureOverride": event.features_unlocked,
     }
 
 
@@ -240,6 +249,7 @@ def create_event(
         field_config=field_config,
         addon_config=addon_config,
         payment_collection_method=payload.payment_collection_method,
+        platform_fee_bearer=payload.platform_fee_bearer,
     )
     db.add(event)
     db.flush()
@@ -335,6 +345,19 @@ def _ticket_has_registrations(db: Session, ticket_id: UUID) -> bool:
 
 def _category_has_registrations(db: Session, category: EventCategory) -> bool:
     return any(_ticket_has_registrations(db, ticket.id) for ticket in category.tickets)
+
+
+def _event_has_paid_registration(db: Session, event_id: UUID) -> bool:
+    """True once the event has at least one paid (base amount > 0) registration.
+
+    Used to lock the platform-fee bearer, since changing who pays after money has
+    started moving would be inconsistent with the snapshots on existing rows.
+    """
+    return db.scalar(
+        select(Registration.id)
+        .where(Registration.event_id == event_id, Registration.total_amount_paise > 0)
+        .limit(1)
+    ) is not None
 
 
 @router.post("/events/{event_id}/registration-status")
@@ -440,6 +463,22 @@ def update_event(
         payload.addon_config,
         category_options=_category_distances(payload),
     )
+    
+    # Check if event is transitioning from free to paid
+    current_has_paid_tickets = any(ticket.price > 0 for category in event.categories for ticket in category.tickets)
+    new_has_paid_tickets = any(
+        any(rupees_to_paise(ticket_payload.price_rupees) > 0 for ticket_payload in category_payload.tickets)
+        for category_payload in payload.categories
+    )
+    
+    # If transitioning from free to paid and event is published, check paid verification
+    if event.status == "published" and not current_has_paid_tickets and new_has_paid_tickets:
+        organization = db.scalar(select(Organization).where(Organization.id == event.organization_id))
+        if organization and organization.paid_verification_status != "VERIFIED":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Complete Paid Organizer Verification to change this event from free to paid."
+            )
 
     existing_categories = {category.id: category for category in event.categories}
     submitted_category_ids: set[UUID] = set()
@@ -468,6 +507,14 @@ def update_event(
     event.distance = _legacy_event_distance(payload)
     if payload.payment_collection_method is not None:
         event.payment_collection_method = payload.payment_collection_method
+
+    if payload.platform_fee_bearer is not None and payload.platform_fee_bearer != event.platform_fee_bearer:
+        if _event_has_paid_registration(db, event.id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="SportPass fee responsibility cannot be changed after paid registrations have started.",
+            )
+        event.platform_fee_bearer = payload.platform_fee_bearer
 
     for category_payload in payload.categories:
         category = existing_categories.get(category_payload.id) if category_payload.id else None
@@ -703,10 +750,22 @@ def publish_event(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Restore the event before publishing it")
     if not event.categories or not any(category.tickets for category in event.categories):
         raise HTTPException(status_code=422, detail="Event needs at least one category and ticket")
+    
     has_paid_tickets = any(ticket.price > 0 for category in event.categories for ticket in category.tickets)
+    
+    # Check paid organizer verification for paid events
     if has_paid_tickets:
+        # Get the organization to check verification status
+        organization = db.scalar(select(Organization).where(Organization.id == event.organization_id))
+        if organization and organization.paid_verification_status != "VERIFIED":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Complete Paid Organizer Verification to publish this paid event."
+            )
+        
         if event.payment_collection_method == "DIRECT_UPI" and (event.payment_settings is None or not event.payment_settings.is_active or not event.payment_settings.upi_id):
             raise HTTPException(status_code=422, detail="Active manual UPI payment settings are required before publishing paid tickets with Direct UPI method")
+    
     event.status = "published"
     record_audit(db, actor_user_id=user.id, action="event_published", resource_type="event", resource_id=event.id)
     db.commit()

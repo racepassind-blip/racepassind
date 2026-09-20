@@ -22,7 +22,7 @@ from app.api.v1.courts import router as courts_router
 from app.api.v1.events import router as events_router
 from app.api.v1.matches import router as matches_router
 from app.api.v1.organizer import router as organizer_router
-from app.api.v1.public_events import _public_event, router as public_events_router
+from app.api.v1.public_events import _fee_config_values, _public_event, router as public_events_router
 from app.api.v1.storage import router as storage_router
 from app.api.v1.tournament_rounds import router as tournament_rounds_router
 from app.api.v1.registrations import router as registrations_router
@@ -193,7 +193,8 @@ def list_events(
         .where(Event.status == "published", Event.archived_at.is_(None))
         .order_by(Event.start_date)
     ).unique().all()
-    return [_public_event(event, storage) for event in events]
+    fee_bps, fee_flat = _fee_config_values(db)
+    return [_public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_per_registration_paise=fee_flat) for event in events]
 
 
 @app.get("/events/{event_id}", response_model=EventOut)
@@ -217,4 +218,5 @@ def get_event(
     )
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    return _public_event(event, storage)
+    fee_bps, fee_flat = _fee_config_values(db)
+    return _public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_per_registration_paise=fee_flat)

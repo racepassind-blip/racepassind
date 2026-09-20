@@ -57,8 +57,29 @@ const OrganizerEventTournamentScoring = () => {
   }
 
   const event = dashboard.event;
-  if (isFreeEvent(event.categories)) {
-    return <Navigate to={`/organizer/events/${event.id}`} replace />;
+  const freeEventLocked = Boolean(event) && isFreeEvent(event);
+  if (freeEventLocked) {
+    return (
+      <OrganizerDashboardLayout eventId={event.id}>
+        <div className="mx-auto max-w-3xl px-4 py-20">
+          <Card>
+            <CardHeader>
+              <CardTitle>Scoring tools locked</CardTitle>
+              <CardDescription>Scoring and results are available for paid events. Free events get only basic registration and participant management.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Upgrade to a paid event to record match scores, publish results, and track standings.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Need custom tournament features? <a href="mailto:hello@sportpass.in" className="font-medium text-primary hover:underline">Contact SportPass India</a> for custom pricing.
+              </p>
+              <Button variant="outline" onClick={() => navigate(`/organizer/events/${event.id}`)}>Back to event</Button>
+            </CardContent>
+          </Card>
+        </div>
+      </OrganizerDashboardLayout>
+    );
   }
   if (!supportsTournament) {
     return <OrganizerDashboardLayout eventId={event.id}><div className="mx-auto max-w-3xl px-4 py-20"><Card><CardHeader><CardTitle>Tournament tools unavailable</CardTitle><CardDescription>Tournament tools are currently unavailable for this sport.</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={() => navigate(`/organizer/events/${event.id}`)}>Back to event</Button></CardContent></Card></div></OrganizerDashboardLayout>;

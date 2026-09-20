@@ -14,11 +14,18 @@ from app.infrastructure.storage.factory import get_storage_service
 from app.services.registration_config_service import normalize_event_configs
 from app.services.media_service import resolve_media_url
 from app.services.match_service import list_public_match_results
+from app.services.platform_fee_service import get_or_create_config
 
 router = APIRouter()
 
 
-def _public_event(event: Event, storage=None) -> dict:
+def _fee_config_values(db: Session) -> tuple[int, int]:
+    """Return (percentage_basis_points, per_registration_paise) for fee previews."""
+    config = get_or_create_config(db)
+    return config.percentage_basis_points, config.per_registration_paise
+
+
+def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: int = 500, fee_per_registration_paise: int = 1000) -> dict:
     tickets = list(event.tickets)
     if event.categories:
         ordered_tickets = []
@@ -69,6 +76,9 @@ def _public_event(event: Event, storage=None) -> dict:
         "fieldConfig": field_config,
         "addonConfig": addon_config,
         "tiers": tiers,
+        "platformFeeBearer": event.platform_fee_bearer,
+        "sportPassFeePercentageBasisPoints": fee_percentage_basis_points,
+        "sportPassFeePerRegistrationPaise": fee_per_registration_paise,
     }
 
 
@@ -99,7 +109,8 @@ def list_public_events(
         term = f"%{q.strip()}%"
         query = query.where(or_(Event.name.ilike(term), Event.location_name.ilike(term), Event.description.ilike(term)))
     events = db.scalars(query.order_by(Event.start_date).offset(offset).limit(limit)).unique().all()
-    return [_public_event(event, storage) for event in events]
+    fee_bps, fee_flat = _fee_config_values(db)
+    return [_public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_per_registration_paise=fee_flat) for event in events]
 
 
 @router.get("/events/{event_id}/results")
@@ -227,7 +238,8 @@ def get_public_event(
     ).unique().first()
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    return _public_event(event, storage)
+    fee_bps, fee_flat = _fee_config_values(db)
+    return _public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_per_registration_paise=fee_flat)
 
 
 @router.get("/organizer-plans")

@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { BarChart3, CalendarDays, ClipboardList, ExternalLink, Gauge, GitBranch, LayoutDashboard, LogOut, Medal, MessageSquare, Package, ScanLine, Settings2, Ticket, CreditCard, Trophy } from "lucide-react";
+import { BarChart3, CalendarDays, ClipboardList, ExternalLink, Gauge, GitBranch, LayoutDashboard, LogOut, Lock, Medal, MessageSquare, Package, ScanLine, Settings2, Ticket, CreditCard, Trophy } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -32,7 +32,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const supportsTournament = eventSupportsTournament(eventDashboard?.event.sport, eventDashboard?.event.categories);
   // Free events (all tickets ₹0) only get the core workflow: overview + registrations.
   // Everything else (tournament, communications, check-in, bib management) is locked for paid events only.
-  const freeEvent = Boolean(eventId) && isFreeEvent(eventDashboard?.event.categories);
+  const freeEvent = Boolean(eventId) && isFreeEvent(eventDashboard?.event);
   const availableItems: NavItem[] = [
     ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: "Events", icon: CalendarDays, to: "/organizer" }, { label: "Plans & pricing", icon: CreditCard, to: "/organizer/pricing" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }]),
     ...(eventId && supportsTournament && !freeEvent ? [
@@ -43,10 +43,23 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
       { label: "Bracket", icon: GitBranch, to: `/organizer/events/${eventId}/tournament/bracket` },
     ] : []),
     { label: "Registrations", icon: ClipboardList, to: `/organizer/registrations${eventQuery}` },
-    ...(eventId && !freeEvent ? [{ label: "Communications", icon: MessageSquare, to: `/organizer/events/${eventId}/communications` }] : []),
-    ...(!freeEvent ? [{ label: "Check-in", icon: ScanLine, to: eventId ? `/organizer/check-in?event_id=${encodeURIComponent(eventId)}` : "/organizer/check-in" }] : []),
-    ...(eventId && !freeEvent ? [{ label: "Bib Management", icon: Package, to: `/organizer/events/${eventId}/allocations` }] : []),
   ];
+  const lockedItems: NavItem[] = freeEvent
+    ? [
+        ...(eventId && supportsTournament
+          ? [
+              { label: "Tournament setup", icon: Settings2 },
+              { label: "Matches", icon: Trophy },
+              { label: "Scoring", icon: Gauge },
+              { label: "Results", icon: Medal },
+              { label: "Bracket", icon: GitBranch },
+            ]
+          : []),
+        ...(eventId ? [{ label: "Communications", icon: MessageSquare }] : []),
+        { label: "Check-in", icon: ScanLine },
+        ...(eventId ? [{ label: "Bib Management", icon: Package }] : []),
+      ]
+    : [];
   const comingSoonItems: NavItem[] = [
     { label: "Reports", icon: BarChart3 },
   ];
@@ -83,6 +96,27 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
                       <item.icon className="h-4 w-4" />
                       <span>{item.label}</span>
                     </Link>
+                  );
+                })}
+                {lockedItems.map((item) => {
+                  const basePath = item.to?.split("?")[0];
+                  const active = basePath === "/organizer" ? location.pathname === "/organizer" : location.pathname === basePath;
+                  const isLink = Boolean(item.to);
+                  const Component = isLink ? Link : "div";
+                  return (
+                    <Component
+                      key={item.label}
+                      to={item.to ?? "#"}
+                      className={cn(
+                        "flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors cursor-not-allowed",
+                        active ? "bg-muted/40 text-muted-foreground" : "text-muted-foreground",
+                      )}
+                      title="Locked: upgrade to a paid event for full access"
+                    >
+                      <Lock className="h-4 w-4 shrink-0" />
+                      <span>{item.label}</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground/60">Locked</span>
+                    </Component>
                   );
                 })}
               </nav>

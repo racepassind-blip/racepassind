@@ -23,11 +23,11 @@ export function useFreeEventLock(eventId: string | undefined) {
   const query = useOrganizerEventDashboard(eventId);
   const { data: dashboard, isLoading } = query;
 
-  const locked = Boolean(dashboard?.event) && isFreeEvent(dashboard?.event.categories);
+  const locked = Boolean(dashboard?.event) && isFreeEvent(dashboard?.event);
 
   useEffect(() => {
     if (!eventId || isLoading || !dashboard?.event) return;
-    if (isFreeEvent(dashboard.event.categories)) {
+    if (isFreeEvent(dashboard.event)) {
       toast.info("This section is available for paid events only.");
       navigate(`/organizer/events/${eventId}`, { replace: true });
     }

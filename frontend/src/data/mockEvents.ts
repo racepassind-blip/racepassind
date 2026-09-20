@@ -85,6 +85,9 @@ export interface SportEvent {
   fieldConfig?: EventFieldConfig;
   addonConfig?: EventAddonConfig;
   tiers: TicketTier[];
+  platformFeeBearer?: "ORGANIZER" | "PARTICIPANT";
+  sportPassFeePercentageBasisPoints?: number;
+  sportPassFeePerRegistrationPaise?: number;
 }
 
 export const mockEvents: SportEvent[] = [

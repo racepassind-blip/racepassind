@@ -21,6 +21,9 @@ frontend/.vite/
 # Preserved metadata from the former nested frontend repository
 frontend/.git-frontend-history/
 
+# Build/archive artifacts (never commit — large and may contain secrets)
+*.zip
+
 # Local/editor files
 .DS_Store
 .vscode/

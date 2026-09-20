@@ -123,6 +123,8 @@ interface OrganizerEventResponse {
   }>;
   paymentSettings: { upiId: string; payeeName: string; instructions: string } | null;
   paymentCollectionMethod: "DIRECT_UPI" | "PAYMENT_GATEWAY";
+  platformFeeBearer?: "ORGANIZER" | "PARTICIPANT";
+  platformFeeBearerLocked?: boolean;
 }
 
 const MAX_IMAGE_BYTES = 2_000_000;
@@ -181,6 +183,10 @@ const OrganizerEventCreate = () => {
   const [payeeName, setPayeeName] = useState("");
   const [paymentInstructions, setPaymentInstructions] = useState("Pay the exact amount using UPI, then submit your UTR/reference.");
   const [paymentCollectionMethod, setPaymentCollectionMethod] = useState<"DIRECT_UPI" | "PAYMENT_GATEWAY">("DIRECT_UPI");
+  const [platformFeeBearer, setPlatformFeeBearer] = useState<"ORGANIZER" | "PARTICIPANT">("ORGANIZER");
+  // Set once the loaded event already had this bearer persisted; used to lock the
+  // control after paid registrations have started (backend enforces this too).
+  const [feeBearerLocked, setFeeBearerLocked] = useState(false);
   const [categories, setCategories] = useState<CategoryForm[]>([newCategory()]);
   const [fieldEditors, setFieldEditors] = useState<ParticipantFieldEditor[]>(defaultFieldEditors);
   const [mainRegistrantFields, setMainRegistrantFields] = useState<TeamFieldEditorItem[]>(() => DEFAULT_MAIN_REGISTRANT_FIELDS.map((f) => ({ ...f })));
@@ -265,6 +271,8 @@ const OrganizerEventCreate = () => {
         setPayeeName(event.paymentSettings?.payeeName ?? "");
         setPaymentInstructions(event.paymentSettings?.instructions ?? "Pay the exact amount using UPI, then submit your UTR/reference.");
         setPaymentCollectionMethod(event.paymentCollectionMethod);
+        setPlatformFeeBearer(event.platformFeeBearer ?? "ORGANIZER");
+        setFeeBearerLocked(Boolean(event.platformFeeBearerLocked));
         setCategories(event.categories.map((category) => ({
           id: category.id,
           persisted: true,
@@ -611,6 +619,7 @@ const OrganizerEventCreate = () => {
         field_config: fieldConfig,
         addon_config: addonConfig,
         payment_collection_method: paymentCollectionMethod,
+        platform_fee_bearer: platformFeeBearer,
         address: address || null,
         whatsapp_group_url: whatsappGroupUrl.trim() || null,
         banner_url: null,
@@ -685,7 +694,15 @@ const OrganizerEventCreate = () => {
       toast.success(eventId ? "Event updated successfully." : "Event saved as draft.");
       navigate("/organizer");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not save event");
+      const message = error instanceof Error ? error.message : "Could not save event";
+      if (message.includes("Paid Organizer Verification")) {
+        toast.error(message, {
+          action: { label: "Verify now", onClick: () => navigate("/organizer?tab=organization#paid-verification") },
+          duration: 8000,
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -789,6 +806,34 @@ const OrganizerEventCreate = () => {
               </div>
             </div>
             {paymentCollectionMethod === "DIRECT_UPI" && <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>UPI ID {hasPaidTickets ? "*" : "(optional)"}</Label><Input value={upiId} onChange={(e) => setUpiId(e.target.value)} placeholder="yourname@upi" /></div><div className="space-y-2"><Label>Payee name {hasPaidTickets ? "*" : "(optional)"}</Label><Input value={payeeName} onChange={(e) => setPayeeName(e.target.value)} placeholder="Your club or organization" /></div><div className="space-y-2 sm:col-span-2"><Label>Payment instructions *</Label><Textarea value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} /></div></div>}
+
+            {hasPaidTickets && (
+              <div className="space-y-3 border-t pt-6">
+                <div>
+                  <Label>Who pays the SportPass fee?</Label>
+                  <p className="text-sm text-muted-foreground">The SportPass fee is 5% of the registration fee + ₹10 per paid registration.</p>
+                </div>
+                <div className="space-y-2">
+                  <label className={`flex items-start gap-3 rounded-lg border p-3 ${feeBearerLocked ? "opacity-70" : "cursor-pointer"}`}>
+                    <input type="radio" name="platformFeeBearer" value="ORGANIZER" checked={platformFeeBearer === "ORGANIZER"} onChange={() => setPlatformFeeBearer("ORGANIZER")} disabled={feeBearerLocked} className="mt-1 h-4 w-4 text-primary focus:ring-primary" />
+                    <div>
+                      <div className="font-medium">Organizer absorbs the fee</div>
+                      <div className="text-xs text-muted-foreground">Participants pay only the registration price. You owe the SportPass fee separately.</div>
+                    </div>
+                  </label>
+                  <label className={`flex items-start gap-3 rounded-lg border p-3 ${feeBearerLocked ? "opacity-70" : "cursor-pointer"}`}>
+                    <input type="radio" name="platformFeeBearer" value="PARTICIPANT" checked={platformFeeBearer === "PARTICIPANT"} onChange={() => setPlatformFeeBearer("PARTICIPANT")} disabled={feeBearerLocked} className="mt-1 h-4 w-4 text-primary focus:ring-primary" />
+                    <div>
+                      <div className="font-medium">Pass the fee to participants</div>
+                      <div className="text-xs text-muted-foreground">The SportPass fee is added to the participant's payable amount at checkout.</div>
+                    </div>
+                  </label>
+                </div>
+                {feeBearerLocked && (
+                  <p className="text-xs font-medium text-amber-600">SportPass fee responsibility cannot be changed after paid registrations have started.</p>
+                )}
+              </div>
+            )}
           </section>}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-6">

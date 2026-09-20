@@ -218,6 +218,7 @@ export interface OrganizerEvent {
     qrImageUrl: string | null;
     qrImageExpiresAt: string | null;
   } | null;
+  adminFeatureOverride?: boolean;
 }
 
 export interface OrganizerEventDashboard {

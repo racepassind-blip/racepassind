@@ -156,14 +156,14 @@ const sportPlaybooks: Record<SportKey, SportPlaybook> = {
 };
 
 const eventJourneySteps = [
-  { icon: ClipboardCheck, title: "Registration", color: "bg-blue-100 text-blue-700" },
-  { icon: CreditCard, title: "Payments", color: "bg-purple-100 text-purple-700" },
-  { icon: Users2, title: "Participants", color: "bg-orange-100 text-orange-700" },
-  { icon: Mail, title: "Communication", color: "bg-pink-100 text-pink-700" },
-  { icon: Ticket, title: "Tickets", color: "bg-cyan-100 text-cyan-700" },
-  { icon: QrCode, title: "Check-In", color: "bg-green-100 text-green-700" },
-  { icon: BarChart4, title: "Event Mgmt", color: "bg-indigo-100 text-indigo-700" },
-  { icon: Trophy, title: "Results", color: "bg-red-100 text-red-700" },
+  { icon: ClipboardCheck, title: "Registration", caption: "Custom forms", color: "bg-blue-100 text-blue-700" },
+  { icon: CreditCard, title: "Payments", caption: "UPI & verification", color: "bg-purple-100 text-purple-700" },
+  { icon: Users2, title: "Participants", caption: "One source of truth", color: "bg-orange-100 text-orange-700" },
+  { icon: Mail, title: "Communication", caption: "Email & updates", color: "bg-pink-100 text-pink-700" },
+  { icon: Ticket, title: "Tickets", caption: "QR e-tickets", color: "bg-cyan-100 text-cyan-700" },
+  { icon: QrCode, title: "Check-In", caption: "Scan on race day", color: "bg-green-100 text-green-700" },
+  { icon: BarChart4, title: "Event Mgmt", caption: "Live dashboard", color: "bg-indigo-100 text-indigo-700" },
+  { icon: Trophy, title: "Results", caption: "Standings & more", color: "bg-red-100 text-red-700" },
 ];
 
 const organizerValuePoints = [
@@ -272,39 +272,34 @@ const OrganizerInfo = () => {
                 </div>
                 <Badge className="bg-green-600 text-white shrink-0">Complete platform</Badge>
               </div>
-              <div className="mt-6">
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-8">
-                  {eventJourneySteps.slice(0, 4).map((step, idx) => {
-                    const Icon = step.icon;
-                    return (
-                      <div key={step.title}>
-                        <div className="flex flex-col items-center gap-1">
-                          <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${step.color}`}>
-                            <Icon className="h-4 w-4" />
-                          </div>
-                          <p className="text-center text-[10px] font-bold leading-tight">{step.title}</p>
+              <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-4">
+                {eventJourneySteps.map((step, idx) => {
+                  const Icon = step.icon;
+                  const isLast = idx === eventJourneySteps.length - 1;
+                  return (
+                    <div key={step.title} className="group relative flex flex-col items-center text-center">
+                      {/* Connector line to the next step within a row of 4 (sm+ only) */}
+                      {!isLast && (idx + 1) % 4 !== 0 && (
+                        <span className="absolute left-1/2 top-6 hidden h-0.5 w-full -translate-y-1/2 bg-gradient-to-r from-slate-200 to-transparent sm:block" aria-hidden="true" />
+                      )}
+                      <div className="relative">
+                        <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${step.color} shadow-sm ring-1 ring-black/5 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md`}>
+                          <Icon className="h-5 w-5" />
                         </div>
-                        {idx < 3 && <div className="flex items-center justify-center mt-2"><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>}
+                        <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-slate-900 text-[9px] font-black text-white">
+                          {idx + 1}
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-8">
-                  {eventJourneySteps.slice(4, 8).map((step, idx) => {
-                    const Icon = step.icon;
-                    return (
-                      <div key={step.title}>
-                        <div className="flex flex-col items-center gap-1">
-                          <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${step.color}`}>
-                            <Icon className="h-4 w-4" />
-                          </div>
-                          <p className="text-center text-[10px] font-bold leading-tight">{step.title}</p>
-                        </div>
-                        {idx < 3 && <div className="flex items-center justify-center mt-2"><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>}
-                      </div>
-                    );
-                  })}
-                </div>
+                      <p className="mt-2 text-[11px] font-bold leading-tight text-slate-900">{step.title}</p>
+                      <p className="text-[9px] leading-tight text-slate-500">{step.caption}</p>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-6 flex items-center justify-center gap-2 rounded-xl bg-slate-900/[0.03] py-2.5 text-[10px] font-semibold text-slate-600">
+                <span className="flex items-center gap-1 text-green-700"><CheckCircle2 className="h-3.5 w-3.5" /> One connected workflow</span>
+                <span className="text-slate-300">•</span>
+                <span>Registration → Results, no spreadsheets</span>
               </div>
             </div>
           </div>

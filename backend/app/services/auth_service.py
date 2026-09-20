@@ -34,6 +34,27 @@ def normalize_phone(value: str | None) -> str | None:
     return digits or None
 
 
+# Minimum / maximum number of digits accepted for a mandatory contact phone.
+# 8 covers short national formats; 15 is the E.164 maximum.
+_MIN_PHONE_DIGITS = 8
+_MAX_PHONE_DIGITS = 15
+
+
+def validate_required_phone(value: str | None) -> str:
+    """Validate a mandatory phone number and return the trimmed original.
+
+    Raises ValueError when the value is missing or does not contain a
+    plausible number of digits. The stored/normalized form is derived
+    separately via ``normalize_phone``.
+    """
+    if value is None or not value.strip():
+        raise ValueError("Phone number is required")
+    digits = "".join(character for character in value if character.isdigit())
+    if len(digits) < _MIN_PHONE_DIGITS or len(digits) > _MAX_PHONE_DIGITS:
+        raise ValueError("Enter a valid phone number")
+    return value.strip()
+
+
 def hash_password(password: str) -> str:
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters")

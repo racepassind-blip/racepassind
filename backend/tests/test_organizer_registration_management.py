@@ -202,10 +202,15 @@ class OrganizerRegistrationManagementTests(unittest.TestCase):
 
             content = export_organizer_registrations_csv(db, organizer, event_id=event.id, status_filter="all")
             rows = list(csv.reader(io.StringIO(content)))
-            self.assertEqual(rows[0], [
+            # Fixed base columns come first, in this exact order.
+            base_headers = [
                 "Registration reference", "Participant name", "Email", "Phone", "Race category", "Ticket",
                 "Amount", "Payment status", "Registration status", "UTR", "Registration date", "Check-in status",
-            ])
+            ]
+            self.assertEqual(rows[0][: len(base_headers)], base_headers)
+            # A per-checkpoint column is appended for each checkpoint; events with
+            # no configured checkpoints fall back to the default "Check-In".
+            self.assertEqual(rows[0][len(base_headers):], ["Checkpoint: Check-In"])
             self.assertEqual(rows[1][1], "'=Injected Name")
             self.assertEqual(rows[1][4], "10K Open")
             self.assertNotIn("confirmation-hash", content)

@@ -18,6 +18,7 @@ from app.services.checkpoint_service import ensure_default_checkpoint
 from app.services.audit_service import record_audit
 from app.services.payment_service import normalize_payment_reference, validate_manual_upi_settings
 from app.services.registration_config_service import calculate_registration_total, normalize_event_configs
+from app.services.platform_fee_service import compute_participant_pricing
 from app.services.ticket_service import serialize_ticket, ticket_token_for_registration
 from app.services.organizer_visibility_service import _authorized_event_ids, get_visibility_for_events, serialize_visibility, visibility_filter_for_events
 from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, RegistrationParticipant, Ticket, User
@@ -170,6 +171,10 @@ def serialize_registration(registration: Registration, *, confirmation_token: st
         "participantCount": registration.participant_count,
         "quantity": registration.quantity,
         "amountPaise": registration.total_amount_paise,
+        "baseAmountPaise": registration.total_amount_paise,
+        "platformFeePaise": registration.platform_fee_paise,
+        "platformFeeBearer": registration.platform_fee_bearer,
+        "participantTotalPaise": registration.participant_total_paise if registration.participant_total_paise is not None else registration.total_amount_paise,
         "responses": registration.responses or {},
         "selections": registration.selections or {},
         "computedTotal": registration.computed_total or {},
@@ -273,6 +278,13 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
     computed_total["fieldConfig"] = field_config
     computed_total["addonConfig"] = addon_config
     is_free = amount_paise == 0
+    # Snapshot the SportPass platform-fee pricing for this registration.
+    pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer)
+    platform_fee_paise = pricing["platformFeePaise"]
+    participant_total_paise = pricing["participantTotalPaise"]
+    computed_total["platformFeePaise"] = platform_fee_paise
+    computed_total["platformFeeBearer"] = pricing["platformFeeBearer"]
+    computed_total["participantTotalPaise"] = participant_total_paise
     confirmation_token = _confirmation_token()
     claim_code = _claim_code() if user_id is None else None
     reservation_until = None
@@ -310,6 +322,9 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
         quantity=1,
         unit_price_paise=amount_paise,
         total_amount_paise=amount_paise,
+        platform_fee_bearer=pricing["platformFeeBearer"],
+        platform_fee_paise=platform_fee_paise,
+        participant_total_paise=participant_total_paise,
         responses=responses,
         selections=selections,
         computed_total=computed_total,
@@ -334,23 +349,24 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
         ticket.quantity_sold += registration.quantity
         event.participants += registration.quantity
         registration.ticket_token_hash = hash_opaque_token(ticket_token_for_registration(registration))
+    # The participant pays participant_total_paise (base + fee when they bear it).
     order = Order(
         user_id=user_id,
-        total_amount=Decimal(amount_paise) / Decimal(100),
-        total_amount_paise=amount_paise,
+        total_amount=Decimal(participant_total_paise) / Decimal(100),
+        total_amount_paise=participant_total_paise,
         currency="INR",
         status="paid" if is_free else "pending",
         idempotency_key=idempotency_key,
     )
     db.add(order)
     db.flush()
-    db.add(OrderItem(order_id=order.id, registration_id=registration.id, price=Decimal(amount_paise) / Decimal(100)))
+    db.add(OrderItem(order_id=order.id, registration_id=registration.id, price=Decimal(participant_total_paise) / Decimal(100)))
     db.add(
         Payment(
             order_id=order.id,
             registration_id=registration.id,
-            amount=Decimal(amount_paise) / Decimal(100),
-            expected_amount_paise=amount_paise,
+            amount=Decimal(participant_total_paise) / Decimal(100),
+            expected_amount_paise=participant_total_paise,
             currency="INR",
             payment_gateway="free" if is_free else "manual_upi",
             method="free" if is_free else "manual_upi",
@@ -475,6 +491,10 @@ def serialize_organizer_registration(registration: Registration, event: Event) -
             "category": ticket.category.name if ticket.category else None,
         },
         "amountPaise": registration.total_amount_paise,
+        "baseAmountPaise": registration.total_amount_paise,
+        "platformFeePaise": registration.platform_fee_paise,
+        "platformFeeBearer": registration.platform_fee_bearer,
+        "participantTotalPaise": registration.participant_total_paise if registration.participant_total_paise is not None else registration.total_amount_paise,
         "responses": registration.responses or {},
         "selections": registration.selections or {},
         "computedTotal": registration.computed_total or {},
@@ -852,7 +872,7 @@ def export_organizer_registrations_csv(
             check_in_status=check_in_status,
             visibility_event_ids=[event_id],
         ).order_by(Registration.created_at.desc(), Registration.id.desc()).limit(_MAX_CSV_EXPORT_ROWS + 1)
-    ).all()
+    ).unique().all()
     if len(rows) > _MAX_CSV_EXPORT_ROWS:
         record_audit(
             db,
@@ -1085,6 +1105,10 @@ def serialize_participant_registration(registration: Registration, event: Event)
             "category": ticket.category.name if ticket.category else None,
         },
         "amountPaise": registration.total_amount_paise,
+        "baseAmountPaise": registration.total_amount_paise,
+        "platformFeePaise": registration.platform_fee_paise,
+        "platformFeeBearer": registration.platform_fee_bearer,
+        "participantTotalPaise": registration.participant_total_paise if registration.participant_total_paise is not None else registration.total_amount_paise,
         "responses": registration.responses or {},
         "selections": registration.selections or {},
         "computedTotal": registration.computed_total or {},
@@ -1329,6 +1353,10 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
         amount_paise = computed_total["totalPaise"]
         if amount_paise > 0 and event.payment_settings is None:
             raise ValueError("Manual UPI payment settings are not configured")
+        pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer)
+        computed_total["platformFeePaise"] = pricing["platformFeePaise"]
+        computed_total["platformFeeBearer"] = pricing["platformFeeBearer"]
+        computed_total["participantTotalPaise"] = pricing["participantTotalPaise"]
         prepared.append({
             "entry": entry,
             "member_responses": member_responses,
@@ -1336,9 +1364,11 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
             "selections": normalized_selections,
             "computed_total": computed_total,
             "amount_paise": amount_paise,
+            "pricing": pricing,
         })
 
-    total_amount_paise = sum(item["amount_paise"] for item in prepared)
+    # Participant pays the sum of participant totals (base + fee when they bear it).
+    total_amount_paise = sum(item["pricing"]["participantTotalPaise"] for item in prepared)
     if total_amount_paise > 0:
         validate_manual_upi_settings(event.payment_settings)
     confirmation_tokens: list[str] = []
@@ -1348,6 +1378,7 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
         entry = item["entry"]
         responses = item["responses"]
         amount_paise = item["amount_paise"]
+        pricing = item["pricing"]
         is_free = amount_paise == 0
         confirmation_token = _confirmation_token()
         claim_code = _claim_code() if user_id is None else None
@@ -1367,6 +1398,9 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
             quantity=1,
             unit_price_paise=amount_paise,
             total_amount_paise=amount_paise,
+            platform_fee_bearer=pricing["platformFeeBearer"],
+            platform_fee_paise=pricing["platformFeePaise"],
+            participant_total_paise=pricing["participantTotalPaise"],
             responses=responses,
             selections=item["selections"],
             computed_total=item["computed_total"],
@@ -1397,18 +1431,20 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
     db.add(order)
     db.flush()
     for registration in registrations:
-        amount = Decimal(registration.total_amount_paise or 0) / Decimal(100)
+        payable_paise = registration.participant_total_paise or 0
+        base_paise = registration.total_amount_paise or 0
+        amount = Decimal(payable_paise) / Decimal(100)
         db.add(OrderItem(order_id=order.id, registration_id=registration.id, price=amount))
         db.add(Payment(
             order_id=order.id,
             registration_id=registration.id,
             amount=amount,
-            expected_amount_paise=registration.total_amount_paise or 0,
+            expected_amount_paise=payable_paise,
             currency="INR",
-            payment_gateway="free" if (registration.total_amount_paise or 0) == 0 else "manual_upi",
-            method="free" if (registration.total_amount_paise or 0) == 0 else "manual_upi",
-            status="not_required" if (registration.total_amount_paise or 0) == 0 else "pending",
-            paid_at=now if (registration.total_amount_paise or 0) == 0 else None,
+            payment_gateway="free" if base_paise == 0 else "manual_upi",
+            method="free" if base_paise == 0 else "manual_upi",
+            status="not_required" if base_paise == 0 else "pending",
+            paid_at=now if base_paise == 0 else None,
         ))
         record_audit(db, actor_user_id=user_id, action="registration_created", resource_type="registration", resource_id=registration.id)
     db.commit()
@@ -1483,6 +1519,13 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
     computed_total["addonConfig"] = addon_config
     amount_paise = computed_total["totalPaise"]
     is_free = amount_paise == 0
+    # Snapshot the SportPass platform-fee pricing for this manual registration.
+    pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer)
+    platform_fee_paise = pricing["platformFeePaise"]
+    participant_total_paise = pricing["participantTotalPaise"]
+    computed_total["platformFeePaise"] = platform_fee_paise
+    computed_total["platformFeeBearer"] = pricing["platformFeeBearer"]
+    computed_total["participantTotalPaise"] = participant_total_paise
     if payload.payment_received and not is_free and payload.received_amount_paise is None:
         raise ValueError("Received payment amount is required for a paid registration")
     if payload.payment_received and not is_free and payload.received_amount_paise <= 0:
@@ -1507,6 +1550,9 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
         quantity=1,
         unit_price_paise=amount_paise,
         total_amount_paise=amount_paise,
+        platform_fee_bearer=pricing["platformFeeBearer"],
+        platform_fee_paise=platform_fee_paise,
+        participant_total_paise=participant_total_paise,
         responses=responses,
         selections=selections,
         computed_total=computed_total,
@@ -1526,24 +1572,25 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
         registration.ticket_token_hash = hash_opaque_token(ticket_token_for_registration(registration))
 
     received_amount_paise = payload.received_amount_paise if payload.payment_received and not is_free else None
-    payment_amount_paise = received_amount_paise if received_amount_paise is not None else amount_paise
+    # What the participant owes (base + fee when they bear it) drives the order/payment.
+    payment_amount_paise = received_amount_paise if received_amount_paise is not None else participant_total_paise
     order = Order(
         user_id=None,
-        total_amount=Decimal(amount_paise) / Decimal(100),
-        total_amount_paise=amount_paise,
+        total_amount=Decimal(participant_total_paise) / Decimal(100),
+        total_amount_paise=participant_total_paise,
         currency="INR",
         status="paid" if confirmed else "pending",
         idempotency_key=idempotency_key,
     )
     db.add(order)
     db.flush()
-    db.add(OrderItem(order_id=order.id, registration_id=registration.id, price=Decimal(amount_paise) / Decimal(100)))
+    db.add(OrderItem(order_id=order.id, registration_id=registration.id, price=Decimal(participant_total_paise) / Decimal(100)))
     db.add(Payment(
         order_id=order.id,
         registration_id=registration.id,
         amount=Decimal(payment_amount_paise) / Decimal(100),
         received_amount_paise=received_amount_paise,
-        expected_amount_paise=amount_paise,
+        expected_amount_paise=participant_total_paise,
         currency="INR",
         payment_gateway="manual_offline",
         method="manual_offline",

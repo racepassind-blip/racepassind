@@ -85,8 +85,28 @@ const OrganizerEventTournamentBracket = () => {
     return <OrganizerDashboardLayout eventId={eventId}><div className="mx-auto max-w-3xl px-4 py-20 text-center"><p className="text-sm text-muted-foreground">Could not load this event.</p><Button className="mt-4" variant="outline" onClick={() => navigate("/organizer")}>Back to events</Button></div></OrganizerDashboardLayout>;
   }
 
-  if (isFreeEvent(event.categories)) {
-    return <Navigate to={`/organizer/events/${event.id}`} replace />;
+  if (isFreeEvent(event)) {
+    return (
+      <OrganizerDashboardLayout eventId={event.id}>
+        <div className="mx-auto max-w-3xl px-4 py-20">
+          <Card>
+            <CardHeader>
+              <CardTitle>Bracket view locked</CardTitle>
+              <CardDescription>Bracket and draw views are available for paid events. Free events get only basic registration and participant management.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Upgrade to a paid event to view and share tournament brackets and draws.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Need custom tournament features? <a href="mailto:hello@sportpass.in" className="font-medium text-primary hover:underline">Contact SportPass India</a> for custom pricing.
+              </p>
+              <Button variant="outline" onClick={() => navigate(`/organizer/events/${event.id}`)}>Back to event</Button>
+            </CardContent>
+          </Card>
+        </div>
+      </OrganizerDashboardLayout>
+    );
   }
 
   if (!supportsTournament) {

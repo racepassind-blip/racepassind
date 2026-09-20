@@ -95,10 +95,20 @@ export function eventSupportsTournament(
  * True when an event is a "free event": every ticket across every category is priced at ₹0.
  * Free events only get the core workflow (overview + registrations); paid-only tooling is locked.
  * Returns false when categories/tickets are unknown so we never lock a paid event by mistake.
+ *
+ * Admin override: when `adminFeatureOverride` is set on the event, all features are unlocked
+ * regardless of pricing, so this returns false.
  */
 export function isFreeEvent(
-  categories?: Array<{ tickets?: Array<{ pricePaise?: number }> }> | null,
+  event?: {
+    adminFeatureOverride?: boolean;
+    categories?: Array<{ tickets?: Array<{ pricePaise?: number }> }>;
+  } | null,
 ): boolean {
+  if (!event) return false;
+  // Admin has explicitly unlocked all features for this event.
+  if (event.adminFeatureOverride) return false;
+  const categories = event.categories;
   if (!categories || categories.length === 0) return false;
   const tickets = categories.flatMap((category) => category.tickets ?? []);
   if (tickets.length === 0) return false;

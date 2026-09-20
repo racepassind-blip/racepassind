@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ArrowUpRight, Calendar, CalendarDays, DollarSign, LayoutDashboard, MapPin, Plus, Search, Shield, TrendingUp, Users } from "lucide-react";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
@@ -40,8 +40,23 @@ const OrganizerDashboard = () => {
   const [updatingEventId, setUpdatingEventId] = useState<string | null>(null);
   const [eventSearch, setEventSearch] = useState("");
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
-  const [organizationTabOpen, setOrganizationTabOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [organizationTabOpen, setOrganizationTabOpen] = useState(searchParams.get("tab") === "organization");
   const activeEvents = events.filter((event) => !event.isArchived);
+
+  useEffect(() => {
+    if (searchParams.get("tab") === "organization") {
+      setOrganizationTabOpen(true);
+      // Clear the param so refreshes don't re-trigger, then scroll to the verification card.
+      const next = new URLSearchParams(searchParams);
+      next.delete("tab");
+      setSearchParams(next, { replace: true });
+      if (window.location.hash === "#paid-verification") {
+        window.setTimeout(() => document.getElementById("paid-verification")?.scrollIntoView({ behavior: "smooth" }), 200);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const updateArchiveState = async (event: (typeof events)[number]) => {
     const message = `Archive ${event.name}? It will be hidden from participants and new registrations will stop. Existing registrations, payments, tickets, audit records, and media will be preserved.`;

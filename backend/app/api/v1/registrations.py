@@ -133,7 +133,7 @@ def _confirmation_response(
         try:
             payment_settings = build_upi_payment_details(
                 event.payment_settings,
-                amount_paise=amount_paise if amount_paise is not None else (registration.total_amount_paise or 0),
+                amount_paise=amount_paise if amount_paise is not None else (registration.participant_total_paise or registration.total_amount_paise or 0),
                 registration_reference=registration.registration_reference or "",
             )
         except ValueError:
@@ -161,7 +161,7 @@ def _batch_confirmation_response(
 ) -> dict:
     tokens = confirmation_tokens or []
     claims = claim_codes or []
-    total_amount_paise = sum(registration.total_amount_paise or 0 for registration in registrations)
+    total_amount_paise = sum((registration.participant_total_paise or registration.total_amount_paise or 0) for registration in registrations)
     children = [
         _confirmation_response(
             db,

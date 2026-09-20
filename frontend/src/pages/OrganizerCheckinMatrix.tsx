@@ -39,7 +39,27 @@ const OrganizerCheckinMatrix = () => {
   useEffect(() => { void load(); const interval = window.setInterval(() => void load(), 15000); return () => window.clearInterval(interval); }, [load]);
 
   if (locked) {
-    return <OrganizerDashboardLayout eventId={eventId}><div className="px-4 py-20 text-center text-sm text-muted-foreground">Loading…</div></OrganizerDashboardLayout>;
+    return (
+      <OrganizerDashboardLayout eventId={eventId}>
+        <div className="mx-auto max-w-3xl px-4 py-20">
+          <Card>
+            <CardHeader>
+              <CardTitle>Check-in locked</CardTitle>
+              <CardDescription>Check-in matrix and participant tracking are available for paid events. Free events get only basic registration and participant management.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Upgrade to a paid event to track participant arrivals across multiple check-in stations.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Need custom check-in features? <a href="mailto:hello@sportpass.in" className="font-medium text-primary hover:underline">Contact SportPass India</a> for custom pricing.
+              </p>
+              <Button variant="outline" onClick={() => navigate(`/organizer/events/${eventId}`)}>Back to event</Button>
+            </CardContent>
+          </Card>
+        </div>
+      </OrganizerDashboardLayout>
+    );
   }
 
   return (

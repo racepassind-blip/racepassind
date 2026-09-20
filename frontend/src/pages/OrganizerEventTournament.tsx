@@ -28,11 +28,11 @@ const OrganizerEventTournament = () => {
   const { data: dashboard, isLoading: isLoadingEvent, isError: isEventError } = useOrganizerEventDashboard(eventId);
   const eventSportConfig = getSportConfig(dashboard?.event.sport);
   const supportsTournament = eventSupportsTournament(dashboard?.event.sport, dashboard?.event.categories);
-  const freeEventLocked = Boolean(dashboard?.event) && isFreeEvent(dashboard?.event.categories);
+  const freeEventLocked = Boolean(dashboard?.event) && isFreeEvent(dashboard?.event);
 
   useEffect(() => {
     if (eventId && freeEventLocked) {
-      toast.info("This section is available for paid events only.");
+      toast.error("Tournament tools are locked for free events. Upgrade to a paid event to unlock, or contact SportPass India for custom pricing.");
       navigate(`/organizer/events/${eventId}`, { replace: true });
     }
   }, [eventId, freeEventLocked, navigate]);

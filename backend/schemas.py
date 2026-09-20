@@ -44,6 +44,10 @@ class EventOut(BaseModel):
     registrationClose: str | None = None
     registrationStatus: Literal["open", "closed"] = "open"
     tiers: list[TicketTierOut]
+    # SportPass platform-fee context so the participant total can be previewed.
+    platformFeeBearer: Literal["ORGANIZER", "PARTICIPANT"] = "ORGANIZER"
+    sportPassFeePercentageBasisPoints: int = 500
+    sportPassFeePerRegistrationPaise: int = 1000
 
 
 class OrganizerTicketIn(BaseModel):

@@ -24,6 +24,7 @@ from app.services.checkpoint_service import (
     update_event_checkpoint,
 )
 from app.services.pricing_service import get_organizer_pricing
+from app.services.platform_fee_service import list_organizer_platform_fees
 from app.services.rate_limit_service import RateLimitExceeded, enforce_payment_decision_limit
 from app.services.registration_service import (
     CsvExportTooLargeError,
@@ -36,6 +37,7 @@ from app.services.registration_service import (
 from app.services.image_validation import ImageValidationError
 from app.services.media_service import resolve_media_url, upload_media
 from app.services.storage_service import StorageError
+from app.services.audit_service import record_audit
 from db import get_db
 from models import Organization, OrganizationMember, User
 
@@ -154,6 +156,107 @@ def update_my_organization(
     db.commit()
     db.refresh(organization)
     return _serialize_organization(organization, storage)
+
+
+class PaidVerificationIn(BaseModel):
+    pan_number: str = Field(min_length=10, max_length=10)
+    name_as_per_pan: str = Field(min_length=2, max_length=200)
+    gst_registered: bool = Field(default=False)
+    gst_number: str | None = Field(default=None, max_length=15)
+    billing_name: str = Field(min_length=2, max_length=200)
+    billing_address: str = Field(min_length=5, max_length=1000)
+    billing_city: str = Field(min_length=2, max_length=120)
+    billing_state: str = Field(min_length=2, max_length=120)
+    billing_pincode: str = Field(min_length=6, max_length=10)
+    accept_terms: bool = Field(...)
+    terms_accepted_at: str | None = Field(default=None, description="ISO format timestamp when terms were accepted")
+
+    @field_validator("gst_number")
+    @classmethod
+    def _require_gst_when_registered(cls, value: str | None, info) -> str | None:
+        if info.data.get("gst_registered") and not (value and value.strip()):
+            raise ValueError("GSTIN is required when GST registered is Yes")
+        return value
+
+
+@router.get("/organizations/{organization_id}/paid-verification")
+def get_paid_verification_status(
+    organization_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get the paid verification status of an organization."""
+    organization = get_authorized_organization(db, user, organization_id)
+    return {
+        "organizationId": str(organization.id),
+        "paidVerificationStatus": organization.paid_verification_status,
+        "panNumber": organization.pan_number,
+        "nameAsPerPan": organization.name_as_per_pan,
+        "gstRegistered": organization.gst_registered,
+        "gstNumber": organization.gst_number,
+        "billingName": organization.billing_name,
+        "billingAddress": organization.billing_address,
+        "billingCity": organization.billing_city,
+        "billingState": organization.billing_state,
+        "billingPincode": organization.billing_pincode,
+        "submittedAt": organization.paid_verification_submitted_at.isoformat() if organization.paid_verification_submitted_at else None,
+        "reviewedAt": organization.paid_verification_reviewed_at.isoformat() if organization.paid_verification_reviewed_at else None,
+        "rejectionReason": organization.paid_verification_rejection_reason,
+    }
+
+
+@router.post("/organizations/{organization_id}/paid-verification", status_code=status.HTTP_201_CREATED)
+def submit_paid_verification(
+    organization_id: UUID,
+    payload: PaidVerificationIn,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Submit paid organizer verification details."""
+    if not payload.accept_terms:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="You must accept the Organizer Terms to proceed")
+    
+    organization = get_authorized_organization(db, user, organization_id)
+    
+    # Check if already verified or under review
+    if organization.paid_verification_status in ("UNDER_REVIEW", "VERIFIED"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Paid verification is already {organization.paid_verification_status.lower().replace('_', ' ')}"
+        )
+    
+    # Update organization with verification details
+    organization.pan_number = payload.pan_number.upper()
+    organization.name_as_per_pan = payload.name_as_per_pan.strip()
+    organization.gst_registered = payload.gst_registered
+    organization.gst_number = payload.gst_number.upper() if (payload.gst_registered and payload.gst_number) else None
+    organization.billing_name = payload.billing_name.strip()
+    organization.billing_address = payload.billing_address.strip()
+    organization.billing_city = payload.billing_city.strip()
+    organization.billing_state = payload.billing_state.strip()
+    organization.billing_pincode = payload.billing_pincode.strip()
+    organization.paid_verification_status = "UNDER_REVIEW"
+    organization.paid_verification_submitted_at = utc_now()
+    
+    record_audit(
+        db,
+        actor_user_id=user.id,
+        action="paid_verification_submitted",
+        resource_type="organization",
+        resource_id=organization.id,
+        metadata={
+            "status": "UNDER_REVIEW",
+            "terms_accepted": payload.accept_terms,
+        },
+    )
+    
+    db.commit()
+    return {
+        "organizationId": str(organization.id),
+        "paidVerificationStatus": organization.paid_verification_status,
+        "submittedAt": organization.paid_verification_submitted_at.isoformat(),
+    }
 
 
 @router.get("/me")
@@ -436,6 +539,33 @@ def organizer_pricing(
     db: Session = Depends(get_db),
 ) -> dict:
     return get_organizer_pricing(db, user)
+
+
+@router.get("/platform-fees")
+def organizer_platform_fees(
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Organizer-scoped SportPass platform-fee accruals and bills.
+
+    Admins see every organization's records; organizers only see the
+    organizations they are a member of.
+    """
+    if user.role == "admin":
+        organization_ids = list(db.scalars(select(Organization.id).where(Organization.status == "active")).all())
+    else:
+        organization_ids = list(
+            db.scalars(
+                select(Organization.id)
+                .join(OrganizationMember, OrganizationMember.organization_id == Organization.id)
+                .where(
+                    OrganizationMember.user_id == user.id,
+                    OrganizationMember.member_role == "organizer",
+                    Organization.status == "active",
+                )
+            ).all()
+        )
+    return list_organizer_platform_fees(db, organization_ids)
 
 
 @router.post("/organizations/{organization_id}/logo")

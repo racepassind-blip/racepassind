@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -17,11 +17,12 @@ from app.services.auth_service import (
     normalize_phone,
     public_user,
     revoke_session,
+    validate_required_phone,
     verify_password,
 )
 from app.services.rate_limit_service import RateLimitExceeded, enforce_account_registration_limit, enforce_login_limit
 from db import get_db
-from models import OrganizerApplication, User
+from models import Organization, OrganizationMember, User
 
 router = APIRouter()
 
@@ -67,9 +68,14 @@ class OrganizerApplicationIn(BaseModel):
     organization_name: str = Field(min_length=2, max_length=160)
     name: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=3, max_length=320)
-    phone: str | None = Field(default=None, max_length=32)
+    # Organizer onboarding requires a contact phone number.
+    phone: str = Field(min_length=1, max_length=32)
     password: str = Field(min_length=8, max_length=256)
-    message: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("phone")
+    @classmethod
+    def _require_phone(cls, value: str) -> str:
+        return validate_required_phone(value)
 
 
 def _set_session_cookies(response: Response, raw_session: str, csrf_token: str) -> None:
@@ -150,13 +156,15 @@ def register(
     return {"user": public_user(user), "csrfToken": csrf_token}
 
 
-@router.post("/organizer-applications", status_code=status.HTTP_201_CREATED)
-def submit_organizer_application(
+@router.post("/organizer-signup", status_code=status.HTTP_201_CREATED)
+def organizer_signup(
     payload: OrganizerApplicationIn,
     request: Request,
+    response: Response,
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
+    """Create organizer account immediately without admin approval."""
     email = normalize_email(payload.email)
     client_ip = request.client.host if request.client else "unknown"
     try:
@@ -176,47 +184,70 @@ def submit_organizer_application(
     if existing_user is not None:
         raise HTTPException(status_code=409, detail="An account with that email already exists")
 
-    existing_application = db.scalar(
-        select(OrganizerApplication).where(
-            OrganizerApplication.normalized_email == email,
-            OrganizerApplication.status == "pending",
-        )
-    )
-    if existing_application is not None:
-        raise HTTPException(status_code=409, detail="An organizer application is already pending for this email")
-
     try:
-        application = OrganizerApplication(
-            organization_name=payload.organization_name.strip(),
-            applicant_name=payload.name.strip(),
+        # Create organizer user
+        organizer = User(
+            name=payload.name.strip(),
             email=email,
             normalized_email=email,
             phone=payload.phone.strip() if payload.phone else None,
             normalized_phone=normalize_phone(payload.phone),
             password_hash=hash_password(payload.password),
-            message=payload.message.strip() if payload.message else None,
-            status="pending",
+            role="organizer",
+            is_active=True,
         )
-        db.add(application)
+        db.add(organizer)
         db.flush()
+        
+        # Create organization with default paid verification status
+        organization = Organization(
+            name=payload.organization_name.strip(),
+            created_by=organizer.id,
+            status="active",
+            fee_type="none",
+            fee_value_paise=0,
+            fee_percentage_basis_points=0,
+            paid_verification_status="NOT_SUBMITTED",
+        )
+        db.add(organization)
+        db.flush()
+        
+        # Add organizer as member of the organization
+        db.add(OrganizationMember(organization_id=organization.id, user_id=organizer.id, member_role="organizer"))
+        
+        # Create session for immediate login
+        raw_session, csrf_token = create_session(
+            db,
+            organizer,
+            user_agent=request.headers.get("user-agent"),
+            ip_address=request.client.host if request.client else None,
+        )
+        
         record_audit(
             db,
-            actor_user_id=None,
-            action="organizer_application_submitted",
-            resource_type="organizer_application",
-            resource_id=application.id,
-            metadata={"organization_name": application.organization_name},
+            actor_user_id=organizer.id,
+            action="organizer_account_created",
+            resource_type="organization",
+            resource_id=organization.id,
+            metadata={"organization_name": organization.name},
         )
         db.commit()
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Could not create organizer account") from exc
 
+    _set_session_cookies(response, raw_session, csrf_token)
     return {
-        "application": {
-            "id": str(application.id),
-            "organizationName": application.organization_name,
-            "status": application.status,
+        "user": public_user(organizer),
+        "csrfToken": csrf_token,
+        "organization": {
+            "id": str(organization.id),
+            "name": organization.name,
+            "status": organization.status,
+            "paidVerificationStatus": organization.paid_verification_status,
         }
     }
 

@@ -35,7 +35,7 @@ class User(Base):
         onupdate=func.now(),
     )
 
-    organizations: Mapped[list["Organization"]] = relationship(back_populates="creator")
+    organizations: Mapped[list["Organization"]] = relationship(back_populates="creator", foreign_keys="Organization.created_by")
     memberships: Mapped[list["OrganizationMember"]] = relationship(back_populates="user")
     sessions: Mapped[list["AuthSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     registrations: Mapped[list["Registration"]] = relationship(back_populates="user")
@@ -88,8 +88,26 @@ class Organization(Base):
     fee_percentage_basis_points: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     onboarding_completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    
+    # Paid organizer verification fields
+    paid_verification_status: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="NOT_SUBMITTED"
+    )
+    pan_number: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    name_as_per_pan: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    gst_registered: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    gst_number: Mapped[str | None] = mapped_column(String(15), nullable=True)
+    billing_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    billing_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    billing_city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    billing_state: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    billing_pincode: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    paid_verification_submitted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_verification_reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_verification_reviewed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    paid_verification_rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    creator: Mapped[User | None] = relationship(back_populates="organizations")
+    creator: Mapped[User | None] = relationship(back_populates="organizations", foreign_keys=[created_by])
     members: Mapped[list["OrganizationMember"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     events: Mapped[list["Event"]] = relationship(back_populates="organization")
     founding_program_links: Mapped[list["FoundingProgramOrganization"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
@@ -173,6 +191,12 @@ class Event(Base):
     field_config: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False, default=dict, server_default=text("'{}'"))
     addon_config: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False, default=dict, server_default=text("'{}'"))
     payment_collection_method: Mapped[str] = mapped_column(String(20), nullable=False, server_default="DIRECT_UPI")
+    # Who bears the SportPass platform fee for paid registrations on this event.
+    # ORGANIZER: participant pays only the registration price; organizer owes SportPass the fee.
+    # PARTICIPANT: the SportPass fee is added to the participant's payable amount.
+    platform_fee_bearer: Mapped[str] = mapped_column(String(20), nullable=False, server_default="ORGANIZER")
+    # Admin override: when true, unlock all paid-only features for this event regardless of free/paid status.
+    features_unlocked: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
@@ -426,6 +450,75 @@ class OrganizerEventBilling(Base):
     plan: Mapped[PricingPlan | None] = relationship()
 
 
+class PlatformFeeConfig(Base):
+    """Singleton configuration for the SportPass organizer platform fee.
+
+    The introductory pricing is 5% of registration revenue + ₹10 per paid
+    registration. Rates are stored here so they are configurable in one place
+    rather than hard-coded across services. There is a single row (id=1).
+    """
+
+    __tablename__ = "platform_fee_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # A human label shown to organizers, e.g. "Introductory Pricing".
+    label: Mapped[str] = mapped_column(String, nullable=False, server_default="Introductory Pricing")
+    # Percentage component expressed in basis points (500 = 5%).
+    percentage_basis_points: Mapped[int] = mapped_column(Integer, nullable=False, server_default="500")
+    # Flat per-paid-registration component in paise (1000 = ₹10).
+    per_registration_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1000")
+    currency: Mapped[str] = mapped_column(String, nullable=False, server_default="INR")
+    # Default number of days given to pay once a bill is raised.
+    default_due_days: Mapped[int] = mapped_column(Integer, nullable=False, server_default="14")
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class OrganizerPlatformFeeBilling(Base):
+    """Per-event SportPass platform-fee ledger for PAID events only.
+
+    Separate and independent from OrganizerEventBilling (the plan/founding
+    program ledger). One row per event, created when an admin raises a bill.
+    Amounts are integer paise. Statuses: accruing (implicit, no row), payment_due,
+    paid, overdue, waived. A record is only ever created for paid events.
+    """
+
+    __tablename__ = "organizer_platform_fee_billings"
+    __table_args__ = (
+        Index("ix_platform_fee_billings_org_status", "organization_id", "billing_status"),
+        Index("ix_platform_fee_billings_due_at", "due_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, unique=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    # Human-friendly sequential-ish invoice number, e.g. "SPF-2026-000123".
+    invoice_number: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
+    # Snapshot of the fee inputs at the time the bill was raised.
+    paid_registration_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    registration_revenue_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    percentage_basis_points: Mapped[int] = mapped_column(Integer, nullable=False, server_default="500")
+    per_registration_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1000")
+    gross_fee_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    discount_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    final_amount_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    currency: Mapped[str] = mapped_column(String, nullable=False, server_default="INR")
+    billing_status: Mapped[str] = mapped_column(String, nullable=False, server_default="payment_due")
+    due_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finalized_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payment_reference: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    event: Mapped[Event] = relationship()
+    organization: Mapped[Organization] = relationship()
+
+
 class Ticket(Base):
     __tablename__ = "tickets"
 
@@ -547,7 +640,19 @@ class Registration(Base):
     participant_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     unit_price_paise: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Base registration amount (ticket price + add-ons). This is the SportPass
+    # fee base and the organizer's revenue — it NEVER includes the platform fee,
+    # regardless of who bears it, so organizer billing stays correct.
     total_amount_paise: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Snapshot of the SportPass platform-fee pricing for this registration, frozen
+    # at registration time so later pricing/config changes never recompute it.
+    # platform_fee_bearer: ORGANIZER | PARTICIPANT (copied from the event).
+    platform_fee_bearer: Mapped[str] = mapped_column(String(20), nullable=False, server_default="ORGANIZER")
+    # The SportPass fee for this registration in paise (0 for free registrations).
+    platform_fee_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # What the participant actually pays: base + fee when PARTICIPANT bears it,
+    # otherwise equal to the base amount.
+    participant_total_paise: Mapped[int | None] = mapped_column(Integer, nullable=True)
     responses: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False, default=dict, server_default=text("'{}'"))
     selections: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False, default=dict, server_default=text("'{}'"))
     computed_total: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False, default=dict, server_default=text("'{}'"))

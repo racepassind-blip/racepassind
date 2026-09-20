@@ -113,7 +113,27 @@ const OrganizerEventCheckpoints = () => {
   };
 
   if (locked) {
-    return <OrganizerDashboardLayout eventId={eventId}><div className="px-4 py-20 text-center text-sm text-muted-foreground">Loading…</div></OrganizerDashboardLayout>;
+    return (
+      <OrganizerDashboardLayout eventId={eventId}>
+        <div className="mx-auto max-w-3xl px-4 py-20">
+          <Card>
+            <CardHeader>
+              <CardTitle>Checkpoints locked</CardTitle>
+              <CardDescription>Checkpoints and QR scanning are available for paid events. Free events get only basic registration and participant management.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Upgrade to a paid event to set up event stations and track participant check-ins.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Need custom check-in features? <a href="mailto:hello@sportpass.in" className="font-medium text-primary hover:underline">Contact SportPass India</a> for custom pricing.
+              </p>
+              <Button variant="outline" onClick={() => navigate(`/organizer/events/${eventId}`)}>Back to event</Button>
+            </CardContent>
+          </Card>
+        </div>
+      </OrganizerDashboardLayout>
+    );
   }
 
   return (

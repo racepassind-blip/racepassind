@@ -26,7 +26,7 @@ const OrganizerEventTournamentResults = () => {
   const event = dashboard?.event;
   const supportsTournament = eventSupportsTournament(event?.sport, event?.categories);
   const { data: matches = [], isLoading: isLoadingMatches, isError: isMatchesError, refetch, isFetching } = useOrganizerMatches(eventId);
-  const freeEventLocked = Boolean(event) && isFreeEvent(event?.categories);
+  const freeEventLocked = Boolean(event) && isFreeEvent(event);
   const [categoryId, setCategoryId] = useState("all");
   const [resultsCopied, setResultsCopied] = useState(false);
 
@@ -45,7 +45,27 @@ const OrganizerEventTournamentResults = () => {
   }
 
   if (freeEventLocked) {
-    return <Navigate to={`/organizer/events/${event.id}`} replace />;
+    return (
+      <OrganizerDashboardLayout eventId={event.id}>
+        <div className="mx-auto max-w-3xl px-4 py-20">
+          <Card>
+            <CardHeader>
+              <CardTitle>Results tools locked</CardTitle>
+              <CardDescription>Results and public shareable links are available for paid events. Free events get only basic registration and participant management.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Upgrade to a paid event to publish public results and get event insights.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Need custom tournament features? <a href="mailto:hello@sportpass.in" className="font-medium text-primary hover:underline">Contact SportPass India</a> for custom pricing.
+              </p>
+              <Button variant="outline" onClick={() => navigate(`/organizer/events/${event.id}`)}>Back to event</Button>
+            </CardContent>
+          </Card>
+        </div>
+      </OrganizerDashboardLayout>
+    );
   }
 
   if (!supportsTournament) {

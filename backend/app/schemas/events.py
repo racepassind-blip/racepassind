@@ -87,6 +87,7 @@ class OrganizerEventCreateV1(BaseModel):
     field_config: dict[str, Any] = Field(default_factory=lambda: normalize_field_config(None))
     addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
     payment_collection_method: Literal["DIRECT_UPI", "PAYMENT_GATEWAY"] = Field(default="DIRECT_UPI")
+    platform_fee_bearer: Literal["ORGANIZER", "PARTICIPANT"] = Field(default="ORGANIZER")
     categories: list[RaceCategoryCreateIn] = Field(min_length=1, max_length=20)
 
     @field_validator("field_config")
@@ -188,6 +189,7 @@ class OrganizerEventUpdateV1(BaseModel):
     field_config: dict[str, Any] = Field(default_factory=lambda: normalize_field_config(None))
     addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
     payment_collection_method: Literal["DIRECT_UPI", "PAYMENT_GATEWAY"] | None = None
+    platform_fee_bearer: Literal["ORGANIZER", "PARTICIPANT"] | None = None
     categories: list[OrganizerCategoryUpdateIn] = Field(min_length=1, max_length=20)
 
     @field_validator("field_config")

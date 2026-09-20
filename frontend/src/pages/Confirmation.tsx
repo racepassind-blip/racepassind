@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle2, Clock3, Copy, FileDown, KeyRound, LayoutDashbo
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { apiRequest, ApiError, API_BASE, resolveCsrfToken, trackApiRequest } from "@/lib/api";
+import { formatPaise } from "@/lib/platform-fee";
 
 const CONFIRMATION_TOKEN_KEY = "sportpass_confirmation_token";
 
@@ -13,6 +14,10 @@ interface ConfirmationRegistration {
   claimCode?: string | null;
   registrationReference: string;
   amountPaise: number;
+  baseAmountPaise?: number;
+  platformFeePaise?: number;
+  platformFeeBearer?: "ORGANIZER" | "PARTICIPANT";
+  participantTotalPaise?: number;
   status: string;
   checkInStatus?: "checked_in" | "not_checked_in";
   checkedInAt?: string | null;
@@ -227,7 +232,15 @@ const Confirmation = () => {
               </div>
               <div>
                 <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Amount</p>
-                <p className="text-lg font-bold text-primary">₹{(confirmation.amountPaise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</p>
+                {confirmation.platformFeeBearer === "PARTICIPANT" && (confirmation.platformFeePaise ?? 0) > 0 ? (
+                  <div className="space-y-0.5">
+                    <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground"><span>Registration Fee</span><span>{formatPaise(confirmation.baseAmountPaise ?? confirmation.amountPaise)}</span></div>
+                    <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground"><span>SportPass Fee</span><span>{formatPaise(confirmation.platformFeePaise ?? 0)}</span></div>
+                    <p className="text-lg font-bold text-primary">{formatPaise(confirmation.participantTotalPaise ?? confirmation.amountPaise)}</p>
+                  </div>
+                ) : (
+                  <p className="text-lg font-bold text-primary">₹{(confirmation.amountPaise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</p>
+                )}
               </div>
             </div>}
 

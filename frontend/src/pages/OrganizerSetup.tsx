@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import PaidVerification from "@/components/PaidVerification";
 import { apiRequest, uploadFile } from "@/lib/api";
 
 type Organization = {
@@ -179,7 +180,7 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
             <Card className="border-primary/20 bg-primary/5">
               <CardContent className="flex gap-3 p-5 text-sm text-muted-foreground">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                <p>Your organizer account is already approved. After saving, you can create an event and add its date, location, tickets, rules, and payment instructions there.</p>
+                <p>Your SportPass account is ready. Complete your organization profile now or update it later. Paid organizer verification is only required before publishing a paid event.</p>
               </CardContent>
             </Card>
 
@@ -191,6 +192,8 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
             </div>
           </form>
         ) : null}
+
+        {organization && <PaidVerification organizationId={organization.id} />}
       </div>
   );
 

@@ -5,11 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { getSportConfig } from "@/data/sportConfig";
+import { computeSportPassFeePaise, formatPaise } from "@/lib/platform-fee";
 import { useEvent } from "@/hooks/useEvents";
 import {
   Calendar,
   MapPin,
-  Users,
   ArrowLeft,
   Trophy,
   Clock,
@@ -68,6 +68,21 @@ const EventDetail = () => {
   );
   const totalTickets = Object.values(quantities).reduce((a, b) => a + b, 0);
 
+  // SportPass fee preview. When the participant bears the fee, it is added per
+  // paid registration (one ticket unit = one registration). Free entries (₹0) never accrue a fee.
+  const feeConfig = {
+    percentageBasisPoints: event.sportPassFeePercentageBasisPoints ?? 500,
+    perRegistrationPaise: event.sportPassFeePerRegistrationPaise ?? 1000,
+  };
+  const participantBearsFee = event.platformFeeBearer === "PARTICIPANT";
+  const sportPassFeePaise = event.tiers.reduce((sum, tier) => {
+    const qty = quantities[tier.id] || 0;
+    if (qty === 0) return sum;
+    return sum + qty * computeSportPassFeePaise(tier.price * 100, feeConfig);
+  }, 0);
+  const baseTotalPaise = totalPrice * 100;
+  const participantTotalPaise = baseTotalPaise + (participantBearsFee ? sportPassFeePaise : 0);
+
   const locationParts = [
     event.locationDetails?.name ?? event.location,
     event.locationDetails?.address,
@@ -83,7 +98,9 @@ const EventDetail = () => {
     { icon: User, label: "Organizer", value: event.organizer },
     { icon: Tag, label: "Category", value: event.category },
     { icon: Trophy, label: "Distance", value: event.distance },
-    { icon: Users, label: "Participants Limit", value: `${event.maxParticipants.toLocaleString()} max` },
+    // Participants Limit hidden for now — it reflects a per-event default that
+    // can be misleading on the public page.
+    // { icon: Users, label: "Participants Limit", value: `${event.maxParticipants.toLocaleString()} max` },
   ];
 
   // Check if bib numbers are enabled for this sport
@@ -277,12 +294,29 @@ const EventDetail = () => {
 
                   <Separator />
 
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      {totalTickets} ticket{totalTickets !== 1 ? "s" : ""}
-                    </span>
-                    <span className="text-xl font-bold">₹{totalPrice}</span>
-                  </div>
+                  {participantBearsFee && totalTickets > 0 && sportPassFeePaise > 0 ? (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-sm text-muted-foreground">
+                        <span>Registration Fee</span>
+                        <span>{formatPaise(baseTotalPaise)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm text-muted-foreground">
+                        <span>SportPass Fee</span>
+                        <span>{formatPaise(sportPassFeePaise)}</span>
+                      </div>
+                      <div className="flex items-center justify-between border-t pt-1.5">
+                        <span className="text-sm font-medium">Total</span>
+                        <span className="text-xl font-bold">{formatPaise(participantTotalPaise)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">
+                        {totalTickets} ticket{totalTickets !== 1 ? "s" : ""}
+                      </span>
+                      <span className="text-xl font-bold">₹{totalPrice}</span>
+                    </div>
+                  )}
 
                   <Button
                     className="w-full"
@@ -296,7 +330,7 @@ const EventDetail = () => {
                       navigate(`/checkout/${event.id}`);
                     }}
                   >
-                    {registrationClosed ? "Registration Closed" : totalTickets === 0 ? "Select Tickets to Continue" : `Register Now — ₹${totalPrice}`}
+                    {registrationClosed ? "Registration Closed" : totalTickets === 0 ? "Select Tickets to Continue" : `Register Now — ${formatPaise(participantTotalPaise)}`}
                   </Button>
 
                   {/* Show Bib Number Link if allocations are enabled */}
