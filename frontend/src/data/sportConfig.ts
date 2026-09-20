@@ -3,6 +3,8 @@ export interface SportConfig {
   supports_distance: boolean;
   supports_bib: boolean;
   supports_tournament: boolean;
+  supports_checkin: boolean;
+  supports_communications: boolean;
   // Allocation / number configuration
   numberEnabled: boolean;
   numberLabel: string;
@@ -15,6 +17,8 @@ export const sportConfig = {
     supports_distance: true,
     supports_bib: true,
     supports_tournament: false,
+    supports_checkin: true,
+    supports_communications: true,
     numberEnabled: true,
     numberLabel: "Bib Number",
     scope: "individual",
@@ -24,6 +28,8 @@ export const sportConfig = {
     supports_distance: true,
     supports_bib: true,
     supports_tournament: false,
+    supports_checkin: true,
+    supports_communications: true,
     numberEnabled: true,
     numberLabel: "Bib Number",
     scope: "individual",
@@ -33,6 +39,8 @@ export const sportConfig = {
     supports_distance: false,
     supports_bib: false,
     supports_tournament: true,
+    supports_checkin: true,
+    supports_communications: true,
     numberEnabled: true,
     numberLabel: "Jersey Number",
     scope: "team_member",
@@ -43,6 +51,8 @@ export const sportConfig = {
     supports_distance: false,
     supports_bib: false,
     supports_tournament: true,
+    supports_checkin: true,
+    supports_communications: true,
     numberEnabled: true,
     numberLabel: "Player ID",
     scope: "individual",
@@ -52,6 +62,8 @@ export const sportConfig = {
     supports_distance: false,
     supports_bib: false,
     supports_tournament: true,
+    supports_checkin: true,
+    supports_communications: true,
     numberEnabled: true,
     numberLabel: "Jersey Number",
     scope: "team_member",
@@ -65,6 +77,8 @@ const DEFAULT_SPORT_CONFIG: SportConfig = {
   supports_distance: true,
   supports_bib: true,
   supports_tournament: false,
+  supports_checkin: true,
+  supports_communications: true,
   numberEnabled: true,
   numberLabel: "Bib Number",
   scope: "individual",

@@ -30,12 +30,19 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const eventQuery = eventId ? `?event_id=${eventId}&status=all` : "";
   const currentSportConfig = getSportConfig(eventDashboard?.event.sport);
   const supportsTournament = eventSupportsTournament(eventDashboard?.event.sport, eventDashboard?.event.categories);
-  // Free events (all tickets ₹0) only get the core workflow: overview + registrations.
-  // Everything else (tournament, communications, check-in, bib management) is locked for paid events only.
   const freeEvent = Boolean(eventId) && isFreeEvent(eventDashboard?.event);
+  // Admin override unlocks everything regardless of free/paid
+  const adminUnlocked = Boolean(eventDashboard?.event.adminFeatureOverride);
+  const unlocked = !freeEvent || adminUnlocked;
+
+  const supportsBib = adminUnlocked || (currentSportConfig.supports_bib && unlocked);
+  const supportsCheckin = adminUnlocked || (currentSportConfig.supports_checkin && unlocked);
+  const supportsCommunications = adminUnlocked || (currentSportConfig.supports_communications && unlocked);
+  const supportsTournamentUnlocked = (supportsTournament && unlocked) || adminUnlocked;
+
   const availableItems: NavItem[] = [
     ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: "Events", icon: CalendarDays, to: "/organizer" }, { label: "Plans & pricing", icon: CreditCard, to: "/organizer/pricing" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }]),
-    ...(eventId && supportsTournament && !freeEvent ? [
+    ...(eventId && supportsTournamentUnlocked ? [
       { label: "Tournament setup", icon: Settings2, to: `/organizer/events/${eventId}/tournament` },
       { label: "Matches", icon: Trophy, to: `/organizer/events/${eventId}/tournament/matches` },
       { label: "Scoring", icon: Gauge, to: `/organizer/events/${eventId}/tournament/scoring` },
@@ -43,23 +50,23 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
       { label: "Bracket", icon: GitBranch, to: `/organizer/events/${eventId}/tournament/bracket` },
     ] : []),
     { label: "Registrations", icon: ClipboardList, to: `/organizer/registrations${eventQuery}` },
+    ...(eventId && supportsCommunications ? [{ label: "Communications", icon: MessageSquare, to: `/organizer/events/${eventId}/communications` }] : []),
+    ...(eventId && supportsCheckin ? [{ label: "Check-in", icon: ScanLine, to: `/organizer/events/${eventId}/check-in` }] : []),
+    ...(eventId && supportsBib ? [{ label: "Bib Management", icon: Package, to: `/organizer/events/${eventId}/allocations` }] : []),
   ];
-  const lockedItems: NavItem[] = freeEvent
-    ? [
-        ...(eventId && supportsTournament
-          ? [
-              { label: "Tournament setup", icon: Settings2 },
-              { label: "Matches", icon: Trophy },
-              { label: "Scoring", icon: Gauge },
-              { label: "Results", icon: Medal },
-              { label: "Bracket", icon: GitBranch },
-            ]
-          : []),
-        ...(eventId ? [{ label: "Communications", icon: MessageSquare }] : []),
-        { label: "Check-in", icon: ScanLine },
-        ...(eventId ? [{ label: "Bib Management", icon: Package }] : []),
-      ]
-    : [];
+
+  const lockedItems: NavItem[] = freeEvent && !adminUnlocked ? [
+    ...(eventId && supportsTournament ? [
+      { label: "Tournament setup", icon: Settings2 },
+      { label: "Matches", icon: Trophy },
+      { label: "Scoring", icon: Gauge },
+      { label: "Results", icon: Medal },
+      { label: "Bracket", icon: GitBranch },
+    ] : []),
+    ...(eventId && currentSportConfig.supports_communications ? [{ label: "Communications", icon: MessageSquare }] : []),
+    ...(currentSportConfig.supports_checkin ? [{ label: "Check-in", icon: ScanLine }] : []),
+    ...(eventId && currentSportConfig.supports_bib ? [{ label: "Bib Management", icon: Package }] : []),
+  ] : [];
   const comingSoonItems: NavItem[] = [
     { label: "Reports", icon: BarChart3 },
   ];
