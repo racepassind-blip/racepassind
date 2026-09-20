@@ -49,6 +49,7 @@ import Signup from "./pages/Signup";
 import Confirmation from "./pages/Confirmation";
 import NotFound from "./pages/NotFound";
 import TermsAndConditions from "./pages/TermsAndConditions";
+import OurStory from "./pages/OurStory";
 
 const queryClient = new QueryClient();
 
@@ -111,6 +112,7 @@ const App = () => (
             <Route path="/organizer/pricing" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerPricing /></ProtectedRoute>} />
             <Route path="/organizer/setup" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerSetup /></ProtectedRoute>} />
             <Route path="/terms-and-conditions" element={<TermsAndConditions />} />
+            <Route path="/our-story" element={<OurStory />} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
