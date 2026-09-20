@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -160,6 +160,10 @@ const OrganizerEventCreate = () => {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const queryClient = useQueryClient();
+  // Prevent double-submission: synchronous guard that fires before React re-renders
+  const savingRef = useRef(false);
+  // Track the ID of an event created in this session so repeated saves use PUT, not POST
+  const createdEventIdRef = useRef<string | null>(null);
   const [organizationId, setOrganizationId] = useState("");
   const [eventName, setEventName] = useState("");
   const [description, setDescription] = useState("");
@@ -598,6 +602,9 @@ const OrganizerEventCreate = () => {
       return;
     }
 
+    // Synchronous guard — blocks double-clicks before React re-renders the disabled state
+    if (savingRef.current) return;
+    savingRef.current = true;
     setIsSaving(true);
     try {
       const eventPayload = {
@@ -646,8 +653,9 @@ const OrganizerEventCreate = () => {
           })),
         })),
       };
-      const saved = eventId
-        ? await apiRequest<{ id: string }>(`/organizer/events/${eventId}`, {
+      const effectiveEventId = eventId ?? createdEventIdRef.current;
+      const saved = effectiveEventId
+        ? await apiRequest<{ id: string }>(`/organizer/events/${effectiveEventId}`, {
             method: "PUT",
             body: JSON.stringify(eventPayload),
           })
@@ -655,7 +663,11 @@ const OrganizerEventCreate = () => {
             method: "POST",
             body: JSON.stringify({ organization_id: organizationId, ...eventPayload }),
           });
-      const savedEventId = eventId ?? saved.id;
+      const savedEventId = effectiveEventId ?? saved.id;
+      // Remember the created ID so any repeat save in this session uses PUT
+      if (!eventId && !createdEventIdRef.current) {
+        createdEventIdRef.current = savedEventId;
+      }
       const communicationEvent: CommunicationEvent = {
         id: savedEventId,
         name: eventName.trim(),
@@ -704,6 +716,7 @@ const OrganizerEventCreate = () => {
         toast.error(message);
       }
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
