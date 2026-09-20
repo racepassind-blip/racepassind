@@ -357,6 +357,7 @@ def registration_checkin_timeline(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
+@router.post("/events/{event_id}/registrations/manual", status_code=201)
 def create_manual_event_registration(
     event_id: UUID,
     payload: ManualRegistrationCreateIn,
