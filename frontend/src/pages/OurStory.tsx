@@ -97,14 +97,12 @@ function Hero() {
           >
             <Link to="/organizers">Organize with SportPass</Link>
           </Button>
-          <Button
-            asChild
-            size="lg"
-            variant="outline"
-            className="border-white/20 text-white hover:bg-white/10"
+          <Link
+            to="/"
+            className="inline-flex h-11 items-center justify-center rounded-md border border-white/30 bg-transparent px-8 text-sm font-bold text-white transition-colors hover:bg-white/10"
           >
-            <Link to="/">Explore Events</Link>
-          </Button>
+            Explore Events
+          </Link>
         </div>
       </div>
     </section>
@@ -324,9 +322,12 @@ function TheAnswer() {
           >
             <Link to="/organizers">Organize with SportPass</Link>
           </Button>
-          <Button asChild size="lg" variant="outline">
-            <Link to="/">Explore Events</Link>
-          </Button>
+          <Link
+            to="/"
+            className="inline-flex h-11 items-center justify-center rounded-md border border-[#101b35]/40 bg-transparent px-8 text-sm font-bold text-[#101b35] transition-colors hover:bg-[#101b35]/5"
+          >
+            Explore Events
+          </Link>
         </div>
       </div>
     </section>
@@ -554,14 +555,12 @@ function FinalCTA() {
           >
             <Link to="/organizers">Organize with SportPass</Link>
           </Button>
-          <Button
-            asChild
-            size="lg"
-            variant="outline"
-            className="border-white/20 text-white hover:bg-white/10"
+          <Link
+            to="/"
+            className="inline-flex h-11 items-center justify-center rounded-md border border-white/30 bg-transparent px-8 text-sm font-bold text-white transition-colors hover:bg-white/10"
           >
-            <Link to="/">Explore Events</Link>
-          </Button>
+            Explore Events
+          </Link>
           <Button
             asChild
             size="lg"
