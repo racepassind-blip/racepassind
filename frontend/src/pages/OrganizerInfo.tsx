@@ -255,7 +255,7 @@ const OrganizerInfo = () => {
           </div>
           <div className="mt-7 flex flex-col gap-2 text-xs text-white/70 sm:text-sm">
             <span className="flex items-center gap-2">
-              <Check className="h-4 w-4 text-[#138808]" /> Free events are free • Paid events 5% + ₹10/registration • No monthly subscription
+              <Check className="h-4 w-4 text-[#138808]" /> Free events are free • Paid events 5% of registration revenue + ₹10 per paid registration • No monthly subscription
             </span>
           </div>
         </div>
@@ -514,7 +514,7 @@ const OrganizerInfo = () => {
                 <CardTitle className="text-2xl">Paid Events</CardTitle>
                 <Badge className="bg-[#ff9933] text-[#101b35] text-xs">INTRODUCTORY PRICING</Badge>
               </div>
-              <p className="text-sm text-muted-foreground mt-2">5% + ₹10 per successful registration</p>
+              <p className="text-sm text-muted-foreground mt-2">5% of registration revenue + ₹10 per paid registration</p>
               <p className="text-xs font-semibold text-primary mt-3">For organizers who need the complete event workflow</p>
             </CardHeader>
             <CardContent className="p-6 sm:p-8 space-y-6">
