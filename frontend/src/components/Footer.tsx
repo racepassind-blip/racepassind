@@ -26,9 +26,6 @@ export function Footer() {
             <h4 className="font-semibold text-sm">About</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li><Link to="/our-story" className="hover:text-foreground transition-colors">Our Story</Link></li>
-              <li><span className="hover:text-foreground cursor-pointer transition-colors">Team</span></li>
-              <li><span className="hover:text-foreground cursor-pointer transition-colors">Careers</span></li>
-              <li><span className="hover:text-foreground cursor-pointer transition-colors">Press</span></li>
             </ul>
           </div>
 
@@ -36,9 +33,9 @@ export function Footer() {
           <div className="space-y-3">
             <h4 className="font-semibold text-sm">Contact</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><span className="hover:text-foreground cursor-pointer transition-colors">Support</span></li>
-              <li><span className="hover:text-foreground cursor-pointer transition-colors">sportpassind@gmail.com</span></li>
-              <li><span className="hover:text-foreground cursor-pointer transition-colors">Partner with us</span></li>
+              <li><a href="mailto:sportpassind@gmail.com" className="hover:text-foreground transition-colors">Support</a></li>
+              <li><a href="mailto:sportpassind@gmail.com" className="hover:text-foreground transition-colors">sportpassind@gmail.com</a></li>
+              <li><a href="mailto:sportpassind@gmail.com" className="hover:text-foreground transition-colors">Partner with us</a></li>
             </ul>
           </div>
 
