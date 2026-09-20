@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useState, useMemo } from "react";
 import { CheckCircle2 } from "lucide-react";
 
@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useOrganizerEventDashboard } from "@/hooks/useEvents";
 import { useOrganizerMatches } from "@/hooks/useEvents";
-import { eventSupportsTournament } from "@/data/sportConfig";
+import { eventSupportsTournament, isFreeEvent } from "@/data/sportConfig";
 import type { OrganizerMatch } from "@/hooks/useEvents";
 
 // For team matches with specific players picked, show "Rahul & Priya (Team A)".
@@ -57,6 +57,9 @@ const OrganizerEventTournamentScoring = () => {
   }
 
   const event = dashboard.event;
+  if (isFreeEvent(event.categories)) {
+    return <Navigate to={`/organizer/events/${event.id}`} replace />;
+  }
   if (!supportsTournament) {
     return <OrganizerDashboardLayout eventId={event.id}><div className="mx-auto max-w-3xl px-4 py-20"><Card><CardHeader><CardTitle>Tournament tools unavailable</CardTitle><CardDescription>Tournament tools are currently unavailable for this sport.</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={() => navigate(`/organizer/events/${event.id}`)}>Back to event</Button></CardContent></Card></div></OrganizerDashboardLayout>;
   }

@@ -24,7 +24,7 @@ import { Badge as BadgeComp } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
-import { useOrganizerEventDashboard } from "@/hooks/useEvents";
+import { useFreeEventLock } from "@/hooks/useFreeEventLock";
 import { useAllocations, useBatchAllocate, usePublishAllocations, useEditAllocation, useAllocationConfig } from "@/hooks/useAllocations";
 import type { AllocationRegistration } from "@/hooks/useAllocations";
 import { getSportConfig } from "@/data/sportConfig";
@@ -47,7 +47,7 @@ const OrganizerEventAllocations = () => {
   const { eventId } = useParams();
   const queryClient = useQueryClient();
 
-  const { data: dashboard } = useOrganizerEventDashboard(eventId);
+  const { data: dashboard, locked } = useFreeEventLock(eventId);
   const { data: allocations = [], isLoading: isLoadingAllocations, refetch: refetchAllocations } = useAllocations(eventId || "");
   const { data: allocationSummary = [], isLoading: isLoadingSummary } = useAllocations(eventId || "");
   const { data: sportConfig } = useAllocationConfig(eventId || "");
@@ -226,7 +226,7 @@ const OrganizerEventAllocations = () => {
     return statusConfig[status]?.label || status;
   };
 
-  if (!event) {
+  if (!event || locked) {
     return <OrganizerDashboardLayout eventId={eventId}><div>Loading...</div></OrganizerDashboardLayout>;
   }
 

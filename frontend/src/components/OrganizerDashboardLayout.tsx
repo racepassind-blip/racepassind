@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganizerEventDashboard } from "@/hooks/useEvents";
-import { getSportConfig, eventSupportsTournament } from "@/data/sportConfig";
+import { getSportConfig, eventSupportsTournament, isFreeEvent } from "@/data/sportConfig";
 import { cn } from "@/lib/utils";
 
 type OrganizerDashboardLayoutProps = {
@@ -30,9 +30,12 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const eventQuery = eventId ? `?event_id=${eventId}&status=all` : "";
   const currentSportConfig = getSportConfig(eventDashboard?.event.sport);
   const supportsTournament = eventSupportsTournament(eventDashboard?.event.sport, eventDashboard?.event.categories);
+  // Free events (all tickets ₹0) only get the core workflow: overview + registrations.
+  // Everything else (tournament, communications, check-in, bib management) is locked for paid events only.
+  const freeEvent = Boolean(eventId) && isFreeEvent(eventDashboard?.event.categories);
   const availableItems: NavItem[] = [
     ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: "Events", icon: CalendarDays, to: "/organizer" }, { label: "Plans & pricing", icon: CreditCard, to: "/organizer/pricing" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }]),
-    ...(eventId && supportsTournament ? [
+    ...(eventId && supportsTournament && !freeEvent ? [
       { label: "Tournament setup", icon: Settings2, to: `/organizer/events/${eventId}/tournament` },
       { label: "Matches", icon: Trophy, to: `/organizer/events/${eventId}/tournament/matches` },
       { label: "Scoring", icon: Gauge, to: `/organizer/events/${eventId}/tournament/scoring` },
@@ -40,9 +43,9 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
       { label: "Bracket", icon: GitBranch, to: `/organizer/events/${eventId}/tournament/bracket` },
     ] : []),
     { label: "Registrations", icon: ClipboardList, to: `/organizer/registrations${eventQuery}` },
-    ...(eventId ? [{ label: "Communications", icon: MessageSquare, to: `/organizer/events/${eventId}/communications` }] : []),
-    { label: "Check-in", icon: ScanLine, to: eventId ? `/organizer/check-in?event_id=${encodeURIComponent(eventId)}` : "/organizer/check-in" },
-    ...(eventId ? [{ label: "Bib Management", icon: Package, to: `/organizer/events/${eventId}/allocations` }] : []),
+    ...(eventId && !freeEvent ? [{ label: "Communications", icon: MessageSquare, to: `/organizer/events/${eventId}/communications` }] : []),
+    ...(!freeEvent ? [{ label: "Check-in", icon: ScanLine, to: eventId ? `/organizer/check-in?event_id=${encodeURIComponent(eventId)}` : "/organizer/check-in" }] : []),
+    ...(eventId && !freeEvent ? [{ label: "Bib Management", icon: Package, to: `/organizer/events/${eventId}/allocations` }] : []),
   ];
   const comingSoonItems: NavItem[] = [
     { label: "Reports", icon: BarChart3 },

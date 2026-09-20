@@ -7,15 +7,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useOrganizerEventDashboard, useOrganizerEventOptions } from "@/hooks/useEvents";
+import { useOrganizerEventOptions } from "@/hooks/useEvents";
+import { useFreeEventLock } from "@/hooks/useFreeEventLock";
 
 const OrganizerEventCommunications = () => {
   const navigate = useNavigate();
   const { eventId } = useParams();
-  const { data, isLoading, isError, refetch, isFetching } = useOrganizerEventDashboard(eventId);
+  const { data, isLoading, isError, refetch, isFetching, locked } = useFreeEventLock(eventId);
   const { data: organizerEvents = [] } = useOrganizerEventOptions();
 
-  if (isLoading) {
+  if (isLoading || locked) {
     return <OrganizerDashboardLayout eventId={eventId}><div className="px-4 py-20 text-center text-sm text-muted-foreground">Loading event communications…</div></OrganizerDashboardLayout>;
   }
 

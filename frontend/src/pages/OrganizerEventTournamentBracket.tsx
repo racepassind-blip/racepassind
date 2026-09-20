@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, GitBranch, RefreshCw } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { OrganizerMatch } from "@/hooks/useEvents";
 import { useOrganizerEventDashboard, useOrganizerMatches } from "@/hooks/useEvents";
-import { eventSupportsTournament } from "@/data/sportConfig";
+import { eventSupportsTournament, isFreeEvent } from "@/data/sportConfig";
 
 const ROUND_ORDER = ["round of 128", "round of 64", "round of 32", "round of 16", "quarterfinal", "semifinal", "final"];
 
@@ -83,6 +83,10 @@ const OrganizerEventTournamentBracket = () => {
 
   if (isEventError || !event) {
     return <OrganizerDashboardLayout eventId={eventId}><div className="mx-auto max-w-3xl px-4 py-20 text-center"><p className="text-sm text-muted-foreground">Could not load this event.</p><Button className="mt-4" variant="outline" onClick={() => navigate("/organizer")}>Back to events</Button></div></OrganizerDashboardLayout>;
+  }
+
+  if (isFreeEvent(event.categories)) {
+    return <Navigate to={`/organizer/events/${event.id}`} replace />;
   }
 
   if (!supportsTournament) {

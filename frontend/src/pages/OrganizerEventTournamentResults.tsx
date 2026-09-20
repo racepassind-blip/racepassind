@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CalendarDays, Check, CheckCircle2, Clock3, Copy, ExternalLink, Medal, RefreshCw, Trophy } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
 import TeamStandingsCard from "@/components/TeamStandingsCard";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useOrganizerEventDashboard, useOrganizerMatches } from "@/hooks/useEvents";
-import { eventSupportsTournament } from "@/data/sportConfig";
+import { eventSupportsTournament, isFreeEvent } from "@/data/sportConfig";
 import { buildResultsUrl } from "@/lib/eventCommunication";
 import { toast } from "sonner";
 
@@ -26,6 +26,7 @@ const OrganizerEventTournamentResults = () => {
   const event = dashboard?.event;
   const supportsTournament = eventSupportsTournament(event?.sport, event?.categories);
   const { data: matches = [], isLoading: isLoadingMatches, isError: isMatchesError, refetch, isFetching } = useOrganizerMatches(eventId);
+  const freeEventLocked = Boolean(event) && isFreeEvent(event?.categories);
   const [categoryId, setCategoryId] = useState("all");
   const [resultsCopied, setResultsCopied] = useState(false);
 
@@ -41,6 +42,10 @@ const OrganizerEventTournamentResults = () => {
 
   if (isEventError || !event) {
     return <OrganizerDashboardLayout eventId={eventId}><div className="mx-auto max-w-3xl px-4 py-20 text-center"><p className="text-sm text-muted-foreground">Could not load this event.</p><Button className="mt-4" variant="outline" onClick={() => navigate("/organizer")}>Back to events</Button></div></OrganizerDashboardLayout>;
+  }
+
+  if (freeEventLocked) {
+    return <Navigate to={`/organizer/events/${event.id}`} replace />;
   }
 
   if (!supportsTournament) {

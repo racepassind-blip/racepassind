@@ -90,3 +90,17 @@ export function eventSupportsTournament(
   const hasTeam = Boolean(categories?.some((category) => category.entryType === "team"));
   return getSportConfig(sport, { hasTeamCategories: hasTeam }).supports_tournament;
 }
+
+/**
+ * True when an event is a "free event": every ticket across every category is priced at ₹0.
+ * Free events only get the core workflow (overview + registrations); paid-only tooling is locked.
+ * Returns false when categories/tickets are unknown so we never lock a paid event by mistake.
+ */
+export function isFreeEvent(
+  categories?: Array<{ tickets?: Array<{ pricePaise?: number }> }> | null,
+): boolean {
+  if (!categories || categories.length === 0) return false;
+  const tickets = categories.flatMap((category) => category.tickets ?? []);
+  if (tickets.length === 0) return false;
+  return tickets.every((ticket) => (ticket.pricePaise ?? 0) === 0);
+}

@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiRequest } from "@/lib/api";
+import { useFreeEventLock } from "@/hooks/useFreeEventLock";
 
 interface Checkpoint { id: string; eventId: string; name: string; position: number; }
 interface SuggestedAddon { addonId: string; name: string; }
@@ -17,6 +18,7 @@ interface CheckpointResponse { eventId: string; eventName: string; checkpoints: 
 const OrganizerEventCheckpoints = () => {
   const { eventId } = useParams();
   const navigate = useNavigate();
+  const { locked } = useFreeEventLock(eventId);
   const [eventName, setEventName] = useState("");
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [suggestions, setSuggestions] = useState<SuggestedAddon[]>([]);
@@ -109,6 +111,10 @@ const OrganizerEventCheckpoints = () => {
       toast.error(error instanceof Error ? error.message : "Could not delete checkpoint");
     } finally { setSaving(false); }
   };
+
+  if (locked) {
+    return <OrganizerDashboardLayout eventId={eventId}><div className="px-4 py-20 text-center text-sm text-muted-foreground">Loading…</div></OrganizerDashboardLayout>;
+  }
 
   return (
     <OrganizerDashboardLayout eventId={eventId}>

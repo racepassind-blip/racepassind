@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useOrganizerCourts, useOrganizerEventDashboard } from "@/hooks/useEvents";
-import { eventSupportsTournament } from "@/data/sportConfig";
+import { eventSupportsTournament, isFreeEvent } from "@/data/sportConfig";
+import { Navigate } from "react-router-dom";
 
 const OrganizerEventTournamentMatches = () => {
   const navigate = useNavigate();
@@ -24,6 +25,10 @@ const OrganizerEventTournamentMatches = () => {
   }
 
   const event = dashboard.event;
+  // Free events only get overview + registrations; paid-only tooling is locked.
+  if (isFreeEvent(event.categories)) {
+    return <Navigate to={`/organizer/events/${event.id}`} replace />;
+  }
   if (!supportsTournament) {
     return <OrganizerDashboardLayout eventId={event.id}><div className="mx-auto max-w-3xl px-4 py-20"><Card><CardHeader><CardTitle>Tournament tools unavailable</CardTitle><CardDescription>Tournament tools are currently unavailable for this sport.</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={() => navigate(`/organizer/events/${event.id}`)}>Back to event</Button></CardContent></Card></div></OrganizerDashboardLayout>;
   }

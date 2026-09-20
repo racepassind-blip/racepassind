@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiRequest } from "@/lib/api";
+import { useFreeEventLock } from "@/hooks/useFreeEventLock";
 
 interface Checkpoint { id: string; name: string; position: number; }
 interface Scan { scannedAt: string; checkpointName: string; }
@@ -23,6 +24,7 @@ function formatTime(value: string) {
 const OrganizerCheckinMatrix = () => {
   const { eventId } = useParams();
   const navigate = useNavigate();
+  const { locked } = useFreeEventLock(eventId);
   const [data, setData] = useState<MatrixResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -35,6 +37,10 @@ const OrganizerCheckinMatrix = () => {
   }, [eventId]);
 
   useEffect(() => { void load(); const interval = window.setInterval(() => void load(), 15000); return () => window.clearInterval(interval); }, [load]);
+
+  if (locked) {
+    return <OrganizerDashboardLayout eventId={eventId}><div className="px-4 py-20 text-center text-sm text-muted-foreground">Loading…</div></OrganizerDashboardLayout>;
+  }
 
   return (
     <OrganizerDashboardLayout eventId={eventId}>
