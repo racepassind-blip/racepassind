@@ -48,7 +48,8 @@ import AdminCommunication from "./pages/AdminCommunication";
 import Signup from "./pages/Signup";
 import Confirmation from "./pages/Confirmation";
 import NotFound from "./pages/NotFound";
-import TermsAndConditions from "./pages/TermsAndConditions";
+import PrivacyPolicy from "./pages/TermsAndConditions";
+import TermsOfService from "./pages/TermsOfService";
 import OurStory from "./pages/OurStory";
 
 const queryClient = new QueryClient();
@@ -111,7 +112,9 @@ const App = () => (
             <Route path="/organizer/events/:eventId" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventDashboard /></ProtectedRoute>} />
             <Route path="/organizer/pricing" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerPricing /></ProtectedRoute>} />
             <Route path="/organizer/setup" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerSetup /></ProtectedRoute>} />
-            <Route path="/terms-and-conditions" element={<TermsAndConditions />} />
+            <Route path="/terms-and-conditions" element={<PrivacyPolicy />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms-of-service" element={<TermsOfService />} />
             <Route path="/our-story" element={<OurStory />} />
 
             <Route path="*" element={<NotFound />} />
