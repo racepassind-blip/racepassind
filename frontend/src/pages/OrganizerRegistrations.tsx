@@ -185,15 +185,16 @@ interface RegistrationDetailDrawerProps {
   eventTickets: Array<{ id: string; name: string; categoryId: string; categoryName: string; pricePaise?: number }>;
   onClose: () => void;
   onTransferDone: (updated: OrganizerRegistration) => void;
+  onResendEmail: (registration: OrganizerRegistration) => Promise<void>;
+  resendingId: string | null;
 }
 
-function RegistrationDetailDrawer({ registration, eventTickets, onClose, onTransferDone }: RegistrationDetailDrawerProps) {
+function RegistrationDetailDrawer({ registration, eventTickets, onClose, onTransferDone, onResendEmail, resendingId }: RegistrationDetailDrawerProps) {
   const [showTransfer, setShowTransfer] = useState(false);
   const [targetTicketId, setTargetTicketId] = useState("");
   const [transferReason, setTransferReason] = useState("");
   const [transferring, setTransferring] = useState(false);
 
-  // Reset transfer state when drawer opens a new registration
   useEffect(() => {
     setShowTransfer(false);
     setTargetTicketId("");
@@ -235,81 +236,189 @@ function RegistrationDetailDrawer({ registration, eventTickets, onClose, onTrans
     ? (registration.responses.__transfer_notes as string[])
     : [];
 
+  const addonEntries = Object.entries(registration.selections ?? {}).filter(([, v]) => v.selected || (v.qty ?? 0) > 0);
+  const responseEntries = Object.entries(registration.responses ?? {}).filter(
+    ([k]) => !["full_name","email","phone","team_name","captain_name","captain_email","captain_phone","__transfer_notes"].includes(k)
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Registration detail">
       {/* backdrop */}
       <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       {/* panel */}
       <div className="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l bg-card shadow-2xl">
+
         {/* header */}
         <div className="flex items-center justify-between border-b px-5 py-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-primary">Registration detail</p>
-            <p className="mt-0.5 font-mono text-sm text-muted-foreground">{registration.registrationReference}</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-primary">Registration</p>
+            <p className="mt-0.5 font-mono text-sm font-semibold">{registration.registrationReference}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted" aria-label="Close"><X className="h-4 w-4" /></button>
         </div>
 
-        <div className="flex-1 space-y-5 p-5">
-          {/* participant */}
+        <div className="flex-1 space-y-6 p-5">
+
+          {/* ── Participant ───────────────────────────────────── */}
           <section>
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Participant</p>
-            <p className="text-base font-bold">{registration.participant.name}</p>
-            {registration.participant.email && <p className="text-sm text-muted-foreground">{registration.participant.email}</p>}
-            {registration.participant.phone && <p className="text-sm text-muted-foreground">{registration.participant.phone}</p>}
-            {registration.isManualEntry && <Badge variant="outline" className="mt-1">Manual entry</Badge>}
+            <div className="rounded-lg border bg-muted/20 p-4 space-y-1">
+              <p className="text-base font-bold">{registration.participant.name}</p>
+              {registration.participant.email && (
+                <p className="text-sm text-muted-foreground">{registration.participant.email}</p>
+              )}
+              {registration.participant.phone && (
+                <p className="text-sm text-muted-foreground">{registration.participant.phone}</p>
+              )}
+              <div className="flex flex-wrap gap-2 pt-1">
+                {registration.isManualEntry && <Badge variant="outline">Manual entry</Badge>}
+                {registration.source === "manual" && !registration.isManualEntry && <Badge variant="outline">Offline</Badge>}
+              </div>
+            </div>
           </section>
 
-          {/* team members */}
+          {/* ── Team members ──────────────────────────────────── */}
           {registration.participants && registration.participants.length > 1 && (
             <section>
-              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Team members</p>
-              <div className="space-y-1">
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Team / Group members</p>
+              <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
                 {registration.participants.map((m) => (
-                  <p key={m.index} className="text-sm">{m.participant.name}{m.participant.email ? ` · ${m.participant.email}` : ""}</p>
+                  <div key={m.index} className="text-sm">
+                    <span className="font-medium">{m.participant.name}</span>
+                    {m.participant.email && <span className="text-muted-foreground"> · {m.participant.email}</span>}
+                    {m.participant.phone && <span className="text-muted-foreground"> · {m.participant.phone}</span>}
+                  </div>
                 ))}
               </div>
             </section>
           )}
 
-          {/* category & amount */}
-          <section className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs text-muted-foreground">Category</p>
-              <p className="mt-1 font-semibold">{registration.ticket.category ?? "—"}</p>
-              <p className="text-xs text-muted-foreground">{registration.ticket.name}</p>
+          {/* ── Registration & Payment status ─────────────────── */}
+          <section>
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Status</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+                <p className="text-xs text-muted-foreground">Registration</p>
+                {registrationBadge(registration.status)}
+                <p className="text-xs text-muted-foreground">Registered {formatDate(registration.createdAt)}</p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+                <p className="text-xs text-muted-foreground">Payment</p>
+                {paymentBadge(registration.paymentStatus)}
+                {registration.submittedAt && (
+                  <p className="text-xs text-muted-foreground">Submitted {formatDate(registration.submittedAt)}</p>
+                )}
+                {registration.reviewedAt && (
+                  <p className="text-xs text-muted-foreground">Reviewed {formatDate(registration.reviewedAt)}</p>
+                )}
+              </div>
             </div>
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs text-muted-foreground">Amount</p>
-              <p className="mt-1 font-semibold">{formatINR(registration.amountPaise)}</p>
-              {registration.receivedAmountPaise !== null && (
-                <p className="text-xs text-muted-foreground">Received {formatINR(registration.receivedAmountPaise)}</p>
-              )}
+            {registration.decisionReason && (
+              <div className="mt-2 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive">
+                <span className="font-semibold">Decision note:</span> {registration.decisionReason}
+              </div>
+            )}
+          </section>
+
+          {/* ── Category & Amount ─────────────────────────────── */}
+          <section>
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Category & Amount</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Category</p>
+                <p className="mt-1 font-semibold">{registration.ticket.category ?? "—"}</p>
+                <p className="text-xs text-muted-foreground">{registration.ticket.name}</p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Amount</p>
+                <p className="mt-1 font-semibold">{formatINR(registration.amountPaise)}</p>
+                {registration.receivedAmountPaise !== null && (
+                  <p className="text-xs text-muted-foreground">Received {formatINR(registration.receivedAmountPaise)}</p>
+                )}
+              </div>
             </div>
           </section>
 
-          {/* status row */}
-          <section className="flex flex-wrap gap-2">
-            {registrationBadge(registration.status)}
-            {paymentBadge(registration.paymentStatus)}
-            {registration.checkInStatus === "checked_in" && <Badge variant="outline">Checked in</Badge>}
+          {/* ── Check-in ─────────────────────────────────────── */}
+          <section>
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Check-in</p>
+            <div className="rounded-lg border bg-muted/20 p-3 flex items-center justify-between">
+              <div>
+                {registration.checkInStatus === "checked_in"
+                  ? <p className="text-sm font-semibold text-emerald-600">✓ Checked in{registration.checkedInAt ? ` on ${formatDate(registration.checkedInAt)}` : ""}</p>
+                  : <p className="text-sm text-muted-foreground">Not checked in yet</p>}
+              </div>
+            </div>
           </section>
 
-          {/* responses */}
-          {Object.entries(registration.responses ?? {}).filter(([k]) => !["full_name","email","phone","team_name","captain_name","captain_email","captain_phone","__transfer_notes"].includes(k)).length > 0 && (
+          {/* ── UTR / Payment reference ───────────────────────── */}
+          {registration.utrReference && (
             <section>
-              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Form responses</p>
-              <div className="space-y-1 rounded-lg border bg-muted/20 p-3">
-                {Object.entries(registration.responses ?? {})
-                  .filter(([k]) => !["full_name","email","phone","team_name","captain_name","captain_email","captain_phone","__transfer_notes"].includes(k))
-                  .map(([k, v]) => (
-                    <p key={k} className="text-sm"><span className="font-medium">{k.replaceAll("_", " ")}:</span> {String(v)}</p>
-                  ))}
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Payment reference (UTR)</p>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="font-mono text-sm">{registration.utrReference}</p>
               </div>
             </section>
           )}
 
-          {/* transfer history */}
+          {/* ── Add-ons ───────────────────────────────────────── */}
+          {addonEntries.length > 0 && (
+            <section>
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Add-ons selected</p>
+              <div className="space-y-1 rounded-lg border bg-muted/20 p-3">
+                {addonEntries.map(([k, v]) => (
+                  <p key={k} className="text-sm">
+                    <span className="font-medium">{k.replaceAll("_", " ")}:</span>{" "}
+                    {v.selected ?? (v.qty !== undefined ? `×${v.qty}` : "—")}
+                  </p>
+                ))}
+                {registration.computedTotal.addonTotalPaise !== undefined && registration.computedTotal.addonTotalPaise > 0 && (
+                  <p className="mt-1 text-xs font-semibold text-muted-foreground border-t pt-1">Add-on total: {formatINR(registration.computedTotal.addonTotalPaise)}</p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* ── Form responses ────────────────────────────────── */}
+          {responseEntries.length > 0 && (
+            <section>
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Form responses</p>
+              <div className="space-y-1 rounded-lg border bg-muted/20 p-3">
+                {responseEntries.map(([k, v]) => (
+                  <p key={k} className="text-sm">
+                    <span className="font-medium">{k.replaceAll("_", " ")}:</span> {String(v)}
+                  </p>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ── Email ─────────────────────────────────────────── */}
+          <section>
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Confirmation email</p>
+            <div className="rounded-lg border bg-muted/20 p-3 flex items-center justify-between gap-3">
+              <div>
+                {emailBadge(registration.emailStatus)}
+                {registration.participant.email
+                  ? <p className="mt-1 text-xs text-muted-foreground">{registration.participant.email}</p>
+                  : <p className="mt-1 text-xs text-muted-foreground">No email address on record</p>}
+              </div>
+              {registration.participant.email && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2 shrink-0"
+                  disabled={resendingId === registration.id}
+                  onClick={() => void onResendEmail(registration)}
+                >
+                  <Mail className="h-3.5 w-3.5" />
+                  {resendingId === registration.id ? "Sending…" : registration.emailStatus === "SENT" ? "Resend email" : "Send email"}
+                </Button>
+              )}
+            </div>
+          </section>
+
+          {/* ── Transfer history ──────────────────────────────── */}
           {transferNotes.length > 0 && (
             <section>
               <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Transfer history</p>
@@ -321,15 +430,7 @@ function RegistrationDetailDrawer({ registration, eventTickets, onClose, onTrans
             </section>
           )}
 
-          {/* UTR */}
-          {registration.utrReference && (
-            <section>
-              <p className="mb-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">Payment reference (UTR)</p>
-              <p className="font-mono text-sm">{registration.utrReference}</p>
-            </section>
-          )}
-
-          {/* transfer panel */}
+          {/* ── Transfer category ─────────────────────────────── */}
           {!showTransfer ? (
             <button
               type="button"
@@ -789,8 +890,16 @@ const OrganizerRegistrations = () => {
             <TableHeader><TableRow><TableHead>Participant</TableHead>{!eventScoped && <TableHead>Event</TableHead>}<TableHead>Tier</TableHead><TableHead>Amount</TableHead><TableHead>Payment</TableHead><TableHead>Registration</TableHead><TableHead className="hidden">Email</TableHead><TableHead className="hidden">Check-in</TableHead><TableHead>UTR/reference</TableHead><TableHead className="text-right">Payment decision</TableHead></TableRow></TableHeader>
             <TableBody>{registrations.map((registration) => {
               const isReviewable = registration.status === "awaiting_payment" || registration.status === "pending_verification";
-              return <TableRow key={registration.id}>
-                <TableCell><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{registration.participant.name}</p>{registration.isManualEntry && <Badge variant="outline">Manual entry</Badge>}</div>{registration.participants && registration.participants.length > 1 && <p className="text-xs text-muted-foreground">Members: {registration.participants.map((member) => member.participant.name).join(" · ")}</p>}<p className="text-xs text-muted-foreground">{registration.participant.email ?? registration.participant.phone ?? "No contact"}</p><p className="font-mono text-xs text-muted-foreground">{registration.registrationReference}</p>{dynamicRegistrationSummary(registration)}</TableCell>
+              return <TableRow
+                key={registration.id}
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={(e) => {
+                  // don't open drawer when clicking approve/reject buttons
+                  if ((e.target as HTMLElement).closest("button")) return;
+                  setDetailRegistration(registration);
+                }}
+              >
+                <TableCell><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-primary underline-offset-2 hover:underline">{registration.participant.name}</p>{registration.isManualEntry && <Badge variant="outline">Manual entry</Badge>}</div>{registration.participants && registration.participants.length > 1 && <p className="text-xs text-muted-foreground">Members: {registration.participants.map((member) => member.participant.name).join(" · ")}</p>}<p className="text-xs text-muted-foreground">{registration.participant.email ?? registration.participant.phone ?? "No contact"}</p><p className="font-mono text-xs text-muted-foreground">{registration.registrationReference}</p>{dynamicRegistrationSummary(registration)}</TableCell>
                 {!eventScoped && <TableCell><p className="max-w-44 truncate">{registration.event.name}</p></TableCell>}
                 <TableCell><p>{registration.ticket.name}</p><p className="text-xs text-muted-foreground">{registration.ticket.category ?? "—"}</p></TableCell>
                 <TableCell className="font-semibold"><p>{formatINR(registration.amountPaise)}</p>{registration.receivedAmountPaise !== null && <p className="text-xs font-normal text-accent">Received {formatINR(registration.receivedAmountPaise)}</p>}</TableCell>
@@ -802,7 +911,6 @@ const OrganizerRegistrations = () => {
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
                     <TooltipProvider>
-                      <Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground" onClick={() => setDetailRegistration(registration)}><ArrowRightLeft className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>View / Transfer</p></TooltipContent></Tooltip>
                       {isReviewable && <>
                         <Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => { setDecisionTarget({ id: registration.id, decision: "approve" }); setReason(""); }} disabled={actionId !== null}><Check className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Approve</p></TooltipContent></Tooltip>
                         <Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => { setDecisionTarget({ id: registration.id, decision: "reject" }); setReason(""); }} disabled={actionId !== null}><X className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Reject</p></TooltipContent></Tooltip>
@@ -827,6 +935,8 @@ const OrganizerRegistrations = () => {
         eventTickets={eventTicketsForTransfer}
         onClose={() => setDetailRegistration(null)}
         onTransferDone={handleTransferDone}
+        onResendEmail={resendEmail}
+        resendingId={resendId}
       />
 
     </OrganizerDashboardLayout>

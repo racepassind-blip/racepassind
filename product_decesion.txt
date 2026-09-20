@@ -1,0 +1,4 @@
+But it's worth confirming against your intent, because there's a subtle edge case: an organizer could create a mostly-free event with one token paid ticket to unlock all paid features while paying fees on very few registrations. If you want to guard against that, the options are:
+
+Keep current behavior (any paid ticket → full paid features) — simplest, matches the pricing definition.
+Block mixed pricing at event creation — force an event to be either all-free or all-paid, so the free/paid distinction is always clean.
