@@ -216,3 +216,10 @@ class ClaimRegistrationIn(BaseModel):
         if not normalized or not normalized.isalnum():
             raise ValueError("Claim code is invalid")
         return normalized
+
+
+class CategoryTransferIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_ticket_id: UUID
+    reason: str | None = Field(default=None, max_length=500)

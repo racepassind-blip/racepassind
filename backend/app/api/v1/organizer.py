@@ -13,7 +13,7 @@ from app.api.deps import get_authorized_event, get_authorized_organization, get_
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
 from app.schemas.checkins import CheckpointCreateIn, CheckpointUpdateIn
-from app.schemas.registrations import ManualRegistrationCreateIn, PaymentDecisionIn
+from app.schemas.registrations import CategoryTransferIn, ManualRegistrationCreateIn, PaymentDecisionIn
 from app.services.auth_service import utc_now
 from app.services.checkpoint_service import (
     create_event_checkpoint,
@@ -33,6 +33,7 @@ from app.services.registration_service import (
     list_organizer_registrations,
     serialize_organizer_registration,
     create_manual_registration,
+    transfer_registration_category,
 )
 from app.services.image_validation import ImageValidationError
 from app.services.media_service import resolve_media_url, upload_media
@@ -532,6 +533,51 @@ def reject_registration(
 ) -> dict:
     get_authorized_event(db, user, event_id)
     return _decide_registration(event_id, registration_id, "reject", payload, user, db, request.client.host if request.client else "unknown")
+
+
+@router.post("/events/{event_id}/registrations/{registration_id}/transfer-category")
+def transfer_registration_category_endpoint(
+    event_id: UUID,
+    registration_id: UUID,
+    payload: CategoryTransferIn,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Transfer a participant to a different category / ticket within the same event.
+
+    Returns the updated registration in the standard organiser serialisation.
+    A 409 is returned for entry-type mismatches; a 404 if the registration or
+    target ticket is not found. Sold-out targets are accepted with a warning
+    embedded in the response body.
+    """
+    get_authorized_event(db, user, event_id)
+    try:
+        registration, event = transfer_registration_category(
+            db,
+            user,
+            event_id,
+            registration_id,
+            target_ticket_id=payload.target_ticket_id,
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from exc
+        if "already in this category" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg) from exc
+        if "entry type mismatch" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg) from exc
+    result = serialize_organizer_registration(registration, event)
+    # Surface a sold-out warning without blocking the response
+    notes: list = registration.responses.get("__transfer_notes", [])
+    sold_out_warning = any("⚠" in note for note in notes[-1:])
+    result["transferWarning"] = (
+        "Target category was at or over capacity at the time of transfer." if sold_out_warning else None
+    )
+    return result
 
 
 @router.get("/pricing")

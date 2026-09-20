@@ -1622,3 +1622,192 @@ def load_registration_batch(db: Session, registration: Registration) -> list[Reg
         .where(OrderItem.registration_id == registration.id)
     )
     return _registrations_for_order(db, order.id) if order is not None else [registration]
+
+
+# ---------------------------------------------------------------------------
+# Category transfer
+# ---------------------------------------------------------------------------
+
+def transfer_registration_category(
+    db: Session,
+    user,
+    event_id: UUID,
+    registration_id: UUID,
+    *,
+    target_ticket_id: UUID,
+    reason: str | None = None,
+) -> tuple[Registration, Event]:
+    """Move a registration to a different ticket / category within the same event.
+
+    Business rules
+    ──────────────
+    • All registration statuses are eligible.
+    • Entry-type mismatches (e.g. singles → team) are blocked.
+    • Sold-out target tickets are allowed but a warning is appended to the
+      audit metadata so the caller can surface it to the organiser.
+    • Pricing fields (total_amount_paise, platform_fee_paise,
+      participant_total_paise) are recomputed against the NEW ticket price.
+    • The old ticket's quantity_sold is decremented; the new ticket's
+      quantity_sold is incremented.
+    • Bib / allocation number is cleared (reset to unassigned) because
+      number ranges differ per category.
+    • An audit record is written with before/after snapshot.
+    • The payment record (if any) has expected_amount_paise updated to the
+      new participant total so the organiser sees the right "expected" amount.
+    • A human-readable transfer note is appended to registration.responses
+      under "__transfer_notes" so the organiser history is preserved.
+    """
+    from models import EventCategory  # local import to avoid circular at module level
+
+    # ── load + lock registration ────────────────────────────────────────────
+    registration = db.scalar(
+        _scoped_registration_query(user)
+        .where(
+            Registration.id == registration_id,
+            Registration.event_id == event_id,
+        )
+        .with_for_update()
+    )
+    if registration is None:
+        raise ValueError("Registration not found")
+
+    event = db.scalar(select(Event).where(Event.id == event_id))
+    if event is None:
+        raise ValueError("Event not found")
+
+    # ── load target ticket ──────────────────────────────────────────────────
+    target_ticket = db.scalar(
+        select(Ticket).where(Ticket.id == target_ticket_id).with_for_update()
+    )
+    if target_ticket is None or target_ticket.event_id != event_id:
+        raise ValueError("Target ticket not found for this event")
+
+    if target_ticket.id == registration.ticket_id:
+        raise ValueError("Participant is already in this category")
+
+    # ── load old ticket ─────────────────────────────────────────────────────
+    old_ticket = db.scalar(
+        select(Ticket).where(Ticket.id == registration.ticket_id).with_for_update()
+    )
+    if old_ticket is None:
+        raise ValueError("Original ticket not found")
+
+    # ── entry-type compatibility ─────────────────────────────────────────────
+    old_category = db.scalar(
+        select(EventCategory).where(EventCategory.id == old_ticket.category_id)
+    ) if old_ticket.category_id else None
+
+    target_category = db.scalar(
+        select(EventCategory).where(EventCategory.id == target_ticket.category_id)
+    ) if target_ticket.category_id else None
+
+    old_entry_type = old_category.entry_type if old_category else "singles"
+    new_entry_type = target_category.entry_type if target_category else "singles"
+
+    if old_entry_type != new_entry_type:
+        raise ValueError(
+            f"Cannot transfer: entry type mismatch "
+            f"('{old_entry_type}' → '{new_entry_type}'). "
+            f"Please remove and re-register with the correct entry format."
+        )
+
+    # ── sold-out warning (non-blocking) ─────────────────────────────────────
+    sold_out = target_ticket.available <= 0
+    now = utc_now()
+
+    # ── recompute pricing ────────────────────────────────────────────────────
+    new_base_paise = (target_ticket.price or 0) * (registration.quantity or 1)
+    pricing = compute_participant_pricing(
+        db,
+        base_amount_paise=new_base_paise,
+        fee_bearer=event.platform_fee_bearer or "ORGANIZER",
+    )
+    old_base_paise = registration.total_amount_paise or 0
+    price_diff_paise = new_base_paise - old_base_paise
+
+    # ── snapshot for audit ───────────────────────────────────────────────────
+    old_snapshot = {
+        "ticketId": str(old_ticket.id),
+        "ticketName": old_ticket.name,
+        "categoryName": old_category.name if old_category else None,
+        "totalAmountPaise": old_base_paise,
+        "platformFeePaise": registration.platform_fee_paise,
+        "allocationNumber": registration.allocation_number,
+    }
+    new_snapshot = {
+        "ticketId": str(target_ticket.id),
+        "ticketName": target_ticket.name,
+        "categoryName": target_category.name if target_category else None,
+        "totalAmountPaise": new_base_paise,
+        "platformFeePaise": pricing["platformFeePaise"],
+    }
+
+    # ── update ticket inventory ──────────────────────────────────────────────
+    old_ticket.quantity_sold = max(0, (old_ticket.quantity_sold or 0) - (registration.quantity or 1))
+    target_ticket.quantity_sold = (target_ticket.quantity_sold or 0) + (registration.quantity or 1)
+
+    # ── update registration ──────────────────────────────────────────────────
+    registration.ticket_id = target_ticket.id
+    registration.category_id = target_ticket.category_id
+    registration.total_amount_paise = new_base_paise
+    registration.unit_price_paise = target_ticket.price or 0
+    registration.platform_fee_paise = pricing["platformFeePaise"]
+    registration.platform_fee_bearer = pricing["platformFeeBearer"]
+    registration.participant_total_paise = pricing["participantTotalPaise"]
+
+    # clear allocation — number ranges differ per category
+    registration.allocation_number = None
+    registration.allocation_status = "unassigned"
+    registration.allocation_assigned_at = None
+    registration.allocation_updated_at = None
+
+    # ── update payment expected amount ───────────────────────────────────────
+    payment = db.scalar(
+        select(Payment).where(Payment.registration_id == registration.id).with_for_update()
+    )
+    if payment is not None:
+        payment.expected_amount_paise = pricing["participantTotalPaise"]
+
+    # ── append transfer note to responses ────────────────────────────────────
+    transfer_note = (
+        f"[{now.strftime('%Y-%m-%d %H:%M')} UTC] Transferred from "
+        f"'{old_category.name if old_category else old_ticket.name}' → "
+        f"'{target_category.name if target_category else target_ticket.name}'."
+    )
+    if price_diff_paise > 0:
+        transfer_note += (
+            f" Additional amount owed: ₹{price_diff_paise / 100:.2f}. "
+            "Please collect from the participant directly."
+        )
+    elif price_diff_paise < 0:
+        transfer_note += (
+            f" Refund applicable: ₹{abs(price_diff_paise) / 100:.2f}. "
+            "Issue refund to the participant directly."
+        )
+    if reason:
+        transfer_note += f" Reason: {reason}"
+    if sold_out:
+        transfer_note += " ⚠ Target category was at capacity at the time of transfer."
+
+    existing_notes: list = list(registration.responses.get("__transfer_notes", []))
+    existing_notes.append(transfer_note)
+    registration.responses = {**registration.responses, "__transfer_notes": existing_notes}
+
+    # ── audit ────────────────────────────────────────────────────────────────
+    record_audit(
+        db,
+        actor_user_id=user.id,
+        action="registration_category_transferred",
+        resource_type="registration",
+        resource_id=registration.id,
+        metadata={
+            "eventId": str(event_id),
+            "reason": reason,
+            "priceDiffPaise": price_diff_paise,
+            "soldOutWarning": sold_out,
+            "before": old_snapshot,
+            "after": new_snapshot,
+        },
+    )
+    db.commit()
+    return _reload_organizer_registration(db, registration.id)

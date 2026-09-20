@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, Clock3, Download, Mail, ScanLine, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Clock3, Download, Mail, ScanLine, Search, UserPlus, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -68,6 +68,7 @@ interface OrganizerRegistration {
   responses: Record<string, unknown>;
   selections: Record<string, { selected?: string; qty?: number }>;
   computedTotal: { addonTotalPaise?: number; totalPaise?: number };
+  transferWarning?: string | null;
 }
 
 interface RegistrationPage {
@@ -177,6 +178,225 @@ function dynamicRegistrationSummary(registration: OrganizerRegistration) {
   return <details className="mt-2 text-xs"><summary className="cursor-pointer text-primary">Participant details</summary><div className="mt-2 space-y-1 rounded-md bg-muted/40 p-2">{responseEntries.map(([key, value]) => <p key={key}><span className="font-medium">{key.replaceAll("_", " ")}:</span> {String(value)}</p>)}{addonEntries.map(([key, value]) => <p key={key}><span className="font-medium">{key.replaceAll("_", " ")}:</span> {value.selected ?? value.qty ?? "—"}</p>)}{registration.computedTotal.addonTotalPaise !== undefined && <p className="font-medium">Add-ons: {formatINR(registration.computedTotal.addonTotalPaise)}</p>}</div></details>;
 }
 
+// ─── Registration detail drawer ───────────────────────────────────────────────
+
+interface RegistrationDetailDrawerProps {
+  registration: OrganizerRegistration | null;
+  eventTickets: Array<{ id: string; name: string; categoryId: string; categoryName: string; pricePaise?: number }>;
+  onClose: () => void;
+  onTransferDone: (updated: OrganizerRegistration) => void;
+}
+
+function RegistrationDetailDrawer({ registration, eventTickets, onClose, onTransferDone }: RegistrationDetailDrawerProps) {
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [targetTicketId, setTargetTicketId] = useState("");
+  const [transferReason, setTransferReason] = useState("");
+  const [transferring, setTransferring] = useState(false);
+
+  // Reset transfer state when drawer opens a new registration
+  useEffect(() => {
+    setShowTransfer(false);
+    setTargetTicketId("");
+    setTransferReason("");
+  }, [registration?.id]);
+
+  if (!registration) return null;
+
+  const transferableTickets = eventTickets.filter((t) => t.id !== registration.ticket.id);
+
+  const doTransfer = async () => {
+    if (!targetTicketId) { toast.error("Select a target category first."); return; }
+    setTransferring(true);
+    try {
+      const result = await apiRequest<OrganizerRegistration>(
+        `/organizer/events/${registration.event.id}/registrations/${registration.id}/transfer-category`,
+        { method: "POST", body: JSON.stringify({ target_ticket_id: targetTicketId, reason: transferReason.trim() || null }) },
+      );
+      if (result.transferWarning) {
+        toast.warning(`Transferred. Note: ${result.transferWarning}`);
+      } else {
+        toast.success("Participant transferred to new category.");
+      }
+      onTransferDone(result);
+      setShowTransfer(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Transfer failed.");
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  const targetTicket = eventTickets.find((t) => t.id === targetTicketId);
+  const currentPaise = registration.amountPaise ?? 0;
+  const newPaise = targetTicket?.pricePaise ?? null;
+  const diffPaise = newPaise !== null ? newPaise - currentPaise : null;
+
+  const transferNotes: string[] = Array.isArray(registration.responses.__transfer_notes)
+    ? (registration.responses.__transfer_notes as string[])
+    : [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Registration detail">
+      {/* backdrop */}
+      <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      {/* panel */}
+      <div className="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l bg-card shadow-2xl">
+        {/* header */}
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-primary">Registration detail</p>
+            <p className="mt-0.5 font-mono text-sm text-muted-foreground">{registration.registrationReference}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted" aria-label="Close"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="flex-1 space-y-5 p-5">
+          {/* participant */}
+          <section>
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Participant</p>
+            <p className="text-base font-bold">{registration.participant.name}</p>
+            {registration.participant.email && <p className="text-sm text-muted-foreground">{registration.participant.email}</p>}
+            {registration.participant.phone && <p className="text-sm text-muted-foreground">{registration.participant.phone}</p>}
+            {registration.isManualEntry && <Badge variant="outline" className="mt-1">Manual entry</Badge>}
+          </section>
+
+          {/* team members */}
+          {registration.participants && registration.participants.length > 1 && (
+            <section>
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Team members</p>
+              <div className="space-y-1">
+                {registration.participants.map((m) => (
+                  <p key={m.index} className="text-sm">{m.participant.name}{m.participant.email ? ` · ${m.participant.email}` : ""}</p>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* category & amount */}
+          <section className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Category</p>
+              <p className="mt-1 font-semibold">{registration.ticket.category ?? "—"}</p>
+              <p className="text-xs text-muted-foreground">{registration.ticket.name}</p>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Amount</p>
+              <p className="mt-1 font-semibold">{formatINR(registration.amountPaise)}</p>
+              {registration.receivedAmountPaise !== null && (
+                <p className="text-xs text-muted-foreground">Received {formatINR(registration.receivedAmountPaise)}</p>
+              )}
+            </div>
+          </section>
+
+          {/* status row */}
+          <section className="flex flex-wrap gap-2">
+            {registrationBadge(registration.status)}
+            {paymentBadge(registration.paymentStatus)}
+            {registration.checkInStatus === "checked_in" && <Badge variant="outline">Checked in</Badge>}
+          </section>
+
+          {/* responses */}
+          {Object.entries(registration.responses ?? {}).filter(([k]) => !["full_name","email","phone","team_name","captain_name","captain_email","captain_phone","__transfer_notes"].includes(k)).length > 0 && (
+            <section>
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Form responses</p>
+              <div className="space-y-1 rounded-lg border bg-muted/20 p-3">
+                {Object.entries(registration.responses ?? {})
+                  .filter(([k]) => !["full_name","email","phone","team_name","captain_name","captain_email","captain_phone","__transfer_notes"].includes(k))
+                  .map(([k, v]) => (
+                    <p key={k} className="text-sm"><span className="font-medium">{k.replaceAll("_", " ")}:</span> {String(v)}</p>
+                  ))}
+              </div>
+            </section>
+          )}
+
+          {/* transfer history */}
+          {transferNotes.length > 0 && (
+            <section>
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Transfer history</p>
+              <div className="space-y-2">
+                {transferNotes.map((note, i) => (
+                  <p key={i} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">{note}</p>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* UTR */}
+          {registration.utrReference && (
+            <section>
+              <p className="mb-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">Payment reference (UTR)</p>
+              <p className="font-mono text-sm">{registration.utrReference}</p>
+            </section>
+          )}
+
+          {/* transfer panel */}
+          {!showTransfer ? (
+            <button
+              type="button"
+              onClick={() => setShowTransfer(true)}
+              disabled={transferableTickets.length === 0}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary/40 py-3 text-sm font-semibold text-primary transition-colors hover:border-primary hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ArrowRightLeft className="h-4 w-4" />
+              Transfer to different category
+            </button>
+          ) : (
+            <section className="rounded-xl border bg-muted/20 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold">Transfer category</p>
+                <button type="button" onClick={() => setShowTransfer(false)} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Target category / ticket</label>
+                <select
+                  value={targetTicketId}
+                  onChange={(e) => setTargetTicketId(e.target.value)}
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  aria-label="Select target category"
+                >
+                  <option value="">Select a category…</option>
+                  {transferableTickets.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.categoryName} — {t.name}{t.pricePaise !== undefined ? ` (${formatINR(t.pricePaise)})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* price diff preview */}
+              {diffPaise !== null && (
+                <div className={`rounded-lg border p-3 text-sm ${diffPaise > 0 ? "border-amber-200 bg-amber-50 text-amber-900" : diffPaise < 0 ? "border-blue-200 bg-blue-50 text-blue-900" : "border-muted bg-muted/30 text-muted-foreground"}`}>
+                  {diffPaise > 0 && <p><span className="font-bold">₹{(diffPaise / 100).toFixed(2)} additional amount owed</span> — collect from participant directly via UPI.</p>}
+                  {diffPaise < 0 && <p><span className="font-bold">₹{(Math.abs(diffPaise) / 100).toFixed(2)} refund applicable</span> — issue to participant directly.</p>}
+                  {diffPaise === 0 && <p>No price difference — same amount as current category.</p>}
+                  <p className="mt-1 text-xs opacity-75">Platform fee will be recalculated on the new amount.</p>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Reason (optional)</label>
+                <Textarea
+                  value={transferReason}
+                  onChange={(e) => setTransferReason(e.target.value)}
+                  placeholder="e.g. participant requested category change"
+                  maxLength={500}
+                  className="min-h-[70px] text-sm"
+                />
+              </div>
+
+              <Button onClick={() => void doTransfer()} disabled={!targetTicketId || transferring} className="w-full gap-2">
+                <ArrowRightLeft className="h-4 w-4" />
+                {transferring ? "Transferring…" : "Confirm transfer"}
+              </Button>
+            </section>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const OrganizerRegistrations = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -212,6 +432,7 @@ const OrganizerRegistrations = () => {
   const [actionId, setActionId] = useState<string | null>(null);
   const [resendId, setResendId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [detailRegistration, setDetailRegistration] = useState<OrganizerRegistration | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -271,6 +492,13 @@ const OrganizerRegistrations = () => {
   );
   const selectedCategory = categories.find((category) => category.id === filters.categoryId);
   const selectedTicket = tickets.find((ticket) => ticket.id === filters.ticketId);
+  // Flat ticket list for the transfer dialog — price unknown from event-options, backend recomputes anyway
+  const eventTicketsForTransfer = useMemo(
+    () => categories.flatMap((cat) =>
+      cat.tickets.map((t) => ({ id: t.id, name: t.name, categoryId: cat.id, categoryName: cat.name }))
+    ),
+    [categories],
+  );
   const activeFilterCount = [
     filters.categoryId,
     filters.ticketId,
@@ -417,6 +645,11 @@ const OrganizerRegistrations = () => {
     } finally {
       setResendId(null);
     }
+  };
+
+  const handleTransferDone = (updated: OrganizerRegistration) => {
+    setRegistrations((prev) => prev.map((r) => r.id === updated.id ? updated : r));
+    setDetailRegistration(updated);
   };
 
   return (
@@ -566,7 +799,18 @@ const OrganizerRegistrations = () => {
                 <TableCell className="hidden"><div className="space-y-1">{emailBadge(registration.emailStatus)}{registration.participant.email && <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => void resendEmail(registration)} disabled={resendId === registration.id}><Mail className="h-3 w-3" />{resendId === registration.id ? "Sending…" : registration.emailStatus === "SENT" ? "Resend" : "Send"}</Button>}</div></TableCell>
                 <TableCell className="hidden">{registration.checkInStatus === "checked_in" ? <span className="text-xs font-medium text-accent">Checked in</span> : <span className="text-xs text-muted-foreground">Not checked in</span>}</TableCell>
                 <TableCell>{registration.utrReference ? <span className="font-mono text-sm">{registration.utrReference}</span> : <span className="text-xs text-muted-foreground">Not provided</span>}</TableCell>
-                <TableCell className="text-right">{isReviewable ? <div className="flex justify-end gap-1"><TooltipProvider><Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => { setDecisionTarget({ id: registration.id, decision: "approve" }); setReason(""); }} disabled={actionId !== null}><Check className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Approve</p></TooltipContent></Tooltip><Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => { setDecisionTarget({ id: registration.id, decision: "reject" }); setReason(""); }} disabled={actionId !== null}><X className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Reject</p></TooltipContent></Tooltip></TooltipProvider></div> : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />No action</span>}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <TooltipProvider>
+                      <Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground" onClick={() => setDetailRegistration(registration)}><ArrowRightLeft className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>View / Transfer</p></TooltipContent></Tooltip>
+                      {isReviewable && <>
+                        <Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => { setDecisionTarget({ id: registration.id, decision: "approve" }); setReason(""); }} disabled={actionId !== null}><Check className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Approve</p></TooltipContent></Tooltip>
+                        <Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => { setDecisionTarget({ id: registration.id, decision: "reject" }); setReason(""); }} disabled={actionId !== null}><X className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Reject</p></TooltipContent></Tooltip>
+                      </>}
+                      {!isReviewable && <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />—</span>}
+                    </TooltipProvider>
+                  </div>
+                </TableCell>
               </TableRow>;
             })}</TableBody>
           </Table>}
@@ -577,6 +821,14 @@ const OrganizerRegistrations = () => {
           <div className="flex gap-2"><Button variant="outline" size="sm" onClick={goPrevious} disabled={cursorHistory.length === 0 || loading}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" onClick={goNext} disabled={!nextCursor || loading}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div>
         </div>
       </div>
+
+      <RegistrationDetailDrawer
+        registration={detailRegistration}
+        eventTickets={eventTicketsForTransfer}
+        onClose={() => setDetailRegistration(null)}
+        onTransferDone={handleTransferDone}
+      />
+
     </OrganizerDashboardLayout>
   );
 };
