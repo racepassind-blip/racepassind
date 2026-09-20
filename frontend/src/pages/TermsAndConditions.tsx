@@ -267,7 +267,7 @@ const TermsAndConditions = () => {
                 <p>
                   <strong>SportPass India</strong>
                 </p>
-                <p className="mt-1">Email: support@sportpass.in</p>
+                <p className="mt-1">Email: sportpassind@gmail.com</p>
               </div>
 
               <div className="pt-6 pb-2">

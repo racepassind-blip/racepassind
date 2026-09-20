@@ -36,6 +36,7 @@ export const sportConfig = {
     numberEnabled: true,
     numberLabel: "Jersey Number",
     scope: "team_member",
+    message: "Organize singles, doubles, and mixed doubles tournaments with ease. Track matches, scores, and results with built-in tournament management.",
   },
   tennis: {
     participant_label: "Player",

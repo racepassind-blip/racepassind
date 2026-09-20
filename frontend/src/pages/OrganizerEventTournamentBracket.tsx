@@ -99,7 +99,7 @@ const OrganizerEventTournamentBracket = () => {
                 Upgrade to a paid event to view and share tournament brackets and draws.
               </p>
               <p className="text-xs text-muted-foreground">
-                Need custom tournament features? <a href="mailto:hello@sportpass.in" className="font-medium text-primary hover:underline">Contact SportPass India</a> for custom pricing.
+                Need custom tournament features? <a href="mailto:sportpassind@gmail.com" className="font-medium text-primary hover:underline">Contact SportPass India</a> for custom pricing.
               </p>
               <Button variant="outline" onClick={() => navigate(`/organizer/events/${event.id}`)}>Back to event</Button>
             </CardContent>

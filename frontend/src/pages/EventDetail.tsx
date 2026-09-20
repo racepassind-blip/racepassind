@@ -107,6 +107,7 @@ const EventDetail = () => {
   const eventSportConfig = getSportConfig(event.category);
   const hasNumberAllocation = eventSportConfig.numberEnabled;
   const numberLabel = eventSportConfig.numberLabel || "Bib Number";
+  const sportMessage = eventSportConfig.message;
 
   return (
     <Layout>
@@ -161,6 +162,18 @@ const EventDetail = () => {
               </div>
               <Button variant="outline" className="mt-4 gap-2" onClick={() => navigate(`/event/${encodeURIComponent(id ?? "")}/results`)}><Trophy className="h-4 w-4" /> View public results</Button>
             </section>
+
+            {/* Sport-Specific Message */}
+            {sportMessage && (
+              <section>
+                <div className="flex items-start gap-3 rounded-xl border bg-card p-4">
+                  <Info className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-sm text-muted-foreground">{sportMessage}</p>
+                  </div>
+                </div>
+              </section>
+            )}
 
             {/* Description */}
             <section>

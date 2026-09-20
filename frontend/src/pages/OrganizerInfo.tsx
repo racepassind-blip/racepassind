@@ -793,7 +793,7 @@ const OrganizerInfo = () => {
               <p className="mt-3 text-muted-foreground max-w-2xl">Running a large tournament, race, league or multi-sport event? Talk to us about custom requirements and event support.</p>
             </div>
             <Button asChild className="w-fit shrink-0" variant="outline">
-              <a href="mailto:hello@sportpass.in">Talk to SportPass</a>
+              <a href="mailto:sportpassind@gmail.com">Talk to SportPass</a>
             </Button>
           </div>
         </CardContent>

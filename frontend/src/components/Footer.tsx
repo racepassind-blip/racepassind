@@ -37,7 +37,7 @@ export function Footer() {
             <h4 className="font-semibold text-sm">Contact</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li><span className="hover:text-foreground cursor-pointer transition-colors">Support</span></li>
-              <li><span className="hover:text-foreground cursor-pointer transition-colors">hello@sportpass.in</span></li>
+              <li><span className="hover:text-foreground cursor-pointer transition-colors">sportpassind@gmail.com</span></li>
               <li><span className="hover:text-foreground cursor-pointer transition-colors">Partner with us</span></li>
             </ul>
           </div>

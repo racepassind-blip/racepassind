@@ -126,7 +126,7 @@ const OrganizerEventCheckpoints = () => {
                 Upgrade to a paid event to set up event stations and track participant check-ins.
               </p>
               <p className="text-xs text-muted-foreground">
-                Need custom check-in features? <a href="mailto:hello@sportpass.in" className="font-medium text-primary hover:underline">Contact SportPass India</a> for custom pricing.
+                Need custom check-in features? <a href="mailto:sportpassind@gmail.com" className="font-medium text-primary hover:underline">Contact SportPass India</a> for custom pricing.
               </p>
               <Button variant="outline" onClick={() => navigate(`/organizer/events/${eventId}`)}>Back to event</Button>
             </CardContent>
