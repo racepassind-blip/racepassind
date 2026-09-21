@@ -460,7 +460,7 @@ const OrganizerInfo = () => {
     </section>
 
     {/* Pricing Section */}
-    <section id="pricing" className="border-y bg-card">
+    <section id="pricing" className="border-y bg-card hidden">
       <div className="mx-auto max-w-[1500px] px-4 py-20 sm:px-6 lg:px-8">
         <div className="mx-auto mb-10 max-w-3xl text-center">
           <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Simple Pricing. Built for Events of Every Size.</p>
