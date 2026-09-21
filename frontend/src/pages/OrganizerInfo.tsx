@@ -460,7 +460,21 @@ const OrganizerInfo = () => {
     </section>
 
     {/* Pricing Section */}
-    <section id="pricing" className="border-y bg-card hidden">
+    <section id="pricing" className="border-y bg-card">
+      <div className="mx-auto max-w-[1500px] px-4 py-20 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Simple pricing. Built for your event.</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Use SportPass for registrations, payments, RaceOps and sport-specific event management.</h2>
+          <p className="mt-4 text-lg text-muted-foreground">Contact us for pricing based on your event size and requirements.</p>
+          <div className="mt-8 rounded-xl border bg-muted/30 p-8">
+            <p className="text-center text-sm font-semibold text-muted-foreground">Contact us at:</p>
+            <a href="mailto:sportpassind@gmail.com" className="mx-auto mt-3 inline-block text-xl font-black text-primary hover:underline">
+              sportpassind@gmail.com
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
       <div className="mx-auto max-w-[1500px] px-4 py-20 sm:px-6 lg:px-8">
         <div className="mx-auto mb-10 max-w-3xl text-center">
           <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Simple Pricing. Built for Events of Every Size.</p>
