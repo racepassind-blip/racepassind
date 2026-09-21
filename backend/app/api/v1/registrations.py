@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -64,6 +64,29 @@ def _send_confirmation_email_safe(db: Session, registration) -> str:
     if result.status == "SKIPPED_DISABLED":
         return "disabled"
     return "failed"
+
+
+def _send_confirmation_email_background(registration_id, event_id) -> None:
+    """Fire-and-forget email send called from a BackgroundTask.
+
+    Opens its own DB session so it runs completely after the HTTP response
+    has been sent to the participant.  Failures are logged but never bubble up.
+    """
+    from db import SessionLocal  # local import to avoid circular at module level
+    db = SessionLocal()
+    try:
+        from models import Registration as _Registration
+        registration = db.get(_Registration, registration_id)
+        if registration is not None:
+            send_registration_confirmation(db, registration)
+    except Exception:
+        # Background tasks must never crash the worker.
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
 
 
 def _combine_email_statuses(statuses: list[str]) -> str:
@@ -189,6 +212,7 @@ def _batch_confirmation_response(
 def create_registration(
     payload: RegistrationCreateIn,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: User | None = Depends(get_optional_current_user),
     _: None = Depends(require_csrf),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
@@ -218,12 +242,11 @@ def create_registration(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
-    # Send confirmation email after successful registration.
-    # This NEVER fails the registration - errors are logged and reflected in email_status.
-    email_status = _send_confirmation_email_safe(db, registration)
+    # Queue email after response — participant doesn't wait for SMTP.
+    background_tasks.add_task(_send_confirmation_email_background, registration.id, registration.event_id)
 
     response = _confirmation_response(db, registration, confirmation_token=confirmation_token or None, claim_code=claim_code or None)
-    response["emailStatus"] = email_status
+    response["emailStatus"] = "pending"
     return response
 
 
@@ -231,6 +254,7 @@ def create_registration(
 def create_batch_registration(
     payload: BatchRegistrationCreateIn,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: User | None = Depends(get_optional_current_user),
     _: None = Depends(require_csrf),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
@@ -261,10 +285,9 @@ def create_batch_registration(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
-    # Send a confirmation email per registration. Never fails the registration.
-    email_statuses = [_send_confirmation_email_safe(db, reg) for reg in registrations]
-    # Overall email status: worst-case wins (failed > delayed > disabled > sent).
-    overall_email_status = _combine_email_statuses(email_statuses)
+    # Queue one email per registration — fires after response is sent, never blocks the participant.
+    for reg in registrations:
+        background_tasks.add_task(_send_confirmation_email_background, reg.id, reg.event_id)
 
     response = _batch_confirmation_response(
         db,
@@ -272,7 +295,7 @@ def create_batch_registration(
         confirmation_tokens=confirmation_tokens,
         claim_codes=claim_codes,
     )
-    response["emailStatus"] = overall_email_status
+    response["emailStatus"] = "pending"
     return response
 
 

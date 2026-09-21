@@ -322,7 +322,7 @@ def send_email(
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
 
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
             server.starttls(context=context)
             server.login(gmail_address, decrypted_password)
             server.send_message(msg)
@@ -365,6 +365,17 @@ def send_email(
             success=False,
             status="FAILED",
             message="Unable to connect to Gmail SMTP",
+            email_log=log,
+        )
+    except (TimeoutError, OSError) as exc:
+        log.status = "failed"
+        log.attempted_at = attempted_at
+        log.failure_reason = FAILURE_REASON_SMTP_CONNECTION_FAILED
+        db.commit()
+        return SendEmailResult(
+            success=False,
+            status="FAILED",
+            message=f"Gmail SMTP timed out: {exc}",
             email_log=log,
         )
     except Exception as exc:
@@ -513,7 +524,7 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
 
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
             server.starttls(context=context)
             server.login(gmail_address, password)
             server.send_message(msg)
@@ -536,6 +547,12 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
         email_log.failure_reason = FAILURE_REASON_SMTP_CONNECTION_FAILED
         db.commit()
         return SendEmailResult(False, "FAILED", "Unable to connect", email_log)
+    except (TimeoutError, OSError) as exc:
+        email_log.status = "failed"
+        email_log.attempted_at = attempted_at
+        email_log.failure_reason = FAILURE_REASON_SMTP_CONNECTION_FAILED
+        db.commit()
+        return SendEmailResult(False, "FAILED", f"Gmail SMTP timed out: {exc}", email_log)
     except Exception as exc:
         email_log.status = "failed"
         email_log.attempted_at = attempted_at
