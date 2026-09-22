@@ -1,0 +1,8 @@
+BE:
+cd /Users/work/Desktop/race_pass/backend
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
+
+
+FE:
+cd /Users/work/Desktop/race_pass/frontend
+npm run dev

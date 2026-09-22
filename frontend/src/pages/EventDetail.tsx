@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { getSportConfig } from "@/data/sportConfig";
 import { computeSportPassFeePaise, formatPaise } from "@/lib/platform-fee";
 import { useEvent } from "@/hooks/useEvents";
+import { createWhatsAppUrl, WHATSAPP_MESSAGES } from "@/lib/whatsapp";
 import {
   Calendar,
   MapPin,
@@ -20,6 +21,7 @@ import {
   ShieldCheck,
   Info,
   FileText,
+  WhatsApp,
 } from "lucide-react";
 
 const EventDetail = () => {
@@ -229,6 +231,32 @@ const EventDetail = () => {
                     </li>
                   ))}
                 </ul> : <p className="text-sm text-muted-foreground">No rules have been published by the organizer yet.</p>}
+              </div>
+            </section>
+
+            {/* WhatsApp Support CTA */}
+            <section>
+              <div className="rounded-xl border border-[#25D366]/20 bg-[#25D366]/5 p-5">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white">
+                    <WhatsApp className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-bold text-sm">Need help? Chat with SportPass</h3>
+                    <p className="mt-1 text-sm text-muted-foreground mb-3">
+                      Have questions about {event.title}? We're here to help via WhatsApp.
+                    </p>
+                    <a
+                      href={createWhatsAppUrl(WHATSAPP_MESSAGES.eventSupport(event.title))}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#20bd5a] focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:ring-offset-2"
+                    >
+                      <WhatsApp className="h-4 w-4" />
+                      Chat on WhatsApp
+                    </a>
+                  </div>
+                </div>
               </div>
             </section>
           </div>

@@ -253,6 +253,17 @@ const OrganizerInfo = () => {
               <a href="#pricing">Contact us for pricing</a>
             </Button>
           </div>
+          <div className="mt-6">
+            <a
+              href="https://wa.me/917975374933?text=Hi%20SportPass%20%F0%9F%91%8B%0A%0AI%27m%20interested%20in%20using%20SportPass%20for%20my%20event."
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/10 px-6 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 hover:border-white/40 focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:ring-offset-2 focus:ring-offset-[#101b35]"
+            >
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#25D366] text-[10px] font-bold text-white">WA</span>
+              Talk to us on WhatsApp
+            </a>
+          </div>
           <div className="mt-7 flex flex-col gap-2 text-xs text-white/70 sm:text-sm">
             <span className="flex items-center gap-2">
               <Check className="h-4 w-4 text-[#138808]" /> Contact us for pricing based on your event size and requirements

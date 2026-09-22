@@ -1,7 +1,10 @@
 import { Link } from "react-router-dom";
 import { Ticket } from "lucide-react";
+import { createWhatsAppUrl, WHATSAPP_MESSAGES } from "@/lib/whatsapp";
 
 export function Footer() {
+  const whatsappUrl = createWhatsAppUrl(WHATSAPP_MESSAGES.generalSupport);
+
   return (
     <footer className="border-t bg-card">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
@@ -33,8 +36,11 @@ export function Footer() {
           <div className="space-y-3">
             <h4 className="font-semibold text-sm">Contact</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><a href="mailto:sportpassind@gmail.com" className="hover:text-foreground transition-colors">Support</a></li>
-              <li><a href="mailto:sportpassind@gmail.com" className="hover:text-foreground transition-colors">sportpassind@gmail.com</a></li>
+              <li><a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#25D366] text-[10px] font-bold text-white">WA</span>
+                Chat with us on WhatsApp
+              </a></li>
+              <li><a href="mailto:sportpassind@gmail.com" className="hover:text-foreground transition-colors">support@sportpassindia.com</a></li>
               <li><a href="mailto:sportpassind@gmail.com" className="hover:text-foreground transition-colors">Partner with us</a></li>
             </ul>
           </div>
