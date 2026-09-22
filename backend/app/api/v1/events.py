@@ -51,13 +51,18 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
     )
     payment_settings = None
     if event.payment_settings:
-        payment_settings = {
-            "method": event.payment_settings.method,
-            "upiId": event.payment_settings.upi_id,
-            "payeeName": event.payment_settings.payee_name,
-            "instructions": event.payment_settings.instructions,
-            **image_response,
-        }
+        # Only expose payment settings if Direct UPI is enabled for this organizer.
+        # This prevents showing UPI QR codes for published events when admin has
+        # disabled Direct UPI for the organizer (preventing further registrations).
+        organization = db.scalar(select(Organization).where(Organization.id == event.organization_id))
+        if organization and organization.allow_direct_upi:
+            payment_settings = {
+                "method": event.payment_settings.method,
+                "upiId": event.payment_settings.upi_id,
+                "payeeName": event.payment_settings.payee_name,
+                "instructions": event.payment_settings.instructions,
+                **image_response,
+            }
     field_config, addon_config = normalize_event_configs(
         event.field_config,
         event.addon_config,
