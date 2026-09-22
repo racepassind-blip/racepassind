@@ -15,14 +15,15 @@ export const createWhatsAppUrl = (message: string) => {
  */
 export const WHATSAPP_MESSAGES = {
   /** For floating support button on any public page */
-  generalSupport: "Hi SportPass 👋\n\nI need some help.",
-  
+  generalSupport: "Hi SportPass \uD83D\uDC4B\n\nI need some help.",
+
   /** For organizer landing page */
-  organizerInterest: "Hi SportPass 👋\n\nI'm interested in using SportPass for my event.",
-  
+  organizerInterest: "Hi SportPass \uD83D\uDC4B\n\nI'm interested in using SportPass for my event.",
+
   /**
    * For event pages with dynamic event name
    * @param eventName - The name of the event
    */
-  eventSupport: (eventName: string) => `Hi SportPass 👋\n\nI need help regarding ${eventName}.`,
+  eventSupport: (eventName: string) =>
+    `Hi SportPass \uD83D\uDC4B\n\nI need help regarding ${eventName}.`,
 };

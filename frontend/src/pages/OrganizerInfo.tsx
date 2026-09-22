@@ -36,6 +36,7 @@ import {
 import { Link } from "react-router-dom";
 
 import { Layout } from "@/components/Layout";
+import { createWhatsAppUrl, WHATSAPP_MESSAGES } from "@/lib/whatsapp";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -255,7 +256,7 @@ const OrganizerInfo = () => {
           </div>
           <div className="mt-6">
             <a
-              href="https://wa.me/917975374933?text=Hi%20SportPass%20%F0%9F%91%8B%0A%0AI%27m%20interested%20in%20using%20SportPass%20for%20my%20event."
+              href={createWhatsAppUrl(WHATSAPP_MESSAGES.organizerInterest)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/10 px-6 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 hover:border-white/40 focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:ring-offset-2 focus:ring-offset-[#101b35]"
