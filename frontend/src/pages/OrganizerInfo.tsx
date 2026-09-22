@@ -220,6 +220,9 @@ const OrganizerInfo = () => {
   const [plans, setPlans] = useState<PublicPlansResponse | null>(null);
   const [plansError, setPlansError] = useState(false);
   const [activeSport, setActiveSport] = useState<SportKey>("running");
+  const [orgName, setOrgName] = useState("");
+  const [orgClub, setOrgClub] = useState("");
+  const [orgIntent, setOrgIntent] = useState("");
   const playbook = sportPlaybooks[activeSport];
   const activeSportLabel = sportTabs.find((sport) => sport.key === activeSport)?.label;
 
@@ -254,15 +257,39 @@ const OrganizerInfo = () => {
               <a href="#pricing">Contact us for pricing</a>
             </Button>
           </div>
-          <div className="mt-6">
+          <div className="mt-6 w-full max-w-sm rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-5 space-y-3">
+            <p className="text-sm font-bold text-white">Talk to us on WhatsApp</p>
+            <p className="text-xs text-white/60">Tell us a bit about yourself and we'll get back to you.</p>
+            <input
+              type="text"
+              placeholder="Your name"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+              className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#25D366]"
+            />
+            <input
+              type="text"
+              placeholder="Club or organisation name"
+              value={orgClub}
+              onChange={(e) => setOrgClub(e.target.value)}
+              className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#25D366]"
+            />
+            <input
+              type="text"
+              placeholder="What do you want to do? (e.g. Run a marathon, badminton tournament…)"
+              value={orgIntent}
+              onChange={(e) => setOrgIntent(e.target.value)}
+              className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#25D366]"
+            />
             <a
-              href={createWhatsAppUrl(WHATSAPP_MESSAGES.organizerInterest)}
+              href={createWhatsAppUrl(
+                `Hi SportPass \uD83D\uDC4B\n\nI'm interested in using SportPass for my event.\n\nName: ${orgName || "Not provided"}\nClub / Organisation: ${orgClub || "Not provided"}\nWhat I want to do: ${orgIntent || "Not provided"}`
+              )}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/10 px-6 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 hover:border-white/40 focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:ring-offset-2 focus:ring-offset-[#101b35]"
+              className="inline-flex w-full items-center justify-center rounded-lg bg-[#25D366] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#20bd5a] focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:ring-offset-2 focus:ring-offset-[#101b35]"
             >
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#25D366] text-[10px] font-bold text-white">WA</span>
-              Talk to us on WhatsApp
+              Send on WhatsApp
             </a>
           </div>
           <div className="mt-7 flex flex-col gap-2 text-xs text-white/70 sm:text-sm">
