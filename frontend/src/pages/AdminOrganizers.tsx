@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BadgeCheck, Building2, CircleDollarSign, Clock, RefreshCw, Search, ShieldCheck, Users, XCircle } from "lucide-react";
+import { BadgeCheck, Building2, CircleDollarSign, Clock, RefreshCw, Search, ShieldCheck, Users, XCircle, Banknote } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
@@ -31,6 +31,7 @@ interface OrganizerOverview {
   billingDuePaise: number;
   billingCollectedPaise: number;
   overdueBillingCount: number;
+  allowDirectUpi: boolean;
 }
 
 interface VerificationDetail {
@@ -49,6 +50,14 @@ interface VerificationDetail {
   submittedAt: string | null;
   reviewedAt: string | null;
   rejectionReason: string | null;
+}
+
+interface DirectUpiAuditEntry {
+  id: string;
+  allowDirectUpi: boolean;
+  previousValue: boolean;
+  adminName: string | null;
+  changedAt: string;
 }
 
 const VERIF_META: Record<VerificationStatus, { label: string; className: string }> = {
@@ -74,6 +83,11 @@ function formatDate(value: string | null) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
+function formatDateTime(value: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 
 const AdminOrganizers = () => {
   const [rows, setRows] = useState<OrganizerOverview[]>([]);
@@ -82,12 +96,19 @@ const AdminOrganizers = () => {
   const [search, setSearch] = useState("");
   const [verifFilter, setVerifFilter] = useState<"all" | VerificationStatus>("all");
 
-  // Review dialog state
+  // Verification review dialog
   const [reviewOrg, setReviewOrg] = useState<OrganizerOverview | null>(null);
   const [detail, setDetail] = useState<VerificationDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
+
+  // Direct UPI manage dialog
+  const [manageOrg, setManageOrg] = useState<OrganizerOverview | null>(null);
+  const [upiAudit, setUpiAudit] = useState<DirectUpiAuditEntry[]>([]);
+  const [upiAuditLoading, setUpiAuditLoading] = useState(false);
+  const [upiToggleBusy, setUpiToggleBusy] = useState(false);
+  const [upiWarningEvents, setUpiWarningEvents] = useState<Array<{ id: string; name: string }>>([]);
 
   const load = async () => {
     setLoading(true);
@@ -126,6 +147,7 @@ const AdminOrganizers = () => {
     });
   }, [rows, search, verifFilter]);
 
+  // ── Verification review ──────────────────────────────────────────────────
   const openReview = async (org: OrganizerOverview) => {
     setReviewOrg(org);
     setDetail(null);
@@ -140,18 +162,11 @@ const AdminOrganizers = () => {
     }
   };
 
-  const closeReview = () => {
-    setReviewOrg(null);
-    setDetail(null);
-    setRejectReason("");
-  };
+  const closeReview = () => { setReviewOrg(null); setDetail(null); setRejectReason(""); };
 
   const review = async (decision: "VERIFIED" | "REJECTED") => {
     if (!reviewOrg) return;
-    if (decision === "REJECTED" && !rejectReason.trim()) {
-      toast.error("Add a reason for rejection.");
-      return;
-    }
+    if (decision === "REJECTED" && !rejectReason.trim()) { toast.error("Add a reason for rejection."); return; }
     setActionBusy(true);
     try {
       await apiRequest(`/admin/organizations/${reviewOrg.organizationId}/paid-verification/review`, {
@@ -165,6 +180,49 @@ const AdminOrganizers = () => {
       toast.error(reviewError instanceof Error ? reviewError.message : "Could not submit the review.");
     } finally {
       setActionBusy(false);
+    }
+  };
+
+  // ── Direct UPI manage dialog ─────────────────────────────────────────────
+  const openManage = async (org: OrganizerOverview) => {
+    setManageOrg(org);
+    setUpiAudit([]);
+    setUpiWarningEvents([]);
+    setUpiAuditLoading(true);
+    try {
+      setUpiAudit(await apiRequest<DirectUpiAuditEntry[]>(`/admin/organizations/${org.organizationId}/direct-upi/audit`));
+    } catch {
+      // Non-blocking; audit history is informational only
+    } finally {
+      setUpiAuditLoading(false);
+    }
+  };
+
+  const closeManage = () => { setManageOrg(null); setUpiAudit([]); setUpiWarningEvents([]); };
+
+  const toggleDirectUpi = async (allow: boolean) => {
+    if (!manageOrg) return;
+    setUpiToggleBusy(true);
+    try {
+      const result = await apiRequest<{ allowDirectUpi: boolean; activeDirectUpiEvents: Array<{ id: string; name: string }> }>(
+        `/admin/organizations/${manageOrg.organizationId}/direct-upi`,
+        { method: "PUT", body: JSON.stringify({ allow }) },
+      );
+      // Surface warning if disabling with live events
+      if (!allow && result.activeDirectUpiEvents.length > 0) {
+        setUpiWarningEvents(result.activeDirectUpiEvents);
+      }
+      toast.success(allow ? "Direct UPI enabled for this organizer." : "Direct UPI access removed.");
+      // Update local row without full reload
+      setRows((prev) => prev.map((r) => r.organizationId === manageOrg.organizationId ? { ...r, allowDirectUpi: result.allowDirectUpi } : r));
+      setManageOrg((prev) => prev ? { ...prev, allowDirectUpi: result.allowDirectUpi } : null);
+      // Refresh audit trail
+      const freshAudit = await apiRequest<DirectUpiAuditEntry[]>(`/admin/organizations/${manageOrg.organizationId}/direct-upi/audit`);
+      setUpiAudit(freshAudit);
+    } catch (toggleError) {
+      toast.error(toggleError instanceof Error ? toggleError.message : "Could not update Direct UPI access.");
+    } finally {
+      setUpiToggleBusy(false);
     }
   };
 
@@ -210,7 +268,7 @@ const AdminOrganizers = () => {
                 <div className="p-12 text-center"><Building2 className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-4 font-semibold">No organizers found</p><p className="mt-1 text-sm text-muted-foreground">Try a different search or filter.</p></div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1100px] text-sm">
+                  <table className="w-full min-w-[1200px] text-sm">
                     <thead>
                       <tr className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                         <th className="px-4 py-3 font-semibold">Organizer</th>
@@ -218,6 +276,7 @@ const AdminOrganizers = () => {
                         <th className="px-4 py-3 font-semibold">Participants</th>
                         <th className="px-4 py-3 font-semibold">Approved sales</th>
                         <th className="px-4 py-3 font-semibold">Verification</th>
+                        <th className="px-4 py-3 font-semibold">Payment access</th>
                         <th className="px-4 py-3 font-semibold">Billing due</th>
                         <th className="px-4 py-3 font-semibold">Collected</th>
                         <th className="px-4 py-3 font-semibold text-right">Action</th>
@@ -237,16 +296,23 @@ const AdminOrganizers = () => {
                             <td className="px-4 py-3 font-semibold">{row.totalParticipants.toLocaleString("en-IN")}</td>
                             <td className="px-4 py-3 font-semibold">{formatINR(row.approvedRevenuePaise)}</td>
                             <td className="px-4 py-3"><Badge variant="outline" className={`gap-1 ${meta.className}`}>{row.paidVerificationStatus === "VERIFIED" ? <BadgeCheck className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "UNDER_REVIEW" ? <Clock className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "REJECTED" ? <XCircle className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}{meta.label}</Badge></td>
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className={`gap-1 text-xs ${row.allowDirectUpi ? "border-emerald-300 text-emerald-700" : "border-muted-foreground/30 text-muted-foreground"}`}>
+                                <Banknote className="h-3 w-3" />
+                                {row.allowDirectUpi ? "Direct UPI: Allowed" : "Direct UPI: Restricted"}
+                              </Badge>
+                            </td>
                             <td className="px-4 py-3"><span className={row.billingDuePaise > 0 ? "font-semibold text-amber-700" : "text-muted-foreground"}>{formatINR(row.billingDuePaise)}</span>{row.overdueBillingCount > 0 && <div className="text-xs font-semibold text-destructive">{row.overdueBillingCount} overdue</div>}</td>
                             <td className="px-4 py-3 text-muted-foreground">{formatINR(row.billingCollectedPaise)}</td>
                             <td className="px-4 py-3 text-right">
-                              {row.paidVerificationStatus === "NOT_SUBMITTED" ? (
-                                <span className="text-xs text-muted-foreground">No submission</span>
-                              ) : (
-                                <Button size="sm" variant={row.paidVerificationStatus === "UNDER_REVIEW" ? "default" : "outline"} onClick={() => void openReview(row)}>
-                                  {row.paidVerificationStatus === "UNDER_REVIEW" ? "Review" : "View"}
-                                </Button>
-                              )}
+                              <div className="flex items-center justify-end gap-2">
+                                <Button size="sm" variant="outline" onClick={() => void openManage(row)}>Manage</Button>
+                                {row.paidVerificationStatus !== "NOT_SUBMITTED" && (
+                                  <Button size="sm" variant={row.paidVerificationStatus === "UNDER_REVIEW" ? "default" : "outline"} onClick={() => void openReview(row)}>
+                                    {row.paidVerificationStatus === "UNDER_REVIEW" ? "Review" : "Verify"}
+                                  </Button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -260,6 +326,7 @@ const AdminOrganizers = () => {
         )}
       </div>
 
+      {/* ── Verification review dialog ───────────────────────────────────── */}
       <Dialog open={reviewOrg !== null} onOpenChange={(open) => { if (!open) closeReview(); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -307,6 +374,84 @@ const AdminOrganizers = () => {
             ) : (
               <Button variant="outline" onClick={closeReview}>Close</Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Direct UPI manage dialog ─────────────────────────────────────── */}
+      <Dialog open={manageOrg !== null} onOpenChange={(open) => { if (!open) closeManage(); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Manage — {manageOrg?.organizationName}</DialogTitle>
+            <DialogDescription>Control payment access permissions for this organizer.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5">
+            {/* Payment Access section */}
+            <section className="rounded-xl border p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-sm">Allow Direct UPI Payments</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Direct UPI sends participant registration payments directly to the organizer.
+                    SportPass platform fees are billed separately.
+                    Enable this only for approved or trusted organizers.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={manageOrg?.allowDirectUpi ?? false}
+                  disabled={upiToggleBusy}
+                  onClick={() => void toggleDirectUpi(!(manageOrg?.allowDirectUpi ?? false))}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${(manageOrg?.allowDirectUpi ?? false) ? "bg-emerald-500" : "bg-muted-foreground/30"}`}
+                >
+                  <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform ${(manageOrg?.allowDirectUpi ?? false) ? "translate-x-5" : "translate-x-0"}`} />
+                </button>
+              </div>
+              <div className={`rounded-md px-3 py-2 text-xs font-semibold ${(manageOrg?.allowDirectUpi ?? false) ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-muted text-muted-foreground"}`}>
+                {(manageOrg?.allowDirectUpi ?? false) ? "Direct UPI: Allowed" : "Direct UPI: Restricted"}
+              </div>
+            </section>
+
+            {/* Warning: active Direct UPI events */}
+            {upiWarningEvents.length > 0 && (
+              <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 space-y-2">
+                <p className="font-semibold">⚠ This organizer has {upiWarningEvents.length} active event{upiWarningEvents.length > 1 ? "s" : ""} using Direct UPI.</p>
+                <p className="text-xs">Access has been removed. New registrations on these events will be blocked at the backend. Existing registrations and historical payments are not affected. Switch the event's payment method before next registration opens.</p>
+                <ul className="mt-1 space-y-1 text-xs">
+                  {upiWarningEvents.map((ev) => <li key={ev.id} className="font-medium">• {ev.name}</li>)}
+                </ul>
+              </section>
+            )}
+
+            {/* Audit history */}
+            <section>
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Change history</p>
+              {upiAuditLoading ? (
+                <p className="text-xs text-muted-foreground">Loading…</p>
+              ) : upiAudit.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No changes recorded yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {upiAudit.map((entry) => (
+                    <div key={entry.id} className="rounded-lg border bg-muted/20 p-3 text-xs space-y-0.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`font-semibold ${entry.allowDirectUpi ? "text-emerald-700" : "text-muted-foreground"}`}>
+                          {entry.allowDirectUpi ? "Enabled" : "Disabled"}
+                        </span>
+                        <span className="text-muted-foreground">{formatDateTime(entry.changedAt)}</span>
+                      </div>
+                      {entry.adminName && <p className="text-muted-foreground">By: {entry.adminName}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeManage}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

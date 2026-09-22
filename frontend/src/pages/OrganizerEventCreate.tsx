@@ -187,6 +187,7 @@ const OrganizerEventCreate = () => {
   const [payeeName, setPayeeName] = useState("");
   const [paymentInstructions, setPaymentInstructions] = useState("Pay the exact amount using UPI, then submit your UTR/reference.");
   const [paymentCollectionMethod, setPaymentCollectionMethod] = useState<"DIRECT_UPI" | "PAYMENT_GATEWAY">("DIRECT_UPI");
+  const [allowDirectUpi, setAllowDirectUpi] = useState(false);
   const [platformFeeBearer, setPlatformFeeBearer] = useState<"ORGANIZER" | "PARTICIPANT">("ORGANIZER");
   // Set once the loaded event already had this bearer persisted; used to lock the
   // control after paid registrations have started (backend enforces this too).
@@ -216,8 +217,16 @@ const OrganizerEventCreate = () => {
 
   useEffect(() => {
     if (eventId) return;
-    apiRequest<Array<{ id: string }>>("/organizer/organizations")
-      .then((organizations) => setOrganizationId(organizations[0]?.id ?? ""))
+    apiRequest<Array<{ id: string; allowDirectUpi?: boolean }>>("/organizer/organizations")
+      .then((organizations) => {
+        const org = organizations[0];
+        setOrganizationId(org?.id ?? "");
+        setAllowDirectUpi(org?.allowDirectUpi ?? false);
+        // If Direct UPI isn't allowed, default to PAYMENT_GATEWAY (no method pre-selected)
+        if (!(org?.allowDirectUpi ?? false)) {
+          setPaymentCollectionMethod("PAYMENT_GATEWAY");
+        }
+      })
       .catch(() => undefined);
   }, [eventId]);
 
@@ -277,6 +286,10 @@ const OrganizerEventCreate = () => {
         setPaymentCollectionMethod(event.paymentCollectionMethod);
         setPlatformFeeBearer(event.platformFeeBearer ?? "ORGANIZER");
         setFeeBearerLocked(Boolean(event.platformFeeBearerLocked));
+        // Also fetch org to know if Direct UPI is allowed
+        apiRequest<{ allowDirectUpi?: boolean }>(`/organizer/organizations/${event.organizationId}`)
+          .then((org) => setAllowDirectUpi(org.allowDirectUpi ?? false))
+          .catch(() => undefined);
         setCategories(event.categories.map((category) => ({
           id: category.id,
           persisted: true,
@@ -799,13 +812,23 @@ const OrganizerEventCreate = () => {
             <div className="space-y-3">
               <Label>Payment Collection Method {hasPaidTickets ? "*" : "(optional)"}</Label>
               <div className="space-y-2">
-                <div className="flex items-center gap-3 rounded-lg border p-3">
-                  <input type="radio" name="paymentCollectionMethod" value="DIRECT_UPI" checked={paymentCollectionMethod === "DIRECT_UPI"} onChange={() => setPaymentCollectionMethod("DIRECT_UPI")} className="h-4 w-4 text-primary focus:ring-primary" />
-                  <div>
-                    <div className="font-medium">Direct UPI — Available Now</div>
-                    <div className="text-xs text-muted-foreground">Use your UPI ID for manual payment collection. Participants submit UTR and you approve payment.</div>
+                {allowDirectUpi ? (
+                  <div className="flex items-center gap-3 rounded-lg border p-3">
+                    <input type="radio" name="paymentCollectionMethod" value="DIRECT_UPI" checked={paymentCollectionMethod === "DIRECT_UPI"} onChange={() => setPaymentCollectionMethod("DIRECT_UPI")} className="h-4 w-4 text-primary focus:ring-primary" />
+                    <div>
+                      <div className="font-medium">Direct UPI — Available Now</div>
+                      <div className="text-xs text-muted-foreground">Use your UPI ID for manual payment collection. Participants submit UTR and you approve payment.</div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex items-center gap-3 rounded-lg border border-dashed p-3 opacity-60 cursor-not-allowed">
+                    <input type="radio" name="paymentCollectionMethod" value="DIRECT_UPI" disabled className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <div className="font-medium flex items-center gap-2">Direct UPI <span className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">Not enabled</span></div>
+                      <div className="text-xs text-muted-foreground">Contact SportPass to request Direct UPI access for your organization.</div>
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center gap-3 rounded-lg border p-3 opacity-70">
                   <input type="radio" name="paymentCollectionMethod" value="PAYMENT_GATEWAY" checked={paymentCollectionMethod === "PAYMENT_GATEWAY"} onChange={() => setPaymentCollectionMethod("PAYMENT_GATEWAY")} disabled className="h-4 w-4 text-muted-foreground focus:ring-muted-foreground" />
                   <div className="flex-1">

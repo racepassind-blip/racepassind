@@ -217,6 +217,14 @@ def create_event(
 ) -> dict:
     _validate_registration_window(payload)
     organization = get_authorized_organization(db, user, payload.organization_id)
+
+    # Block Direct UPI if the organizer has not been granted access by admin.
+    if payload.payment_collection_method == "DIRECT_UPI" and not organization.allow_direct_upi:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Direct UPI payments are not enabled for this organizer. Contact SportPass to request access.",
+        )
+
     field_config, addon_config = normalize_event_configs(
         payload.field_config,
         payload.addon_config,
@@ -506,6 +514,13 @@ def update_event(
     event.registration_close = payload.registration_close
     event.distance = _legacy_event_distance(payload)
     if payload.payment_collection_method is not None:
+        if payload.payment_collection_method == "DIRECT_UPI":
+            org = db.scalar(select(Organization).where(Organization.id == event.organization_id))
+            if org and not org.allow_direct_upi:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Direct UPI payments are not enabled for this organizer. Contact SportPass to request access.",
+                )
         event.payment_collection_method = payload.payment_collection_method
 
     if payload.platform_fee_bearer is not None and payload.platform_fee_bearer != event.platform_fee_bearer:
@@ -765,6 +780,12 @@ def publish_event(
         
         if event.payment_collection_method == "DIRECT_UPI" and (event.payment_settings is None or not event.payment_settings.is_active or not event.payment_settings.upi_id):
             raise HTTPException(status_code=422, detail="Active manual UPI payment settings are required before publishing paid tickets with Direct UPI method")
+
+        if event.payment_collection_method == "DIRECT_UPI" and organization and not organization.allow_direct_upi:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Direct UPI payments are not enabled for this organizer. Contact SportPass to request access.",
+            )
     
     event.status = "published"
     record_audit(db, actor_user_id=user.id, action="event_published", resource_type="event", resource_id=event.id)

@@ -478,6 +478,100 @@ def organizers_overview(
     return get_admin_organizers_overview(db)
 
 
+class DirectUpiAccessIn(BaseModel):
+    allow: bool
+
+
+@router.put("/organizations/{organization_id}/direct-upi")
+def update_direct_upi_access(
+    organization_id: UUID,
+    payload: DirectUpiAccessIn,
+    admin: User = Depends(require_roles("admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Enable or disable Direct UPI access for an organizer.
+
+    Warns (but does not block) when disabling an org that has active/published
+    events currently configured with Direct UPI. The caller can read the
+    'activeDirectUpiEvents' list from the response and decide whether to proceed.
+    """
+    organization = db.scalar(
+        select(Organization).where(Organization.id == organization_id).with_for_update()
+    )
+    if organization is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    # Warn before disabling if there are active Direct UPI events.
+    active_direct_upi_events = []
+    if not payload.allow and organization.allow_direct_upi:
+        rows = db.execute(
+            select(Event.id, Event.name)
+            .where(
+                Event.organization_id == organization_id,
+                Event.payment_collection_method == "DIRECT_UPI",
+                Event.status == "published",
+                Event.archived_at.is_(None),
+            )
+        ).all()
+        active_direct_upi_events = [{"id": str(row.id), "name": row.name} for row in rows]
+
+    old_value = organization.allow_direct_upi
+    organization.allow_direct_upi = payload.allow
+
+    record_audit(
+        db,
+        actor_user_id=admin.id,
+        action="direct_upi_access_updated",
+        resource_type="organization",
+        resource_id=organization.id,
+        metadata={
+            "allowDirectUpi": payload.allow,
+            "previousValue": old_value,
+            "changedBy": str(admin.id),
+            "adminName": admin.name,
+        },
+    )
+    db.commit()
+    return {
+        "organizationId": str(organization.id),
+        "organizationName": organization.name,
+        "allowDirectUpi": organization.allow_direct_upi,
+        "activeDirectUpiEvents": active_direct_upi_events,
+    }
+
+
+@router.get("/organizations/{organization_id}/direct-upi/audit")
+def get_direct_upi_audit(
+    organization_id: UUID,
+    admin: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Return the audit history for Direct UPI access changes on this organization."""
+    from models import AuditLog
+    rows = db.execute(
+        select(AuditLog, User.name.label("actor_name"))
+        .outerjoin(User, User.id == AuditLog.actor_user_id)
+        .where(
+            AuditLog.resource_type == "organization",
+            AuditLog.resource_id == str(organization_id),
+            AuditLog.action == "direct_upi_access_updated",
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(50)
+    ).all()
+    return [
+        {
+            "id": str(row.AuditLog.id),
+            "allowDirectUpi": (row.AuditLog.metadata_json or {}).get("allowDirectUpi"),
+            "previousValue": (row.AuditLog.metadata_json or {}).get("previousValue"),
+            "adminName": (row.AuditLog.metadata_json or {}).get("adminName") or row.actor_name,
+            "changedAt": row.AuditLog.created_at.isoformat(),
+        }
+        for row in rows
+    ]
+
+
 @router.get("/organizers")
 def list_organizers(
     _: User = Depends(require_roles("admin")),

@@ -107,6 +107,12 @@ class Organization(Base):
     paid_verification_reviewed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
     paid_verification_rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Payment access control: admin controls whether this org may use Direct UPI.
+    # Direct UPI sends participant money straight to the organizer; SportPass carries
+    # billing risk if the organizer does not pay the platform fee later.
+    # Default false — admin must explicitly enable for each trusted organizer.
+    allow_direct_upi: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)
+
     creator: Mapped[User | None] = relationship(back_populates="organizations", foreign_keys=[created_by])
     members: Mapped[list["OrganizationMember"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     events: Mapped[list["Event"]] = relationship(back_populates="organization")

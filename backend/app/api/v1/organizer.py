@@ -99,6 +99,7 @@ def _serialize_organization(organization: Organization, storage=None) -> dict:
         "status": organization.status,
         "onboardingStatus": "completed" if onboarding_complete else "pending",
         "onboardingCompletedAt": organization.onboarding_completed_at.isoformat() if onboarding_complete else None,
+        "allowDirectUpi": organization.allow_direct_upi,
     }
 
 

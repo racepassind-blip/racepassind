@@ -121,6 +121,7 @@ def get_admin_organizers_overview(db: Session) -> list[dict]:
                 "billingDuePaise": billing_due_by_org.get(org.id, 0),
                 "billingCollectedPaise": billing_paid_by_org.get(org.id, 0),
                 "overdueBillingCount": overdue_by_org.get(org.id, 0),
+                "allowDirectUpi": org.allow_direct_upi,
             }
         )
     return result
