@@ -52,10 +52,9 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
     payment_settings = None
     if event.payment_settings:
         # Only expose payment settings if Direct UPI is enabled for this organizer.
-        # This prevents showing UPI QR codes for published events when admin has
-        # disabled Direct UPI for the organizer (preventing further registrations).
-        organization = db.scalar(select(Organization).where(Organization.id == event.organization_id))
-        if organization and organization.allow_direct_upi:
+        # Use the already-loaded organization relationship to avoid a free-variable db reference.
+        org = event.organization
+        if org and org.allow_direct_upi:
             payment_settings = {
                 "method": event.payment_settings.method,
                 "upiId": event.payment_settings.upi_id,
@@ -189,6 +188,7 @@ def list_my_events(
     query = select(Event).options(
         selectinload(Event.categories).selectinload(EventCategory.tickets),
         selectinload(Event.payment_settings),
+        selectinload(Event.organization),
     )
     if user.role != "admin":
         organization_ids = select(OrganizationMember.organization_id).where(
@@ -339,7 +339,7 @@ def get_my_event(
     event = get_authorized_event(db, user, event_id)
     event = db.scalar(
         select(Event)
-        .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings))
+        .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings), selectinload(Event.organization))
         .where(Event.id == event.id)
     )
     return _event_response(event, storage, get_settings().storage_signed_url_ttl_seconds, get_event_visibility(db, user, event.id))
@@ -355,7 +355,7 @@ def get_event_dashboard(
     event = get_authorized_event(db, user, event_id)
     event = db.scalar(
         select(Event)
-        .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings))
+        .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings), selectinload(Event.organization))
         .where(Event.id == event.id)
     )
     visibility = get_event_visibility(db, user, event.id)
@@ -480,7 +480,7 @@ def update_event(
     event = get_authorized_event(db, user, event_id)
     event = db.scalar(
         select(Event)
-        .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings))
+        .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings), selectinload(Event.organization))
         .where(Event.id == event.id)
     )
     _validate_registration_window(payload)
@@ -671,7 +671,7 @@ def update_event(
     db.commit()
     updated = db.scalar(
         select(Event)
-        .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings))
+        .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings), selectinload(Event.organization))
         .where(Event.id == event.id)
     )
     return _event_response(updated, storage, get_settings().storage_signed_url_ttl_seconds, get_event_visibility(db, user, updated.id))
@@ -790,7 +790,7 @@ def publish_event(
     event = get_authorized_event(db, user, event_id)
     event = db.scalar(
         select(Event)
-        .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings))
+        .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings), selectinload(Event.organization))
         .where(Event.id == event.id)
     )
     if event.archived_at is not None:
