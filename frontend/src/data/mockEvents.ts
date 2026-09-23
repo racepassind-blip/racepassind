@@ -88,6 +88,13 @@ export interface SportEvent {
   platformFeeBearer?: "ORGANIZER" | "PARTICIPANT";
   sportPassFeePercentageBasisPoints?: number;
   sportPassFeePerRegistrationPaise?: number;
+  // Refund policy (only present when enabled)
+  refundPolicyEnabled?: boolean;
+  refundPolicyType?: "full_refund" | "partial_refund" | "organizer_approval" | "no_refund" | null;
+  refundCutoffAt?: string | null;
+  refundPercentage?: number | null;
+  platformFeeRefundable?: boolean | null;
+  refundPolicyText?: string | null;
 }
 
 export const mockEvents: SportEvent[] = [

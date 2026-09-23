@@ -145,6 +145,13 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
             for ticket in category.tickets
         ),
         "adminFeatureOverride": event.features_unlocked,
+        # Refund policy
+        "refundPolicyEnabled": event.refund_policy_enabled,
+        "refundPolicyType": event.refund_policy_type,
+        "refundCutoffAt": event.refund_cutoff_at.isoformat() if event.refund_cutoff_at else None,
+        "refundPercentage": event.refund_percentage,
+        "platformFeeRefundable": event.platform_fee_refundable,
+        "refundPolicyText": event.refund_policy_text,
     }
 
 
@@ -263,6 +270,12 @@ def create_event(
         addon_config=addon_config,
         payment_collection_method=payload.payment_collection_method,
         platform_fee_bearer=payload.platform_fee_bearer,
+        refund_policy_enabled=payload.refund_policy_enabled,
+        refund_policy_type=payload.refund_policy_type,
+        refund_cutoff_at=payload.refund_cutoff_at,
+        refund_percentage=payload.refund_percentage,
+        platform_fee_refundable=payload.platform_fee_refundable,
+        refund_policy_text=payload.refund_policy_text,
     )
     db.add(event)
     db.flush()
@@ -535,6 +548,20 @@ def update_event(
                 detail="SportPass fee responsibility cannot be changed after paid registrations have started.",
             )
         event.platform_fee_bearer = payload.platform_fee_bearer
+
+    # Refund policy fields — always update when provided in the payload
+    if payload.refund_policy_enabled is not None:
+        event.refund_policy_enabled = payload.refund_policy_enabled
+    if payload.refund_policy_type is not None or payload.refund_policy_enabled is False:
+        event.refund_policy_type = payload.refund_policy_type
+    if payload.refund_cutoff_at is not None or payload.refund_policy_enabled is False:
+        event.refund_cutoff_at = payload.refund_cutoff_at
+    if payload.refund_percentage is not None:
+        event.refund_percentage = payload.refund_percentage
+    if payload.platform_fee_refundable is not None:
+        event.platform_fee_refundable = payload.platform_fee_refundable
+    if payload.refund_policy_text is not None:
+        event.refund_policy_text = payload.refund_policy_text
 
     for category_payload in payload.categories:
         category = existing_categories.get(category_payload.id) if category_payload.id else None

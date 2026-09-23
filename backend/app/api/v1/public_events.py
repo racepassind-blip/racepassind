@@ -79,6 +79,13 @@ def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: in
         "platformFeeBearer": event.platform_fee_bearer,
         "sportPassFeePercentageBasisPoints": fee_percentage_basis_points,
         "sportPassFeePerRegistrationPaise": fee_per_registration_paise,
+        # Refund policy (shown to participants only when enabled)
+        "refundPolicyEnabled": event.refund_policy_enabled,
+        "refundPolicyType": event.refund_policy_type if event.refund_policy_enabled else None,
+        "refundCutoffAt": event.refund_cutoff_at.isoformat() if event.refund_cutoff_at and event.refund_policy_enabled else None,
+        "refundPercentage": event.refund_percentage if event.refund_policy_enabled else None,
+        "platformFeeRefundable": event.platform_fee_refundable if event.refund_policy_enabled else None,
+        "refundPolicyText": event.refund_policy_text if event.refund_policy_enabled else None,
     }
 
 

@@ -192,6 +192,13 @@ const OrganizerEventCreate = () => {
   // Set once the loaded event already had this bearer persisted; used to lock the
   // control after paid registrations have started (backend enforces this too).
   const [feeBearerLocked, setFeeBearerLocked] = useState(false);
+  // Refund policy
+  const [refundPolicyEnabled, setRefundPolicyEnabled] = useState(false);
+  const [refundPolicyType, setRefundPolicyType] = useState<"full_refund" | "partial_refund" | "organizer_approval" | "no_refund">("full_refund");
+  const [refundCutoffAt, setRefundCutoffAt] = useState<string>("");
+  const [refundPercentage, setRefundPercentage] = useState<string>("100");
+  const [platformFeeRefundable, setPlatformFeeRefundable] = useState(false);
+  const [refundPolicyText, setRefundPolicyText] = useState("");
   const [categories, setCategories] = useState<CategoryForm[]>([newCategory()]);
   const [fieldEditors, setFieldEditors] = useState<ParticipantFieldEditor[]>(defaultFieldEditors);
   const [mainRegistrantFields, setMainRegistrantFields] = useState<TeamFieldEditorItem[]>(() => DEFAULT_MAIN_REGISTRANT_FIELDS.map((f) => ({ ...f })));
@@ -286,6 +293,13 @@ const OrganizerEventCreate = () => {
         setPaymentCollectionMethod(event.paymentCollectionMethod);
         setPlatformFeeBearer(event.platformFeeBearer ?? "ORGANIZER");
         setFeeBearerLocked(Boolean(event.platformFeeBearerLocked));
+        // Refund policy
+        setRefundPolicyEnabled(Boolean(event.refundPolicyEnabled));
+        if (event.refundPolicyType) setRefundPolicyType(event.refundPolicyType as typeof refundPolicyType);
+        setRefundCutoffAt(event.refundCutoffAt ? event.refundCutoffAt.slice(0, 16) : "");
+        setRefundPercentage(event.refundPercentage != null ? String(event.refundPercentage) : "100");
+        setPlatformFeeRefundable(Boolean(event.platformFeeRefundable));
+        setRefundPolicyText(event.refundPolicyText ?? "");
         // Also fetch org to know if Direct UPI is allowed
         apiRequest<{ allowDirectUpi?: boolean }>(`/organizer/organizations/${event.organizationId}`)
           .then((org) => setAllowDirectUpi(org.allowDirectUpi ?? false))
@@ -640,6 +654,12 @@ const OrganizerEventCreate = () => {
         addon_config: addonConfig,
         payment_collection_method: paymentCollectionMethod,
         platform_fee_bearer: platformFeeBearer,
+        refund_policy_enabled: refundPolicyEnabled,
+        refund_policy_type: refundPolicyEnabled ? refundPolicyType : null,
+        refund_cutoff_at: refundPolicyEnabled && refundCutoffAt ? refundCutoffAt : null,
+        refund_percentage: refundPolicyEnabled && refundPolicyType === "partial_refund" ? Number(refundPercentage) || 100 : null,
+        platform_fee_refundable: refundPolicyEnabled ? platformFeeRefundable : false,
+        refund_policy_text: refundPolicyEnabled && refundPolicyText.trim() ? refundPolicyText.trim() : null,
         address: address || null,
         whatsapp_group_url: whatsappGroupUrl.trim() || null,
         banner_url: null,
@@ -870,6 +890,112 @@ const OrganizerEventCreate = () => {
                 )}
               </div>
             )}
+          </section>}
+
+          {/* Refund Policy section — Step 4, always shown so organizer can opt in */}
+          {currentStep === 4 && <section className="space-y-5 rounded-xl border bg-card p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold">Refund Policy</h2>
+                <p className="text-sm text-muted-foreground">Optionally configure a refund policy for participants. If disabled, no refund option appears publicly.</p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={refundPolicyEnabled}
+                  onChange={(e) => setRefundPolicyEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded"
+                />
+                <span className="text-sm font-medium">Enable refund policy</span>
+              </label>
+            </div>
+
+            {refundPolicyEnabled && <div className="space-y-5 border-t pt-5">
+              <div className="space-y-2">
+                <Label>Refund policy type *</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {([
+                    { value: "full_refund", label: "Full refund until a date", desc: "100% refund up to the cutoff date" },
+                    { value: "partial_refund", label: "Partial refund until a date", desc: "Set a percentage and cutoff date" },
+                    { value: "organizer_approval", label: "Organizer approval required", desc: "Requests reviewed case by case" },
+                    { value: "no_refund", label: "No refunds after registration", desc: "No refunds will be issued" },
+                  ] as const).map((opt) => (
+                    <label key={opt.value} className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer ${refundPolicyType === opt.value ? "border-primary bg-primary/5" : "hover:bg-muted/40"}`}>
+                      <input
+                        type="radio"
+                        name="refundPolicyType"
+                        value={opt.value}
+                        checked={refundPolicyType === opt.value}
+                        onChange={() => setRefundPolicyType(opt.value)}
+                        className="mt-0.5 h-4 w-4 text-primary"
+                      />
+                      <div>
+                        <p className="font-medium text-sm">{opt.label}</p>
+                        <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {(refundPolicyType === "full_refund" || refundPolicyType === "partial_refund") && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Refund cutoff date & time *</Label>
+                    <input
+                      type="datetime-local"
+                      value={refundCutoffAt}
+                      onChange={(e) => setRefundCutoffAt(e.target.value)}
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                    <p className="text-xs text-muted-foreground">Participants cannot request refunds after this date and time.</p>
+                  </div>
+                  {refundPolicyType === "partial_refund" && (
+                    <div className="space-y-2">
+                      <Label>Refund percentage *</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={refundPercentage}
+                          onChange={(e) => setRefundPercentage(e.target.value)}
+                          className="flex h-9 w-24 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                        />
+                        <span className="text-sm text-muted-foreground">% of registration fee</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {refundPolicyType !== "no_refund" && (
+                <label className="flex items-center gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/40">
+                  <input
+                    type="checkbox"
+                    checked={platformFeeRefundable}
+                    onChange={(e) => setPlatformFeeRefundable(e.target.checked)}
+                    className="h-4 w-4 rounded"
+                  />
+                  <div>
+                    <p className="text-sm font-medium">Refund the SportPass convenience fee</p>
+                    <p className="text-xs text-muted-foreground">If unchecked, only the registration fee is refunded. The SportPass fee is non-refundable by default.</p>
+                  </div>
+                </label>
+              )}
+
+              <div className="space-y-2">
+                <Label>Refund policy terms (optional)</Label>
+                <Textarea
+                  value={refundPolicyText}
+                  onChange={(e) => setRefundPolicyText(e.target.value)}
+                  placeholder="Add any additional terms or conditions for your refund policy..."
+                  maxLength={2000}
+                  className="min-h-[80px] text-sm"
+                />
+                <p className="text-xs text-muted-foreground">This text will be shown to participants on the event page.</p>
+              </div>
+            </div>}
           </section>}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-6">

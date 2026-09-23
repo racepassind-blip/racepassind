@@ -45,6 +45,8 @@ import AdminBilling from "./pages/AdminBilling";
 import AdminOrganizerApplications from "./pages/AdminOrganizerApplications";
 import AdminOrganizers from "./pages/AdminOrganizers";
 import AdminCommunication from "./pages/AdminCommunication";
+import AdminRefunds from "./pages/AdminRefunds";
+import OrganizerRefunds from "./pages/OrganizerRefunds";
 import Signup from "./pages/Signup";
 import Confirmation from "./pages/Confirmation";
 import NotFound from "./pages/NotFound";
@@ -91,6 +93,7 @@ const App = () => (
             <Route path="/admin/billing" element={<ProtectedRoute allowedRoles={["admin"]}><AdminBilling /></ProtectedRoute>} />
             <Route path="/admin/organizer-applications" element={<ProtectedRoute allowedRoles={["admin"]}><AdminOrganizerApplications /></ProtectedRoute>} />
             <Route path="/admin/organizers" element={<ProtectedRoute allowedRoles={["admin"]}><AdminOrganizers /></ProtectedRoute>} />
+            <Route path="/admin/refunds" element={<ProtectedRoute allowedRoles={["admin"]}><AdminRefunds /></ProtectedRoute>} />
 
             {/* Admin/Organizer routes */}
             <Route path="/organizer" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerDashboard /></ProtectedRoute>} />
@@ -112,6 +115,7 @@ const App = () => (
             <Route path="/organizer/events/:eventId" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventDashboard /></ProtectedRoute>} />
             <Route path="/organizer/pricing" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerPricing /></ProtectedRoute>} />
             <Route path="/organizer/setup" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerSetup /></ProtectedRoute>} />
+            <Route path="/organizer/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerRefunds /></ProtectedRoute>} />
             <Route path="/terms-and-conditions" element={<PrivacyPolicy />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/terms-of-service" element={<TermsOfService />} />

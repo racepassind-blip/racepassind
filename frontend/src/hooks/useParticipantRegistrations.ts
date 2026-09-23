@@ -30,6 +30,18 @@ export interface ParticipantRegistration {
     format: string;
     qrDataUrl: string;
   } | null;
+  // Refund info (populated alongside registration)
+  refund?: {
+    id: string;
+    status: string;
+    requestedRefundAmount: number;
+    approvedRefundAmount: number | null;
+    refundUtr: string | null;
+    refundedAt: string | null;
+    confirmedAt: string | null;
+  } | null;
+  refundEligible?: boolean;
+  refundIneligibleReason?: string | null;
 }
 
 export interface ClaimRegistrationInput {

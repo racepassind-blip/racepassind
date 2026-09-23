@@ -26,6 +26,7 @@ from app.api.v1.public_events import _fee_config_values, _public_event, router a
 from app.api.v1.storage import router as storage_router
 from app.api.v1.tournament_rounds import router as tournament_rounds_router
 from app.api.v1.registrations import router as registrations_router
+from app.api.v1.refunds import router as refunds_router
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
 from db import engine, get_db
@@ -48,6 +49,7 @@ app.include_router(tournament_rounds_router, prefix="/api/v1/organizer", tags=["
 app.include_router(organizer_router, prefix="/api/v1/organizer", tags=["organizer"])
 app.include_router(events_router, prefix="/api/v1/organizer", tags=["organizer-events"])
 app.include_router(allocations_router, prefix="/api/v1/organizer", tags=["organizer-allocation"])
+app.include_router(refunds_router, prefix="/api/v1", tags=["refunds"])
 
 app.add_middleware(
     CORSMiddleware,

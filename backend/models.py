@@ -203,6 +203,14 @@ class Event(Base):
     platform_fee_bearer: Mapped[str] = mapped_column(String(20), nullable=False, server_default="ORGANIZER")
     # Admin override: when true, unlock all paid-only features for this event regardless of free/paid status.
     features_unlocked: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)
+    # Refund policy — all fields optional; only active when refund_policy_enabled = true.
+    # refund_policy_type: full_refund | partial_refund | organizer_approval | no_refund
+    refund_policy_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)
+    refund_policy_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    refund_cutoff_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refund_percentage: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    platform_fee_refundable: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)
+    refund_policy_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
@@ -1001,6 +1009,109 @@ class AllocationHistory(Base):
     registration: Mapped[Registration] = relationship(back_populates="allocation_history")
     changed_by_user: Mapped[User] = relationship()
 
+
+# ---------------------------------------------------------------------------
+# Refund statuses
+# ---------------------------------------------------------------------------
+REFUND_STATUS_REQUESTED = "REQUESTED"
+REFUND_STATUS_APPROVED = "APPROVED"
+REFUND_STATUS_REJECTED = "REJECTED"
+REFUND_STATUS_PROCESSING = "PROCESSING"
+REFUND_STATUS_REFUND_SENT = "REFUND_SENT"
+REFUND_STATUS_REFUNDED = "REFUNDED"
+REFUND_STATUS_FAILED = "FAILED"
+REFUND_STATUS_CANCELLED = "CANCELLED"
+REFUND_TERMINAL_STATUSES = frozenset({
+    REFUND_STATUS_REJECTED,
+    REFUND_STATUS_REFUNDED,
+    REFUND_STATUS_FAILED,
+    REFUND_STATUS_CANCELLED,
+})
+REFUND_ACTIVE_STATUSES = frozenset({
+    REFUND_STATUS_REQUESTED,
+    REFUND_STATUS_APPROVED,
+    REFUND_STATUS_PROCESSING,
+    REFUND_STATUS_REFUND_SENT,
+})
+
+# Payment providers
+PAYMENT_PROVIDER_DIRECT_UPI = "DIRECT_UPI"
+PAYMENT_PROVIDER_CASHFREE = "CASHFREE"
+
+# Refund policy types
+REFUND_POLICY_FULL = "full_refund"
+REFUND_POLICY_PARTIAL = "partial_refund"
+REFUND_POLICY_APPROVAL = "organizer_approval"
+REFUND_POLICY_NO_REFUND = "no_refund"
+
+
+class Refund(Base):
+    """Tracks the full lifecycle of a refund from REQUESTED to REFUNDED.
+
+    Never deleted — provides an immutable audit trail for all refund actions.
+    Direct UPI refunds are processed manually by the organizer; the record
+    captures the UTR once they mark the refund sent.
+    Cashfree fields are present but unused until that provider is integrated.
+    """
+
+    __tablename__ = "refunds"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    registration_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("registrations.id"), nullable=False, index=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
+    participant_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("participants.id"), nullable=False, index=True)
+    organizer_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    # Payment method snapshot at the time of request
+    payment_method: Mapped[str] = mapped_column(String(50), nullable=False)
+    payment_provider: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # Original amounts frozen from the registration row at request time (paise)
+    original_registration_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    original_platform_fee: Mapped[int] = mapped_column(Integer, nullable=False)
+    original_total_paid: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Refund amounts (paise)
+    requested_refund_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    approved_refund_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    platform_fee_refund_amount: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
+
+    # Text fields
+    refund_reason: Mapped[str] = mapped_column(String(120), nullable=False)
+    participant_comments: Mapped[str | None] = mapped_column(Text, nullable=True)
+    organizer_comments: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Lifecycle status
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default=REFUND_STATUS_REQUESTED, default=REFUND_STATUS_REQUESTED)
+
+    # Direct UPI fields — organizer fills these when marking refund sent
+    refund_utr: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    refund_proof_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+    # Future provider fields (Cashfree etc.)
+    provider_refund_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    provider_refund_status: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    provider_refund_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Timestamps
+    requested_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refunded_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    registration: Mapped["Registration"] = relationship(foreign_keys=[registration_id])
+    event: Mapped["Event"] = relationship(foreign_keys=[event_id])
+    participant: Mapped["Participant"] = relationship(foreign_keys=[participant_id])
+    organization: Mapped["Organization"] = relationship(foreign_keys=[organizer_id])
+    reviewer: Mapped["User | None"] = relationship(foreign_keys=[reviewed_by])
+
+
 # Export all models
 __all__ = [
     "User",
@@ -1038,4 +1149,5 @@ __all__ = [
     "EmailLog",
     "RateLimitBucket",
     "AllocationHistory",
+    "Refund",
 ]

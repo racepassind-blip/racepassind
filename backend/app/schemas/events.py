@@ -88,6 +88,13 @@ class OrganizerEventCreateV1(BaseModel):
     addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
     payment_collection_method: Literal["DIRECT_UPI", "PAYMENT_GATEWAY"] = Field(default="DIRECT_UPI")
     platform_fee_bearer: Literal["ORGANIZER", "PARTICIPANT"] = Field(default="ORGANIZER")
+    # Refund policy (all optional — refund_policy_enabled defaults to false)
+    refund_policy_enabled: bool = False
+    refund_policy_type: Literal["full_refund", "partial_refund", "organizer_approval", "no_refund"] | None = None
+    refund_cutoff_at: dt.datetime | None = None
+    refund_percentage: int | None = Field(default=None, ge=1, le=100)
+    platform_fee_refundable: bool = False
+    refund_policy_text: str | None = Field(default=None, max_length=2000)
     categories: list[RaceCategoryCreateIn] = Field(min_length=1, max_length=20)
 
     @field_validator("field_config")
@@ -190,6 +197,13 @@ class OrganizerEventUpdateV1(BaseModel):
     addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
     payment_collection_method: Literal["DIRECT_UPI", "PAYMENT_GATEWAY"] | None = None
     platform_fee_bearer: Literal["ORGANIZER", "PARTICIPANT"] | None = None
+    # Refund policy (all optional)
+    refund_policy_enabled: bool | None = None
+    refund_policy_type: Literal["full_refund", "partial_refund", "organizer_approval", "no_refund"] | None = None
+    refund_cutoff_at: dt.datetime | None = None
+    refund_percentage: int | None = Field(default=None, ge=1, le=100)
+    platform_fee_refundable: bool | None = None
+    refund_policy_text: str | None = Field(default=None, max_length=2000)
     categories: list[OrganizerCategoryUpdateIn] = Field(min_length=1, max_length=20)
 
     @field_validator("field_config")

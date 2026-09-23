@@ -694,3 +694,172 @@ def broadcast_event_update(
         "failed": failed,
         "skipped": skipped,
     }
+
+# ---------------------------------------------------------------------------
+# Refund notification emails
+# ---------------------------------------------------------------------------
+
+EMAIL_TYPE_REFUND = "REFUND"
+REFERENCE_TYPE_REFUND = "REFUND"
+
+
+def _fmt_paise(paise: int) -> str:
+    return f"₹{paise / 100:,.2f}"
+
+
+def send_refund_requested_notification(db: Session, refund) -> SendEmailResult:
+    """Notify the organizer that a participant has submitted a refund request."""
+    organizer_email = None
+    from sqlalchemy import select as _select
+    from models import User, OrganizationMember
+    organizer_members = db.scalars(
+        _select(OrganizationMember).where(
+            OrganizationMember.organization_id == refund.organizer_id,
+            OrganizationMember.member_role == "organizer",
+        )
+    ).all()
+    for member in organizer_members:
+        user = db.get(User, member.user_id)
+        if user and user.email:
+            organizer_email = user.email
+            break
+
+    if not organizer_email:
+        return SendEmailResult(False, "FAILED", "No organizer email found")
+
+    event_name = refund.event.name if refund.event else "your event"
+    participant_name = refund.participant.name if refund.participant else "A participant"
+    amount = _fmt_paise(refund.requested_refund_amount)
+
+    subject = f"Refund request received — {event_name}"
+    body = (
+        f"{participant_name} has submitted a refund request for {event_name}.\n\n"
+        f"Requested refund: {amount}\n"
+        f"Reason: {refund.refund_reason}\n\n"
+        f"Log in to your SportPass organizer dashboard to review and approve or reject this request."
+    )
+    html_body = f"""
+<p><strong>{participant_name}</strong> has submitted a refund request for <strong>{event_name}</strong>.</p>
+<table style="border-collapse:collapse;margin:16px 0;">
+  <tr><td style="padding:4px 12px 4px 0;color:#666;">Requested refund</td><td style="padding:4px 0;font-weight:600;">{amount}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0;color:#666;">Reason</td><td style="padding:4px 0;">{refund.refund_reason}</td></tr>
+</table>
+<p>Log in to your SportPass organizer dashboard to review and approve or reject this request.</p>
+"""
+    return send_email(
+        db,
+        recipient=organizer_email,
+        subject=subject,
+        body=body,
+        html_body=html_body,
+        email_type=EMAIL_TYPE_REFUND,
+        reference_type=REFERENCE_TYPE_REFUND,
+        reference_id=str(refund.id),
+        event_id=refund.event_id,
+    )
+
+
+def send_refund_approved_notification(db: Session, refund) -> SendEmailResult:
+    """Notify the participant that their refund has been approved."""
+    participant_email = refund.participant.email if refund.participant else None
+    if not participant_email:
+        return SendEmailResult(False, "FAILED", "No participant email found")
+
+    event_name = refund.event.name if refund.event else "your event"
+    amount = _fmt_paise(refund.approved_refund_amount or refund.requested_refund_amount)
+
+    subject = f"Refund approved — {event_name}"
+    body = (
+        f"Your refund request for {event_name} has been approved.\n\n"
+        f"Approved refund amount: {amount}\n\n"
+        f"The organizer will process your refund shortly. You will receive another notification once it has been sent."
+    )
+    html_body = f"""
+<p>Your refund request for <strong>{event_name}</strong> has been <strong>approved</strong>.</p>
+<p style="font-size:1.2em;font-weight:600;">Approved refund: {amount}</p>
+<p>The organizer will process your refund shortly. You will receive another notification once it has been sent.</p>
+"""
+    return send_email(
+        db,
+        recipient=participant_email,
+        subject=subject,
+        body=body,
+        html_body=html_body,
+        email_type=EMAIL_TYPE_REFUND,
+        reference_type=REFERENCE_TYPE_REFUND,
+        reference_id=str(refund.id),
+        event_id=refund.event_id,
+    )
+
+
+def send_refund_rejected_notification(db: Session, refund) -> SendEmailResult:
+    """Notify the participant that their refund has been rejected."""
+    participant_email = refund.participant.email if refund.participant else None
+    if not participant_email:
+        return SendEmailResult(False, "FAILED", "No participant email found")
+
+    event_name = refund.event.name if refund.event else "your event"
+    reason = refund.organizer_comments or "No reason provided."
+
+    subject = f"Refund request declined — {event_name}"
+    body = (
+        f"Your refund request for {event_name} has been declined.\n\n"
+        f"Reason: {reason}\n\n"
+        f"If you have questions, please contact the event organizer directly."
+    )
+    html_body = f"""
+<p>Your refund request for <strong>{event_name}</strong> has been <strong>declined</strong>.</p>
+<p><strong>Reason:</strong> {reason}</p>
+<p>If you have questions, please contact the event organizer directly.</p>
+"""
+    return send_email(
+        db,
+        recipient=participant_email,
+        subject=subject,
+        body=body,
+        html_body=html_body,
+        email_type=EMAIL_TYPE_REFUND,
+        reference_type=REFERENCE_TYPE_REFUND,
+        reference_id=str(refund.id),
+        event_id=refund.event_id,
+    )
+
+
+def send_refund_sent_notification(db: Session, refund) -> SendEmailResult:
+    """Notify the participant that the organizer has sent their refund."""
+    participant_email = refund.participant.email if refund.participant else None
+    if not participant_email:
+        return SendEmailResult(False, "FAILED", "No participant email found")
+
+    event_name = refund.event.name if refund.event else "your event"
+    amount = _fmt_paise(refund.approved_refund_amount or refund.requested_refund_amount)
+    utr = refund.refund_utr or "N/A"
+
+    subject = f"Refund sent — {event_name}"
+    body = (
+        f"Your refund for {event_name} has been processed by the organizer.\n\n"
+        f"Amount: {amount}\n"
+        f"Reference / UTR: {utr}\n\n"
+        f"Please allow 1–3 business days for the amount to reflect in your account.\n"
+        f"Once received, please confirm receipt on your SportPass dashboard."
+    )
+    html_body = f"""
+<p>Your refund for <strong>{event_name}</strong> has been processed by the organizer.</p>
+<table style="border-collapse:collapse;margin:16px 0;">
+  <tr><td style="padding:4px 12px 4px 0;color:#666;">Amount</td><td style="padding:4px 0;font-weight:600;">{amount}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0;color:#666;">Reference / UTR</td><td style="padding:4px 0;font-family:monospace;">{utr}</td></tr>
+</table>
+<p>Please allow 1–3 business days for the amount to reflect in your account.</p>
+<p>Once received, please confirm receipt on your SportPass dashboard.</p>
+"""
+    return send_email(
+        db,
+        recipient=participant_email,
+        subject=subject,
+        body=body,
+        html_body=html_body,
+        email_type=EMAIL_TYPE_REFUND,
+        reference_type=REFERENCE_TYPE_REFUND,
+        reference_id=str(refund.id),
+        event_id=refund.event_id,
+    )

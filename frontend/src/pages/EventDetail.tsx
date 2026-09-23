@@ -23,6 +23,20 @@ import {
   FileText,
 } from "lucide-react";
 
+function WhatsAppIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 32 32"
+      fill="currentColor"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M16 0C7.163 0 0 7.163 0 16c0 2.833.738 5.494 2.031 7.8L0 32l8.418-2.007A15.934 15.934 0 0016 32c8.837 0 16-7.163 16-16S24.837 0 16 0zm0 29.333a13.267 13.267 0 01-6.771-1.853l-.485-.29-5.013 1.196 1.25-4.883-.317-.5A13.24 13.24 0 012.667 16C2.667 8.636 8.636 2.667 16 2.667S29.333 8.636 29.333 16 23.364 29.333 16 29.333zm7.27-9.927c-.398-.2-2.358-1.163-2.723-1.296-.364-.133-.63-.2-.896.2-.265.4-1.03 1.296-1.262 1.562-.232.267-.465.3-.863.1-.398-.2-1.682-.62-3.203-1.978-1.184-1.057-1.983-2.362-2.216-2.762-.232-.4-.025-.616.175-.815.18-.178.398-.465.597-.697.2-.233.265-.4.398-.666.133-.267.066-.5-.033-.7-.1-.2-.896-2.162-1.228-2.96-.323-.778-.651-.672-.896-.684-.232-.012-.498-.015-.764-.015s-.697.1-.996.483C9.07 11.17 8 12.333 8 14.128s1.163 3.594 1.329 3.843c.165.25 2.29 3.497 5.546 4.904 3.256 1.408 3.256.938 3.843.879.587-.058 1.892-.773 2.158-1.52.265-.747.265-1.387.185-1.52-.08-.133-.315-.2-.713-.4z" />
+    </svg>
+  );
+}
+
 const EventDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -233,10 +247,42 @@ const EventDetail = () => {
               </div>
             </section>
 
+            {/* Refund Policy — only shown when refund_policy_enabled */}
+            {event.refundPolicyEnabled && (
+              <section>
+                <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-primary" /> Refund Policy
+                </h2>
+                <div className="rounded-xl border bg-card p-5 space-y-3 text-sm text-muted-foreground">
+                  {event.refundPolicyType === "full_refund" && event.refundCutoffAt && (
+                    <p>Refunds are available until <span className="font-semibold text-foreground">{new Date(event.refundCutoffAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</span>.</p>
+                  )}
+                  {event.refundPolicyType === "partial_refund" && (
+                    <p>A partial refund of <span className="font-semibold text-foreground">{event.refundPercentage ?? 100}%</span> of the registration fee is available{event.refundCutoffAt ? ` until ${new Date(event.refundCutoffAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}` : ""}.</p>
+                  )}
+                  {event.refundPolicyType === "organizer_approval" && (
+                    <p>Refund requests are subject to organizer approval. Submit your request and the organizer will review it.</p>
+                  )}
+                  {event.refundPolicyType === "no_refund" && (
+                    <p className="text-amber-700 font-medium">No refunds are available after registration.</p>
+                  )}
+                  {event.refundPolicyType !== "no_refund" && (
+                    <p><span className="font-semibold text-foreground">SportPass convenience fee</span> is {event.platformFeeRefundable ? "refundable" : "non-refundable"}.</p>
+                  )}
+                  {event.refundPolicyText && (
+                    <p className="border-t pt-3 whitespace-pre-line">{event.refundPolicyText}</p>
+                  )}
+                </div>
+              </section>
+            )}
+
             {/* WhatsApp Support CTA */}
             <section>
               <div className="rounded-xl border border-[#25D366]/20 bg-[#25D366]/5 p-5">
                 <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white">
+                    <WhatsAppIcon className="h-5 w-5" />
+                  </div>
                   <div className="flex-1">
                     <h3 className="font-bold text-sm">Need help? Chat with SportPass</h3>
                     <p className="mt-1 text-sm text-muted-foreground mb-3">
@@ -248,6 +294,7 @@ const EventDetail = () => {
                       rel="noopener noreferrer"
                       className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#20bd5a] focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:ring-offset-2"
                     >
+                      <WhatsAppIcon className="h-4 w-4" />
                       Chat on WhatsApp
                     </a>
                   </div>
