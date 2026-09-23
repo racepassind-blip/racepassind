@@ -515,6 +515,90 @@ def list_refunds_for_admin(
     return list(db.scalars(query.limit(limit + 1)))
 
 
+def create_manual_refund(
+    db: Session,
+    *,
+    organizer_id: UUID,
+    event_id: UUID,
+    registration_id: UUID | None,
+    participant_name: str,
+    participant_contact: str | None,
+    amount_paise: int,
+    refund_reason: str,
+    notes: str | None,
+    refund_utr: str | None,
+    actor_user_id: UUID,
+) -> Refund:
+    """Organizer creates a manual refund not tied to any SportPass registration.
+
+    These records are flagged is_manual_refund=True and are excluded from
+    event earnings and billing calculations. They exist purely as an audit
+    trail for cash/outside-platform refunds the organizer issues manually.
+    If registration_id is supplied the refund is linked to that registration
+    for tracking but still excluded from automated billing calculations.
+    """
+    # Verify the event belongs to this organizer
+    event = db.scalar(
+        select(Event).where(Event.id == event_id, Event.organization_id == organizer_id)
+    )
+    if event is None:
+        raise ValueError("Event not found or does not belong to your organisation")
+
+    # If registration_id given, resolve participant_id from it
+    participant_id = None
+    if registration_id:
+        reg = db.scalar(select(Registration).where(Registration.id == registration_id))
+        if reg:
+            participant_id = reg.participant_id
+
+    now = utc_now()
+    status = REFUND_STATUS_REFUND_SENT if refund_utr else REFUND_STATUS_APPROVED
+
+    refund = Refund(
+        registration_id=registration_id,
+        event_id=event_id,
+        participant_id=participant_id,
+        organizer_id=organizer_id,
+        is_manual_refund=True,
+        manual_participant_name=participant_name.strip(),
+        manual_participant_contact=(participant_contact or "").strip() or None,
+        payment_method="manual",
+        payment_provider=PAYMENT_PROVIDER_DIRECT_UPI,
+        original_registration_amount=amount_paise,
+        original_platform_fee=0,
+        original_total_paid=amount_paise,
+        requested_refund_amount=amount_paise,
+        approved_refund_amount=amount_paise,
+        platform_fee_refund_amount=0,
+        refund_reason=refund_reason[:120],
+        organizer_comments=notes,
+        status=status,
+        requested_at=now,
+        reviewed_at=now,
+        approved_at=now,
+        refunded_at=now if refund_utr else None,
+        refund_utr=refund_utr,
+    )
+    db.add(refund)
+    db.flush()
+
+    record_audit(
+        db,
+        actor_user_id=actor_user_id,
+        action="manual_refund_created",
+        resource_type="refund",
+        resource_id=refund.id,
+        metadata={
+            "participantName": participant_name,
+            "amountPaise": amount_paise,
+            "hasUtr": bool(refund_utr),
+            "linkedRegistrationId": str(registration_id) if registration_id else None,
+        },
+    )
+    db.commit()
+    return db.get(Refund, refund.id)
+
+
 def get_refund_for_registration(db: Session, registration_id: UUID) -> Refund | None:
     """Return the most recent refund for a registration (any status)."""
     return db.scalar(
@@ -528,10 +612,13 @@ def serialize_refund(refund: Refund) -> dict:
     """Common serialisation for refund objects returned by the API."""
     return {
         "id": str(refund.id),
-        "registrationId": str(refund.registration_id),
+        "registrationId": str(refund.registration_id) if refund.registration_id else None,
         "eventId": str(refund.event_id),
-        "participantId": str(refund.participant_id),
+        "participantId": str(refund.participant_id) if refund.participant_id else None,
         "organizerId": str(refund.organizer_id),
+        "isManualRefund": refund.is_manual_refund,
+        "manualParticipantName": refund.manual_participant_name,
+        "manualParticipantContact": refund.manual_participant_contact,
         "paymentMethod": refund.payment_method,
         "paymentProvider": refund.payment_provider,
         "originalRegistrationAmount": refund.original_registration_amount,

@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import EventDetail from "./pages/EventDetail";
 import PublicEventResults from "./pages/PublicEventResults";
+import ResultAdapter from "./results/ResultAdapter";
 import Checkout from "./pages/Checkout";
 import Dashboard from "./pages/Dashboard";
 import DashboardUpcoming from "./pages/DashboardUpcoming";
@@ -71,7 +72,7 @@ const App = () => (
             <Route path="/organizers" element={<OrganizerInfo />} />
             <Route path="/federations-associations" element={<FederationsAssociationsComingSoon />} />
             <Route path="/event/:id" element={<EventDetail />} />
-            <Route path="/event/:id/results" element={<PublicEventResults />} />
+            <Route path="/event/:id/results" element={<ResultAdapter />} />
             <Route path="/checkout/:eventId" element={<Checkout />} />
             <Route path="/checkout/:eventId/:tierId" element={<Checkout />} />
             <Route path="/confirmation" element={<Confirmation />} />
@@ -116,6 +117,7 @@ const App = () => (
             <Route path="/organizer/pricing" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerPricing /></ProtectedRoute>} />
             <Route path="/organizer/setup" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerSetup /></ProtectedRoute>} />
             <Route path="/organizer/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerRefunds /></ProtectedRoute>} />
+            <Route path="/organizer/events/:eventId/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerRefunds /></ProtectedRoute>} />
             <Route path="/terms-and-conditions" element={<PrivacyPolicy />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/terms-of-service" element={<TermsOfService />} />

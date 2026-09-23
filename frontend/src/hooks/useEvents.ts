@@ -221,6 +221,19 @@ export interface OrganizerEvent {
   adminFeatureOverride?: boolean;
 }
 
+export interface RegistrationRefundInfo {
+  refund: {
+    id: string;
+    status: string;
+    requestedRefundAmount: number;
+    approvedRefundAmount: number | null;
+    refundUtr: string | null;
+    organizerComments: string | null;
+    requestedAt: string | null;
+    refundedAt: string | null;
+  } | null;
+}
+
 export interface OrganizerEventDashboard {
   event: OrganizerEvent;
   inventory: { total: number; sold: number; reserved: number; available: number };
@@ -407,5 +420,16 @@ export function useOrganizerEventDashboard(eventId: string | undefined) {
     queryKey: ["organizer-event-dashboard", eventId],
     enabled: Boolean(eventId),
     queryFn: () => apiRequest<OrganizerEventDashboard>(`/organizer/events/${eventId}/dashboard`),
+  });
+}
+
+export function useRegistrationRefund(registrationId: string | undefined) {
+  return useQuery({
+    queryKey: ["registration-refund", registrationId],
+    enabled: Boolean(registrationId),
+    staleTime: 30_000,
+    queryFn: () => apiRequest<{ refund: RegistrationRefundInfo | null }>(
+      `/organizer/registrations/${registrationId}/refund`
+    ),
   });
 }

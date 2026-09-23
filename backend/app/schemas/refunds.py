@@ -66,3 +66,39 @@ class RefundMarkSentIn(BaseModel):
         if not v:
             raise ValueError("UTR / transaction reference is required")
         return v
+
+
+class ManualRefundCreateIn(BaseModel):
+    """Organizer creates a manual refund record (no registration required).
+
+    is_manual_refund is always True for this flow.
+    These records are excluded from earnings/billing calculations.
+    If registration_id is provided the refund is linked to that registration
+    for tracking purposes but still flagged as organizer-created.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(min_length=1)
+    registration_id: str | None = Field(default=None)
+    participant_name: str = Field(min_length=1, max_length=200)
+    participant_contact: str | None = Field(default=None, max_length=200)
+    amount_paise: int = Field(gt=0, description="Refund amount in paise")
+    refund_reason: str = Field(min_length=1, max_length=120)
+    notes: str | None = Field(default=None, max_length=1000)
+    # Optional — organizer can enter UTR immediately if already sent
+    refund_utr: str | None = Field(default=None, max_length=120)
+
+    @field_validator("participant_name", "refund_reason")
+    @classmethod
+    def strip_required(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("This field is required")
+        return v
+
+    @field_validator("participant_contact", "notes", "refund_utr")
+    @classmethod
+    def strip_optional(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return v.strip() or None

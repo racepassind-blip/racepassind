@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { ApiError, apiRequest, setUnauthorizedHandler } from "@/lib/api";
+import { ApiError, apiRequest, clearCsrfToken, setUnauthorizedHandler } from "@/lib/api";
 
 export type UserRole = "admin" | "organizer" | "participant" | "user";
 
@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearSession = useCallback(() => {
     setUser(null);
+    clearCsrfToken();
     queryClient.removeQueries({ queryKey: ["participant-registrations"] });
   }, [queryClient]);
 

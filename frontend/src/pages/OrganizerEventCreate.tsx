@@ -43,7 +43,9 @@ interface CategoryForm {
   id: string;
   persisted: boolean;
   name: string;
-  distance: string;
+  distance: string;       // combined string sent to API, e.g. "5 KM"
+  distanceValue: string;  // numeric part, e.g. "5"
+  distanceUnit: "KM" | "M"; // unit dropdown
   description: string;
   ageMin: number | null;
   ageMax: number | null;
@@ -153,8 +155,25 @@ const sports = [
   { value: "walkathon", label: "Walkathons/charity walks" },
 ];
 
+/** Parse a stored distance string like "21.1 KM" or "5 M" back into value + unit. */
+function parseDistanceString(raw: string): { value: string; unit: "KM" | "M" } {
+  const trimmed = (raw ?? "").trim().toUpperCase();
+  // Match optional decimal number followed by optional whitespace then unit
+  const match = trimmed.match(/^(\d*\.?\d+)\s*(KM|M)?$/);
+  if (match) {
+    return { value: match[1], unit: (match[2] === "M" ? "M" : "KM") };
+  }
+  // Legacy strings like "10 km", "5km", "42.2 KM"
+  const legacyMatch = trimmed.match(/^(\d*\.?\d+)\s*(KM|KMS|M|METERS?)?/);
+  if (legacyMatch) {
+    return { value: legacyMatch[1], unit: (legacyMatch[2] === "M" || legacyMatch[2]?.startsWith("METER") ? "M" : "KM") };
+  }
+  // Fallback — store the raw value as-is so nothing is lost
+  return { value: trimmed, unit: "KM" };
+}
+
 const newTicket = (): TicketForm => ({ id: crypto.randomUUID(), persisted: false, name: "", description: "", price: "", quantity: "", saleStart: null, saleEnd: null, maxPerUser: 1 });
-const newCategory = (): CategoryForm => ({ id: crypto.randomUUID(), persisted: false, name: "", distance: "", description: "", ageMin: null, ageMax: null, gender: null, entryType: "singles", participantsPerEntry: 1, teamSizeMin: null, teamSizeMax: null, tickets: [newTicket()] });
+const newCategory = (): CategoryForm => ({ id: crypto.randomUUID(), persisted: false, name: "", distance: "", distanceValue: "", distanceUnit: "KM", description: "", ageMin: null, ageMax: null, gender: null, entryType: "singles", participantsPerEntry: 1, teamSizeMin: null, teamSizeMax: null, tickets: [newTicket()] });
 
 const OrganizerEventCreate = () => {
   const navigate = useNavigate();
@@ -206,7 +225,13 @@ const OrganizerEventCreate = () => {
   const [addonEditors, setAddonEditors] = useState<AddonEditor[]>(defaultAddonEditors);
   const currentSportConfig = getSportConfig(sport);
   const supportsDistance = currentSportConfig.supports_distance;
-  const categoryDistances = useMemo(() => categories.map((category) => category.distance.trim()).filter(Boolean), [categories]);
+  // Build combined distance strings for the category_distance registration dropdown
+  const categoryDistances = useMemo(
+    () => categories
+      .map((c) => c.distanceValue.trim() ? `${c.distanceValue.trim()} ${c.distanceUnit}` : "")
+      .filter(Boolean),
+    [categories],
+  );
   const hasPaidTickets = categories.some((category) => category.tickets.some((ticket) => Number(ticket.price) > 0));
   const hasTeamCategory = categories.some((category) => category.entryType === "team");
   const [isLoadingEvent, setIsLoadingEvent] = useState(Boolean(eventId));
@@ -304,15 +329,19 @@ const OrganizerEventCreate = () => {
         apiRequest<{ allowDirectUpi?: boolean }>(`/organizer/organizations/${event.organizationId}`)
           .then((org) => setAllowDirectUpi(org.allowDirectUpi ?? false))
           .catch(() => undefined);
-        setCategories(event.categories.map((category) => ({
-          id: category.id,
-          persisted: true,
-          name: category.name,
-          distance: category.distance ?? "",
-          description: category.description ?? "",
-          ageMin: category.ageMin,
-          ageMax: category.ageMax,
-          gender: category.gender,
+        setCategories(event.categories.map((category) => {
+          const parsed = parseDistanceString(category.distance ?? "");
+          return {
+            id: category.id,
+            persisted: true,
+            name: category.name,
+            distance: category.distance ?? "",
+            distanceValue: parsed.value,
+            distanceUnit: parsed.unit,
+            description: category.description ?? "",
+            ageMin: category.ageMin,
+            ageMax: category.ageMax,
+            gender: category.gender,
           entryType: category.entryType ?? "singles",
           participantsPerEntry: category.participantsPerEntry ?? 1,
           teamSizeMin: category.teamSizeMin ?? null,
@@ -328,7 +357,8 @@ const OrganizerEventCreate = () => {
             saleEnd: ticket.saleEnd,
             maxPerUser: ticket.maxPerUser ?? 1,
           })),
-        })));
+          };
+        }));
       })
       .catch((error) => {
         toast.error(error instanceof Error ? error.message : "Could not load event");
@@ -337,8 +367,18 @@ const OrganizerEventCreate = () => {
       .finally(() => setIsLoadingEvent(false));
   }, [eventId, navigate]);
 
-  const updateCategory = (id: string, field: "name" | "distance", value: string) => {
-    setCategories((current) => current.map((category) => category.id === id ? { ...category, [field]: value } : category));
+  const updateCategory = (id: string, field: "name" | "distanceValue" | "distanceUnit", value: string) => {
+    setCategories((current) => current.map((category) => {
+      if (category.id !== id) return category;
+      const updated = { ...category, [field]: value };
+      // Keep the combined `distance` string in sync for the API payload
+      if (field === "distanceValue" || field === "distanceUnit") {
+        const val = field === "distanceValue" ? value : updated.distanceValue;
+        const unit = field === "distanceUnit" ? value : updated.distanceUnit;
+        updated.distance = val.trim() ? `${val.trim()} ${unit}` : "";
+      }
+      return updated;
+    }));
   };
 
   const updateEntryType = (id: string, entryType: CategoryForm["entryType"]) => {
@@ -491,7 +531,7 @@ const OrganizerEventCreate = () => {
       return false;
     }
     if (step === 2) {
-      if (categories.some((category) => !category.name.trim() || (supportsDistance && !category.distance.trim()) || category.tickets.some((ticket) => !ticket.name.trim() || ticket.price.trim() === "" || ticket.quantity.trim() === ""))) {
+      if (categories.some((category) => !category.name.trim() || (supportsDistance && !category.distanceValue.trim()) || category.tickets.some((ticket) => !ticket.name.trim() || ticket.price.trim() === "" || ticket.quantity.trim() === ""))) {
         toast.error("Complete every category and ticket field.");
         return false;
       }
@@ -581,7 +621,7 @@ const OrganizerEventCreate = () => {
       toast.error("Add UPI payment details for paid ticket tiers.");
       return;
     }
-    if (categories.some((category) => !category.name.trim() || (supportsDistance && !category.distance.trim()) || category.tickets.some((ticket) => !ticket.name.trim() || ticket.price.trim() === "" || ticket.quantity.trim() === ""))) {
+    if (categories.some((category) => !category.name.trim() || (supportsDistance && !category.distanceValue.trim()) || category.tickets.some((ticket) => !ticket.name.trim() || ticket.price.trim() === "" || ticket.quantity.trim() === ""))) {
       toast.error("Complete every category and ticket field.");
       return;
     }
@@ -821,7 +861,7 @@ const OrganizerEventCreate = () => {
             <div className="flex items-center justify-between"><div><h2 className="text-lg font-bold">Categories and Tickets</h2><p className="text-sm text-muted-foreground">Add one or more categories and ticket options for this event.</p></div><Button variant="outline" size="sm" onClick={addCategory}><Plus className="mr-1 h-4 w-4" /> Category</Button></div>
             {categories.map((category, categoryIndex) => <div key={category.id} className="space-y-4 rounded-lg border p-4">
               <div className="flex items-center justify-between"><p className="font-semibold">Category #{categoryIndex + 1}</p>{categories.length > 1 && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4" /></Button>}</div>
-              <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Category name *</Label><Input value={category.name} onChange={(e) => updateCategory(category.id, "name", e.target.value)} placeholder="Open category" /></div>{supportsDistance && <div className="space-y-2"><Label>Distance *</Label><Input value={category.distance} onChange={(e) => updateCategory(category.id, "distance", e.target.value)} placeholder="10 km" /></div>}<div className="space-y-2"><Label>Entry format *</Label><Select value={category.entryType} onValueChange={(value) => updateEntryType(category.id, value as CategoryForm["entryType"])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="singles">Singles · 1 participant</SelectItem><SelectItem value="doubles">Doubles · 2 participants</SelectItem><SelectItem value="team">Team</SelectItem></SelectContent></Select></div>{category.entryType === "team" && <div className="space-y-2 sm:col-span-2"><Label>Team size *</Label><div className="flex items-center gap-3"><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Min participants</p><Input type="number" min={2} max={50} value={category.teamSizeMin ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMin", Number(e.target.value))} placeholder="3" /></div><span className="mt-5 text-sm text-muted-foreground">—</span><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Max participants</p><Input type="number" min={2} max={50} value={category.teamSizeMax ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMax", Number(e.target.value))} placeholder="10" /></div></div><p className="text-xs text-muted-foreground">Ticket price and inventory count per complete team.</p></div>}</div>
+              <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Category name *</Label><Input value={category.name} onChange={(e) => updateCategory(category.id, "name", e.target.value)} placeholder="Open category" /></div>{supportsDistance && <div className="space-y-2"><Label>Distance *</Label><div className="flex gap-2"><Input type="number" min="0" step="any" value={category.distanceValue} onChange={(e) => updateCategory(category.id, "distanceValue", e.target.value)} placeholder="e.g. 21.1" className="flex-1" /><Select value={category.distanceUnit} onValueChange={(v) => updateCategory(category.id, "distanceUnit", v)}><SelectTrigger className="w-24"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="KM"><span className="font-medium">KM</span><span className="ml-2 text-xs text-muted-foreground">Kilometers</span></SelectItem><SelectItem value="M"><span className="font-medium">M</span><span className="ml-2 text-xs text-muted-foreground">Meters</span></SelectItem></SelectContent></Select></div>{category.distanceUnit === "KM" && <p className="text-xs text-muted-foreground">KM = Kilometers (e.g. 5 KM, 21.1 KM, 42.2 KM)</p>}{category.distanceUnit === "M" && <p className="text-xs text-muted-foreground">M = Meters (e.g. 400 M, 800 M)</p>}</div>}<div className="space-y-2"><Label>Entry format *</Label><Select value={category.entryType} onValueChange={(value) => updateEntryType(category.id, value as CategoryForm["entryType"])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="singles">Singles · 1 participant</SelectItem><SelectItem value="doubles">Doubles · 2 participants</SelectItem><SelectItem value="team">Team</SelectItem></SelectContent></Select></div>{category.entryType === "team" && <div className="space-y-2 sm:col-span-2"><Label>Team size *</Label><div className="flex items-center gap-3"><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Min participants</p><Input type="number" min={2} max={50} value={category.teamSizeMin ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMin", Number(e.target.value))} placeholder="3" /></div><span className="mt-5 text-sm text-muted-foreground">—</span><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Max participants</p><Input type="number" min={2} max={50} value={category.teamSizeMax ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMax", Number(e.target.value))} placeholder="10" /></div></div><p className="text-xs text-muted-foreground">Ticket price and inventory count per complete team.</p></div>}</div>
               {category.tickets.map((ticket, ticketIndex) => <div key={ticket.id} className="space-y-3 rounded-md bg-muted/40 p-4"><div className="flex items-center justify-between"><p className="text-sm font-medium">Ticket #{ticketIndex + 1}</p>{category.tickets.length > 1 && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeTicket(category.id, ticket.id)}><Trash2 className="h-3.5 w-3.5" /></Button>}</div><div className="grid gap-3 sm:grid-cols-3"><div className="space-y-1"><Label className="text-xs">Name *</Label><Input value={ticket.name} onChange={(e) => updateTicket(category.id, ticket.id, "name", e.target.value)} placeholder="Early Bird" /></div><div className="space-y-1"><Label className="text-xs">Price (₹; 0 = free) *</Label><Input type="number" min="0" step="0.01" value={ticket.price} onChange={(e) => updateTicket(category.id, ticket.id, "price", e.target.value)} placeholder="0 for free" /></div><div className="space-y-1"><Label className="text-xs">Places *</Label><Input type="number" min="1" value={ticket.quantity} onChange={(e) => updateTicket(category.id, ticket.id, "quantity", e.target.value)} placeholder="100" /></div></div></div>)}
               <Button variant="outline" size="sm" onClick={() => addTicket(category.id)}><Plus className="mr-1 h-4 w-4" /> Ticket tier</Button>
             </div>)}

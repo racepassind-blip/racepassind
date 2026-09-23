@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_authorized_event, get_current_user, require_csrf, require_roles
-from app.schemas.refunds import RefundDecisionIn, RefundMarkSentIn, RefundRequestIn
+from app.schemas.refunds import RefundDecisionIn, RefundMarkSentIn, RefundRequestIn, ManualRefundCreateIn
 from app.services.email_service import (
     send_refund_approved_notification,
     send_refund_rejected_notification,
@@ -35,6 +35,7 @@ from app.services.email_service import (
 from app.services.refund_service import (
     check_refund_eligibility,
     confirm_refund_received,
+    create_manual_refund,
     get_refund_for_registration,
     get_refund_with_context,
     list_refunds_for_admin,
@@ -182,9 +183,113 @@ def _assert_organizer_owns_refund(db: Session, user: User, refund: Refund) -> No
         raise HTTPException(status_code=404, detail="Refund not found")
 
 
+@router.post("/organizer/refunds", status_code=201)
+def organizer_create_manual_refund(
+    payload: ManualRefundCreateIn,
+    _csrf=Depends(require_csrf),
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+):
+    """Organizer creates a manual refund not linked to any SportPass registration.
+
+    Use this for participants who paid outside the platform (cash, direct transfer,
+    in-person) and need a refund record for your own audit trail.
+
+    These records are flagged is_manual_refund=True and are NEVER included in
+    event earnings totals or SportPass billing calculations.
+    """
+    from uuid import UUID as _UUID
+    try:
+        event_uuid = _UUID(payload.event_id)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail="Invalid event_id")
+
+    # Optional registration_id
+    registration_uuid = None
+    if payload.registration_id:
+        try:
+            registration_uuid = _UUID(payload.registration_id)
+        except (ValueError, AttributeError):
+            raise HTTPException(status_code=422, detail="Invalid registration_id")
+
+    # Resolve organizer_id for this user
+    if user.role == "admin":
+        # Admin must specify event; we find organizer from the event
+        event = db.scalar(select(Event).where(Event.id == event_uuid))
+        if event is None:
+            raise HTTPException(status_code=404, detail="Event not found")
+        organizer_id = event.organization_id
+    else:
+        membership = db.scalar(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.member_role == "organizer",
+            )
+        )
+        if membership is None:
+            raise HTTPException(status_code=403, detail="No organizer account found")
+        organizer_id = membership.organization_id
+
+    try:
+        refund = create_manual_refund(
+            db,
+            organizer_id=organizer_id,
+            event_id=event_uuid,
+            registration_id=registration_uuid,
+            participant_name=payload.participant_name,
+            participant_contact=payload.participant_contact,
+            amount_paise=payload.amount_paise,
+            refund_reason=payload.refund_reason,
+            notes=payload.notes,
+            refund_utr=payload.refund_utr,
+            actor_user_id=user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    loaded = get_refund_with_context(db, refund.id)
+    return serialize_refund(loaded)
+
+
+@router.get("/organizer/registrations/{registration_id}/refund")
+def organizer_get_registration_refund(
+    registration_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+):
+    """Return the current refund for a registration — organizer/admin view.
+
+    Unlike the participant endpoint this does not check user ownership;
+    it checks organizer membership instead.
+    """
+    # Verify the registration belongs to one of this organizer's events
+    registration = db.scalar(select(Registration).where(Registration.id == registration_id))
+    if registration is None:
+        raise HTTPException(status_code=404, detail="Registration not found")
+
+    if user.role != "admin":
+        membership = db.scalar(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.member_role == "organizer",
+            )
+        )
+        if membership is None:
+            raise HTTPException(status_code=404, detail="Registration not found")
+        # Check event belongs to this org
+        event = db.get(Event, registration.event_id)
+        if event is None or event.organization_id != membership.organization_id:
+            raise HTTPException(status_code=404, detail="Registration not found")
+
+    refund = get_refund_for_registration(db, registration_id)
+    if refund is None:
+        return {"refund": None}
+    loaded = get_refund_with_context(db, refund.id)
+    return {"refund": serialize_refund(loaded)}
+
+
 @router.get("/organizer/refunds")
-def organizer_list_refunds(
-    event_id: UUID | None = None,
+def organizer_list_refunds(    event_id: UUID | None = None,
     refund_status: str | None = None,
     payment_provider: str | None = None,
     limit: int = 50,

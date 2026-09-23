@@ -1,3 +1,5 @@
+export type ResultType = "match_score" | "race_time" | "none";
+
 export interface SportConfig {
   participant_label: string;
   supports_distance: boolean;
@@ -9,6 +11,13 @@ export interface SportConfig {
   numberEnabled: boolean;
   numberLabel: string;
   scope: "individual" | "team_member";
+  /**
+   * Determines which result UI adapter is used for this sport.
+   * match_score  – per-game scores tracked via Match/Bout tables (badminton, tennis, squash)
+   * race_time    – finish-time / bib-based results (running, cycling)
+   * none         – no result UI defined yet
+   */
+  result_type: ResultType;
 }
 
 export const sportConfig = {
@@ -22,6 +31,7 @@ export const sportConfig = {
     numberEnabled: true,
     numberLabel: "Bib Number",
     scope: "individual",
+    result_type: "race_time",
   },
   cycling: {
     participant_label: "Rider",
@@ -33,6 +43,7 @@ export const sportConfig = {
     numberEnabled: true,
     numberLabel: "Bib Number",
     scope: "individual",
+    result_type: "race_time",
   },
   badminton: {
     participant_label: "Player",
@@ -44,6 +55,7 @@ export const sportConfig = {
     numberEnabled: true,
     numberLabel: "Jersey Number",
     scope: "team_member",
+    result_type: "match_score",
     message: "Organize singles, doubles, and mixed doubles tournaments with ease. Track matches, scores, and results with built-in tournament management.",
   },
   tennis: {
@@ -56,6 +68,7 @@ export const sportConfig = {
     numberEnabled: true,
     numberLabel: "Player ID",
     scope: "individual",
+    result_type: "match_score",
   },
   squash: {
     participant_label: "Player",
@@ -67,6 +80,7 @@ export const sportConfig = {
     numberEnabled: true,
     numberLabel: "Jersey Number",
     scope: "team_member",
+    result_type: "match_score",
   },
 } as const satisfies Record<string, SportConfig>;
 
@@ -82,6 +96,7 @@ const DEFAULT_SPORT_CONFIG: SportConfig = {
   numberEnabled: true,
   numberLabel: "Bib Number",
   scope: "individual",
+  result_type: "none",
 };
 
 export function getSportConfig(

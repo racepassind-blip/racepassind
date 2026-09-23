@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { apiRequest } from "@/lib/api";
 import { scrollToTop } from "@/lib/scroll";
 import type { OrganizerVisibility } from "@/hooks/useEvents";
+import { useRegistrationRefund } from "@/hooks/useEvents";
 
 interface OrganizerEventOption {
   id: string;
@@ -69,6 +70,10 @@ interface OrganizerRegistration {
   selections: Record<string, { selected?: string; qty?: number }>;
   computedTotal: { addonTotalPaise?: number; totalPaise?: number };
   transferWarning?: string | null;
+  // Refund info (if a refund exists for this registration)
+  refundStatus?: string;
+  refundAmount?: number;
+  refundUtr?: string | null;
 }
 
 interface RegistrationPage {
@@ -110,6 +115,25 @@ function emailBadge(status: string | null) {
   if (status === "PENDING_LIMIT") return <Badge variant="secondary">Pending · limit</Badge>;
   if (status === "FAILED") return <Badge variant="destructive">Failed</Badge>;
   return <Badge variant="outline">Not sent</Badge>;
+}
+
+function refundStatusBadge(status: string) {
+  const variants: Record<string, string> = {
+    REQUESTED: "bg-amber-100 text-amber-800 border-amber-200",
+    APPROVED: "bg-blue-100 text-blue-800 border-blue-200",
+    REJECTED: "bg-red-100 text-red-800 border-red-200",
+    REFUND_SENT: "bg-purple-100 text-purple-800 border-purple-200",
+    REFUNDED: "bg-green-100 text-green-800 border-green-200",
+  };
+  const label = {
+    REQUESTED: "Requested",
+    APPROVED: "Approved",
+    REJECTED: "Rejected",
+    REFUND_SENT: "Sent",
+    REFUNDED: "Refunded",
+  }[status] ?? status;
+  const cls = variants[status] ?? "bg-slate-100 text-slate-700 border-slate-200";
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}`}>{label}</span>;
 }
 
 function formatINR(amountPaise: number) {
@@ -195,6 +219,9 @@ function RegistrationDetailDrawer({ registration, eventTickets, onClose, onTrans
   const [transferReason, setTransferReason] = useState("");
   const [transferring, setTransferring] = useState(false);
 
+  // Fetch refund info if registration has a refund
+  const { data: refundData } = useRegistrationRefund(registration?.id);
+  
   useEffect(() => {
     setShowTransfer(false);
     setTargetTicketId("");
@@ -389,6 +416,34 @@ function RegistrationDetailDrawer({ registration, eventTickets, onClose, onTrans
                     <span className="font-medium">{k.replaceAll("_", " ")}:</span> {String(v)}
                   </p>
                 ))}
+              </div>
+            </section>
+          )}
+
+          {/* ── Refund ─────────────────────────────────────────── */}
+          {refundData?.refund && (
+            <section>
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Refund</p>
+              <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Status</span>
+                  {refundStatusBadge(refundData.refund.status)}
+                </div>
+                {refundData.refund.approvedRefundAmount !== null && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Refund amount</span>
+                    <span className="font-semibold text-primary">{formatINR(refundData.refund.approvedRefundAmount ?? refundData.refund.requestedRefundAmount)}</span>
+                  </div>
+                )}
+                {refundData.refund.requestedRefundAmount !== refundData.refund.approvedRefundAmount && (
+                  <p className="text-xs text-muted-foreground">Requested: {formatINR(refundData.refund.requestedRefundAmount)}</p>
+                )}
+                {refundData.refund.refundUtr && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">UTR / Reference</span>
+                    <span className="font-mono text-xs">{refundData.refund.refundUtr}</span>
+                  </div>
+                )}
               </div>
             </section>
           )}

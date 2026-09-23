@@ -21,7 +21,7 @@ from app.services.registration_config_service import calculate_registration_tota
 from app.services.platform_fee_service import compute_participant_pricing
 from app.services.ticket_service import serialize_ticket, ticket_token_for_registration
 from app.services.organizer_visibility_service import _authorized_event_ids, get_visibility_for_events, serialize_visibility, visibility_filter_for_events
-from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, RegistrationParticipant, Ticket, User
+from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, RegistrationParticipant, Refund, Ticket, User
 
 
 def _human_reference() -> str:
@@ -522,6 +522,10 @@ def serialize_organizer_registration(registration: Registration, event: Event) -
         "submittedAt": payment.submitted_at if payment else None,
         "decisionReason": payment.decision_reason if payment else None,
         "reviewedAt": payment.reviewed_at if payment else None,
+        # Refund info (if any active refund for this registration)
+        "refundStatus": None,
+        "refundAmount": None,
+        "refundUtr": None,
     }
 
 
@@ -698,7 +702,28 @@ def list_organizer_registrations(
     ).unique().all()
     has_more = len(rows) > page_size
     page_rows = rows[:page_size]
-    items = [serialize_organizer_registration(registration, event) for registration, event in page_rows]
+    items = []
+    
+    # Fetch all refund statuses for the registrations on this page
+    reg_ids = [str(reg.id) for reg, _ in page_rows]
+    refunds = {}
+    if reg_ids:
+        refund_rows = db.execute(
+            select(Refund.registration_id, Refund.status, Refund.approved_refund_amount, Refund.refund_utr)
+            .where(Refund.registration_id.in_(reg_ids), Refund.status.in_(["REQUESTED", "APPROVED", "REFUND_SENT"]))
+        ).all()
+        refunds = {str(reg_id): {"status": status, "amount": approved, "utr": utr} 
+                   for reg_id, status, approved, utr in refund_rows}
+    
+    for registration, event in page_rows:
+        item = serialize_organizer_registration(registration, event)
+        # Add refund info if exists
+        reg_id_str = str(registration.id)
+        if reg_id_str in refunds:
+            item["refundStatus"] = refunds[reg_id_str]["status"]
+            item["refundAmount"] = refunds[reg_id_str]["amount"]
+            item["refundUtr"] = refunds[reg_id_str]["utr"]
+        items.append(item)
     next_cursor = None
     if has_more and page_rows:
         last_registration = page_rows[-1][0]
@@ -1084,10 +1109,10 @@ def load_confirmation_registration(db: Session, confirmation_token: str) -> Regi
     return registration
 
 
-def serialize_participant_registration(registration: Registration, event: Event) -> dict:
+def serialize_participant_registration(registration: Registration, event: Event, *, db: "Session | None" = None) -> dict:
     ticket = registration.ticket
     serialized_ticket = serialize_ticket(registration)
-    return {
+    result = {
         "id": str(registration.id),
         "registrationReference": registration.registration_reference,
         "event": {
@@ -1118,7 +1143,56 @@ def serialize_participant_registration(registration: Registration, event: Event)
         "checkedInAt": registration.checked_in_at,
         "paymentStatus": registration.payment_status,
         "ticket": serialized_ticket,
+        "refund": None,
+        "refundEligible": False,
+        "refundIneligibleReason": None,
     }
+
+    # Populate refund info when a db session is available
+    if db is not None:
+        refund = db.scalar(
+            select(Refund)
+            .where(Refund.registration_id == registration.id)
+            .order_by(Refund.created_at.desc())
+        )
+        if refund:
+            result["refund"] = {
+                "id": str(refund.id),
+                "status": refund.status,
+                "requestedRefundAmount": refund.requested_refund_amount,
+                "approvedRefundAmount": refund.approved_refund_amount,
+                "refundUtr": refund.refund_utr,
+                "refundedAt": refund.refunded_at.isoformat() if refund.refunded_at else None,
+                "confirmedAt": refund.confirmed_at.isoformat() if refund.confirmed_at else None,
+            }
+        else:
+            # Check eligibility inline (avoids circular import with refund_service)
+            eligible = False
+            reason = "This event does not have a refund policy"
+            if registration.status in ("confirmed", "checked_in") and registration.payment_status in ("approved", "not_required"):
+                event_obj = db.get(Event, registration.event_id)
+                if event_obj and event_obj.refund_policy_enabled and event_obj.refund_policy_type != "no_refund":
+                    import datetime as _dt
+                    if event_obj.refund_cutoff_at is not None:
+                        cutoff = event_obj.refund_cutoff_at
+                        if cutoff.tzinfo is None:
+                            cutoff = cutoff.replace(tzinfo=_dt.timezone.utc)
+                        if _dt.datetime.now(_dt.timezone.utc) > cutoff:
+                            reason = "The refund cutoff date has passed"
+                        else:
+                            eligible = True
+                            reason = None
+                    else:
+                        eligible = True
+                        reason = None
+                elif event_obj and event_obj.refund_policy_type == "no_refund":
+                    reason = "This event does not allow refunds after registration"
+            else:
+                reason = "Registration is not confirmed or payment not approved"
+            result["refundEligible"] = eligible
+            result["refundIneligibleReason"] = reason
+
+    return result
 
 
 def _owned_participant_registration_query(user_id):
@@ -1176,7 +1250,7 @@ def list_my_registrations(db: Session, user: User) -> list[dict]:
         .order_by(Registration.created_at.desc())
         .limit(100)
     ).all()
-    return [serialize_participant_registration(registration, event) for registration, event in rows]
+    return [serialize_participant_registration(registration, event, db=db) for registration, event in rows]
 
 
 def _load_claim_registration(db: Session, registration_reference: str):

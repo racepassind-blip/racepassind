@@ -93,17 +93,27 @@ async def security_and_observability_middleware(request: Request, call_next):
             detail = f"{type(exc).__name__}: {exc}"
         response = JSONResponse(status_code=500, content={"detail": detail})
 
-    # Only issue a CSRF cookie when the request arrived without one AND the
-    # response is not already setting it (e.g. /auth/csrf, /auth/login,
-    # /auth/register set their own). Setting a second cookie with the same name
-    # produces two conflicting Set-Cookie headers, so the header token and the
-    # stored cookie can diverge and CSRF validation fails intermittently.
+    # Only issue an ambient CSRF cookie when:
+    #   1. The incoming request has no CSRF cookie yet (first visit / cleared cookies).
+    #   2. The outgoing response is not already setting the CSRF cookie — prevents
+    #      producing two conflicting Set-Cookie headers for the same cookie name,
+    #      which would cause the stored cookie and the in-header token to diverge
+    #      and CSRF validation to fail intermittently.
+    #   3. This is not the /auth/csrf endpoint itself — that endpoint is the single
+    #      authoritative setter for a fresh token, and letting the middleware also
+    #      set a *different* random value on the same response would create a race
+    #      between which Set-Cookie the browser honours.
+    #
+    # Note: response.raw_headers is populated for both Starlette Response objects
+    # and for the JSONResponse we construct in the except-branch above, so the
+    # guard is reliable regardless of which code path produced the response.
+    is_csrf_endpoint = request.url.path.rstrip("/").endswith("/auth/csrf")
     response_sets_csrf = any(
         key.decode("latin-1").lower() == "set-cookie"
         and value.decode("latin-1").startswith(f"{CSRF_COOKIE}=")
         for key, value in response.raw_headers
     )
-    if not request.cookies.get(CSRF_COOKIE) and not response_sets_csrf:
+    if not request.cookies.get(CSRF_COOKIE) and not response_sets_csrf and not is_csrf_endpoint:
         response.set_cookie(
             CSRF_COOKIE,
             secrets.token_urlsafe(32),

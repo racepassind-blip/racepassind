@@ -36,7 +36,8 @@ export function Footer() {
           <div className="space-y-3">
             <h4 className="font-semibold text-sm">Contact</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
+              <li><a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#25D366] text-[10px] font-bold text-white">WA</span>
                 Chat with us on WhatsApp
               </a></li>
               <li><a href="mailto:sportpassind@gmail.com" className="hover:text-foreground transition-colors">support@sportpassindia.com</a></li>

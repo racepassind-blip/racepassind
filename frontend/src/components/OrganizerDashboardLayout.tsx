@@ -53,7 +53,11 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
     ...(eventId && supportsCommunications ? [{ label: "Communications", icon: MessageSquare, to: `/organizer/events/${eventId}/communications` }] : []),
     ...(eventId && supportsCheckin ? [{ label: "Check-in", icon: ScanLine, to: `/organizer/events/${eventId}/check-in` }] : []),
     ...(eventId && supportsBib ? [{ label: "Bib Management", icon: Package, to: `/organizer/events/${eventId}/allocations` }] : []),
-    ...(!eventId ? [{ label: "Refunds", icon: ReceiptText, to: "/organizer/refunds" }] : []),
+    // Refunds: event-scoped when inside an event, global when on the dashboard
+    ...(eventId
+      ? [{ label: "Refunds", icon: ReceiptText, to: `/organizer/events/${eventId}/refunds` }]
+      : [{ label: "Refunds", icon: ReceiptText, to: "/organizer/refunds" }]
+    ),
   ];
 
   const lockedItems: NavItem[] = freeEvent && !adminUnlocked ? [

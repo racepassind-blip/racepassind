@@ -48,6 +48,13 @@ class EventOut(BaseModel):
     platformFeeBearer: Literal["ORGANIZER", "PARTICIPANT"] = "ORGANIZER"
     sportPassFeePercentageBasisPoints: int = 500
     sportPassFeePerRegistrationPaise: int = 1000
+    # Refund policy (shown to participants only when enabled)
+    refundPolicyEnabled: bool = False
+    refundPolicyType: Literal["full_refund", "partial_refund", "organizer_approval", "no_refund"] | None = None
+    refundCutoffAt: str | None = None
+    refundPercentage: int | None = None
+    platformFeeRefundable: bool | None = False
+    refundPolicyText: str | None = None
 
 
 class OrganizerTicketIn(BaseModel):

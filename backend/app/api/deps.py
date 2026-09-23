@@ -84,10 +84,24 @@ def require_csrf(
     csrf_cookie: str | None = Cookie(default=None, alias=CSRF_COOKIE),
     csrf_header: str | None = Header(default=None, alias="X-CSRF-Token"),
 ) -> None:
-    if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+    # Emit distinct messages so the frontend can detect a CSRF failure via the
+    # keyword "csrf" (case-insensitive) in the detail string and trigger an
+    # automatic token-refresh + retry, rather than surfacing the error to the
+    # user as a permanent failure.
+    if not csrf_cookie:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your session has expired. Please refresh the page and try again.",
+            detail="csrf_missing: no CSRF cookie present. Please refresh the page and try again.",
+        )
+    if not csrf_header:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="csrf_missing: CSRF token header not sent. Please refresh the page and try again.",
+        )
+    if csrf_cookie != csrf_header:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="csrf_mismatch: CSRF token does not match. Please refresh the page and try again.",
         )
 
 

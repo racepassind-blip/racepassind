@@ -1057,10 +1057,21 @@ class Refund(Base):
     __tablename__ = "refunds"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    registration_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("registrations.id"), nullable=False, index=True)
+    # registration_id is NULL for manual (organizer-created) refunds
+    registration_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("registrations.id"), nullable=True, index=True)
     event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
-    participant_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("participants.id"), nullable=False, index=True)
+    # participant_id is NULL for manual refunds (no SportPass account required)
+    participant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("participants.id"), nullable=True, index=True)
     organizer_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    # True for organizer-created refunds not linked to a SportPass registration.
+    # These are for in-person / cash / outside-platform payment scenarios.
+    # is_manual_refund=True rows are EXCLUDED from event earnings/billing totals.
+    is_manual_refund: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false", default=False)
+
+    # For manual refunds: store the participant name/contact as plain text (no account needed)
+    manual_participant_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    manual_participant_contact: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # Payment method snapshot at the time of request
     payment_method: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -1105,9 +1116,9 @@ class Refund(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    registration: Mapped["Registration"] = relationship(foreign_keys=[registration_id])
+    registration: Mapped["Registration | None"] = relationship(foreign_keys=[registration_id])
     event: Mapped["Event"] = relationship(foreign_keys=[event_id])
-    participant: Mapped["Participant"] = relationship(foreign_keys=[participant_id])
+    participant: Mapped["Participant | None"] = relationship(foreign_keys=[participant_id])
     organization: Mapped["Organization"] = relationship(foreign_keys=[organizer_id])
     reviewer: Mapped["User | None"] = relationship(foreign_keys=[reviewed_by])
 
