@@ -24,6 +24,7 @@ interface OrganizerEventOption {
     name: string;
     tickets: Array<{ id: string; name: string }>;
   }>;
+  addonConfig?: { addons?: Array<{ id: string; name: string; type?: string; price_paise?: number }> } | null;
 }
 
 type RegistrationStatus = "awaiting_payment" | "pending_verification" | "confirmed" | "rejected" | "expired" | "checked_in";
@@ -193,13 +194,13 @@ function teamRosterSummary(registration: OrganizerRegistration) {
   );
 }
 
-function dynamicRegistrationSummary(registration: OrganizerRegistration) {
+function dynamicRegistrationSummary(registration: OrganizerRegistration, addonDefs: Record<string, string> = {}) {
   const teamSummary = teamRosterSummary(registration);
   if (teamSummary) return teamSummary;
   const responseEntries = Object.entries(registration.responses ?? {}).filter(([key]) => !["full_name", "email", "phone"].includes(key));
   const addonEntries = Object.entries(registration.selections ?? {});
   if (responseEntries.length === 0 && addonEntries.length === 0) return null;
-  return <details className="mt-2 text-xs"><summary className="cursor-pointer text-primary">Participant details</summary><div className="mt-2 space-y-1 rounded-md bg-muted/40 p-2">{responseEntries.map(([key, value]) => <p key={key}><span className="font-medium">{key.replaceAll("_", " ")}:</span> {String(value)}</p>)}{addonEntries.map(([key, value]) => <p key={key}><span className="font-medium">{key.replaceAll("_", " ")}:</span> {value.selected ?? value.qty ?? "—"}</p>)}{registration.computedTotal.addonTotalPaise !== undefined && <p className="font-medium">Add-ons: {formatINR(registration.computedTotal.addonTotalPaise)}</p>}</div></details>;
+  return <details className="mt-2 text-xs"><summary className="cursor-pointer text-primary">Participant details</summary><div className="mt-2 space-y-1 rounded-md bg-muted/40 p-2">{responseEntries.map(([key, value]) => <p key={key}><span className="font-medium">{key.replaceAll("_", " ")}:</span> {String(value)}</p>)}{addonEntries.map(([key, value]) => <p key={key}><span className="font-medium">{addonDefs[key] ?? key.replaceAll("_", " ")}:</span> {value.selected ?? value.qty ?? "—"}</p>)}{registration.computedTotal.addonTotalPaise !== undefined && <p className="font-medium">Add-ons: {formatINR(registration.computedTotal.addonTotalPaise)}</p>}</div></details>;
 }
 
 // ─── Registration detail drawer ───────────────────────────────────────────────
@@ -207,13 +208,14 @@ function dynamicRegistrationSummary(registration: OrganizerRegistration) {
 interface RegistrationDetailDrawerProps {
   registration: OrganizerRegistration | null;
   eventTickets: Array<{ id: string; name: string; categoryId: string; categoryName: string; pricePaise?: number }>;
+  addonDefs: Record<string, string>;
   onClose: () => void;
   onTransferDone: (updated: OrganizerRegistration) => void;
   onResendEmail: (registration: OrganizerRegistration) => Promise<void>;
   resendingId: string | null;
 }
 
-function RegistrationDetailDrawer({ registration, eventTickets, onClose, onTransferDone, onResendEmail, resendingId }: RegistrationDetailDrawerProps) {
+function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, onClose, onTransferDone, onResendEmail, resendingId }: RegistrationDetailDrawerProps) {
   const [showTransfer, setShowTransfer] = useState(false);
   const [targetTicketId, setTargetTicketId] = useState("");
   const [transferReason, setTransferReason] = useState("");
@@ -395,7 +397,7 @@ function RegistrationDetailDrawer({ registration, eventTickets, onClose, onTrans
               <div className="space-y-1 rounded-lg border bg-muted/20 p-3">
                 {addonEntries.map(([k, v]) => (
                   <p key={k} className="text-sm">
-                    <span className="font-medium">{k.replaceAll("_", " ")}:</span>{" "}
+                    <span className="font-medium">{addonDefs[k] ?? k.replaceAll("_", " ")}:</span>{" "}
                     {v.selected ?? (v.qty !== undefined ? `×${v.qty}` : "—")}
                   </p>
                 ))}
@@ -825,8 +827,6 @@ const OrganizerRegistrations = () => {
         </div>
 
         {eventsError && <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{eventsError}</div>}
-        {visibility?.graceActive && <section className="flex flex-col gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">Your 48-hour upgrade grace window is active</p><p className="mt-1 text-sm text-muted-foreground">Registrations remain visible for now. Upgrade before the grace window ends to keep full visibility and payment-reconciliation access.</p></div><Button variant="outline" onClick={() => navigate("/organizer/pricing")}>Review upgrade</Button></section>}
-        {visibility?.isLocked && visibility.lockedSummary && <section className="flex flex-col gap-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100"><div><p className="font-semibold">{visibility.lockedSummary.message}</p><p className="mt-1 text-sm text-amber-900/75 dark:text-amber-100/75">Pending payment-review entries remain available so you can reconcile direct UPI payments. Confirmed registrations above your limit stay locked until you upgrade.</p></div><Button className="w-fit shrink-0" onClick={() => navigate("/organizer/pricing")}>Upgrade to {visibility.upgradePlan?.name ?? "the next plan"}</Button></section>}
         <div className="space-y-4 rounded-xl border bg-card p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div><p className="font-semibold">Find registrations</p><p className="text-xs text-muted-foreground">Choose a category first to narrow the available tiers.</p></div>
@@ -954,7 +954,7 @@ const OrganizerRegistrations = () => {
                   setDetailRegistration(registration);
                 }}
               >
-                <TableCell><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-primary underline-offset-2 hover:underline">{registration.participant.name}</p>{registration.isManualEntry && <Badge variant="outline">Manual entry</Badge>}</div>{registration.participants && registration.participants.length > 1 && <p className="text-xs text-muted-foreground">Members: {registration.participants.map((member) => member.participant.name).join(" · ")}</p>}<p className="text-xs text-muted-foreground">{registration.participant.email ?? registration.participant.phone ?? "No contact"}</p><p className="font-mono text-xs text-muted-foreground">{registration.registrationReference}</p>{dynamicRegistrationSummary(registration)}</TableCell>
+                <TableCell><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-primary underline-offset-2 hover:underline">{registration.participant.name}</p>{registration.isManualEntry && <Badge variant="outline">Manual entry</Badge>}</div>{registration.participants && registration.participants.length > 1 && <p className="text-xs text-muted-foreground">Members: {registration.participants.map((member) => member.participant.name).join(" · ")}</p>}<p className="text-xs text-muted-foreground">{registration.participant.email ?? registration.participant.phone ?? "No contact"}</p><p className="font-mono text-xs text-muted-foreground">{registration.registrationReference}</p>{dynamicRegistrationSummary(registration, Object.fromEntries((selectedEvent?.addonConfig?.addons ?? []).map((a) => [a.id, a.name])))}</TableCell>
                 {!eventScoped && <TableCell><p className="max-w-44 truncate">{registration.event.name}</p></TableCell>}
                 <TableCell><p>{registration.ticket.name}</p><p className="text-xs text-muted-foreground">{registration.ticket.category ?? "—"}</p></TableCell>
                 <TableCell className="font-semibold"><p>{formatINR(registration.amountPaise)}</p>{registration.receivedAmountPaise !== null && <p className="text-xs font-normal text-accent">Received {formatINR(registration.receivedAmountPaise)}</p>}</TableCell>
@@ -988,6 +988,9 @@ const OrganizerRegistrations = () => {
       <RegistrationDetailDrawer
         registration={detailRegistration}
         eventTickets={eventTicketsForTransfer}
+        addonDefs={Object.fromEntries(
+          (selectedEvent?.addonConfig?.addons ?? []).map((a) => [a.id, a.name])
+        )}
         onClose={() => setDetailRegistration(null)}
         onTransferDone={handleTransferDone}
         onResendEmail={resendEmail}

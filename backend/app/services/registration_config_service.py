@@ -314,14 +314,14 @@ def normalize_addon_config(config: dict[str, Any] | None) -> dict[str, list[dict
         }
         if addon_type == "single_select":
             raw_options = raw.get("options", [])
-            if not isinstance(raw_options, list) or not raw_options:
-                raise ValueError(f"Options are required for add-on {name}")
+            if not isinstance(raw_options, list):
+                raise ValueError(f"Options for add-on {name} must be a list")
             options = []
             for option in raw_options:
                 option_text = _clean_text(option, f"Option for {name}", max_length=80)
                 if option_text not in options:
                     options.append(option_text)
-            addon["options"] = options
+            addon["options"] = options  # may be empty — organizer can add options later
         else:
             max_qty = raw.get("max_qty")
             if max_qty is not None:

@@ -203,6 +203,80 @@ def build_organizer_event_dashboard(db: Session, user, event: Event, visibility:
         visibility_event_ids=[event.id],
     )["items"]
 
+    # ── Add-on summary ────────────────────────────────────────────────────────
+    # Read selections from all confirmed registrations for this event.
+    # aggregate per addon_id, per option (single_select) or total qty (quantity).
+    addon_defs = {
+        addon["id"]: addon
+        for addon in (event.addon_config or {}).get("addons", [])
+        if isinstance(addon, dict) and addon.get("id")
+    }
+    by_addon: list[dict] = []
+    if addon_defs:
+        confirmed_selections = db.execute(
+            select(Registration.selections, Registration.computed_total)
+            .where(
+                Registration.event_id == event.id,
+                Registration.status.in_(confirmed_statuses),
+            )
+        ).all()
+
+        # Build raw aggregation: {addon_id: {"total_qty": int, "revenue_paise": int, "by_option": {opt: int}}}
+        agg: dict[str, dict] = {
+            addon_id: {"total_qty": 0, "revenue_paise": 0, "by_option": {}}
+            for addon_id in addon_defs
+        }
+        for selections_raw, computed_total_raw in confirmed_selections:
+            selections = selections_raw or {}
+            # Use computed_total.addons for revenue (amounts already calculated)
+            ct_addons = {}
+            if isinstance(computed_total_raw, dict):
+                for item in computed_total_raw.get("addons", []):
+                    if isinstance(item, dict) and item.get("id"):
+                        ct_addons[item["id"]] = item
+
+            for addon_id, bucket in agg.items():
+                sel = selections.get(addon_id)
+                if not isinstance(sel, dict):
+                    continue
+                if "selected" in sel:
+                    # single_select
+                    option = str(sel["selected"])
+                    bucket["by_option"][option] = bucket["by_option"].get(option, 0) + 1
+                    bucket["total_qty"] += 1
+                elif "qty" in sel:
+                    try:
+                        qty = int(sel["qty"])
+                    except (TypeError, ValueError):
+                        qty = 0
+                    bucket["total_qty"] += qty
+                # revenue from computed_total snapshot
+                ct_item = ct_addons.get(addon_id)
+                if ct_item:
+                    try:
+                        bucket["revenue_paise"] += int(ct_item.get("amount_paise", 0))
+                    except (TypeError, ValueError):
+                        pass
+
+        for addon_id, addon_def in addon_defs.items():
+            bucket = agg[addon_id]
+            by_option = (
+                [{"option": opt, "count": cnt} for opt, cnt in sorted(bucket["by_option"].items())]
+                if addon_def.get("type") == "single_select"
+                else []
+            )
+            by_addon.append(
+                {
+                    "addonId": addon_id,
+                    "addonName": addon_def.get("name", addon_id),
+                    "type": addon_def.get("type", "single_select"),
+                    "pricePaise": addon_def.get("price_paise", 0),
+                    "totalQuantity": bucket["total_qty"],
+                    "totalRevenuePaise": bucket["revenue_paise"],
+                    "byOption": by_option,
+                }
+            )
+
     return {
         "overview": {
             "confirmedParticipants": confirmed_participants,
@@ -251,4 +325,5 @@ def build_organizer_event_dashboard(db: Session, user, event: Event, visibility:
             for date, point in signup_trend.items()
         ],
         "recentRegistrations": recent,
+        "byAddon": by_addon,
     }

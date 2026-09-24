@@ -92,7 +92,9 @@ def _event_visibility(db: Session, user, event_id: UUID, plans: list[PricingPlan
         if row.payment_status in _CONFIRMED_PAYMENT_STATUSES and row.status in _CONFIRMED_REGISTRATION_STATUSES
     )
 
-    limit = plan.max_confirmed_registrations if plan else None
+    # Locking disabled — treat every event as having no participant cap.
+    limit = None
+
     running_quantity = 0
     running_active_quantity = 0
     overflow_started_at = None

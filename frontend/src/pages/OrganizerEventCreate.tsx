@@ -458,7 +458,7 @@ const OrganizerEventCreate = () => {
 
   const addAddon = () => {
     const index = addonEditors.length + 1;
-    setAddonEditors((current) => [...current, { id: `addon_${index}`, name: "", price_paise: 0, priceRupees: "0", type: "single_select", required: false, order: index, optionsText: "S, M, L, XL" }]);
+    setAddonEditors((current) => [...current, { id: `addon_${index}`, name: "", price_paise: 0, priceRupees: "0", type: "single_select", required: false, order: index, optionsText: "" }]);
   };
 
   const removeAddon = (id: string) => setAddonEditors((current) => current.filter((addon) => addon.id !== id));
@@ -574,8 +574,12 @@ const OrganizerEventCreate = () => {
           toast.error("Add at least one option to every dropdown field.");
           return false;
         }
-        if (addonConfig.addons.some((addon) => !addon.id.startsWith("addon_") || !Number.isFinite(addon.price_paise) || addon.price_paise < 0 || (addon.type === "single_select" && !addon.options?.length))) {
-          toast.error("Complete every add-on with a valid price and options.");
+        if (addonConfig.addons.some((addon) => !addon.id.startsWith("addon_") || !Number.isFinite(addon.price_paise) || addon.price_paise < 0)) {
+          toast.error("Complete every add-on with a valid name and price.");
+          return false;
+        }
+        if (addonConfig.addons.some((addon) => addon.type === "single_select" && (!addon.options || addon.options.length === 0))) {
+          toast.error("Add at least one option to every single-select add-on (e.g. Yes, or S / M / L).");
           return false;
         }
         return true;
@@ -588,8 +592,12 @@ const OrganizerEventCreate = () => {
         toast.error("Add at least one option to every select field.");
         return false;
       }
-      if (addonConfig.addons.some((addon) => !addon.id.startsWith("addon_") || !Number.isFinite(addon.price_paise) || addon.price_paise < 0 || (addon.type === "single_select" && !addon.options?.length))) {
-        toast.error("Complete every add-on with a valid price and options.");
+      if (addonConfig.addons.some((addon) => !addon.id.startsWith("addon_") || !Number.isFinite(addon.price_paise) || addon.price_paise < 0)) {
+        toast.error("Complete every add-on with a valid name and price.");
+        return false;
+      }
+      if (addonConfig.addons.some((addon) => addon.type === "single_select" && (!addon.options || addon.options.length === 0))) {
+        toast.error("Add at least one option to every single-select add-on (e.g. Yes, or S / M / L).");
         return false;
       }
     }
@@ -664,8 +672,8 @@ const OrganizerEventCreate = () => {
       toast.error("Add at least one option to every select field.");
       return;
     }
-    if (addonConfig.addons.some((addon) => !addon.id.startsWith("addon_") || !Number.isFinite(addon.price_paise) || addon.price_paise < 0 || (addon.type === "single_select" && !addon.options?.length))) {
-      toast.error("Complete every add-on with a valid price and options.");
+    if (addonConfig.addons.some((addon) => !addon.id.startsWith("addon_") || !Number.isFinite(addon.price_paise) || addon.price_paise < 0)) {
+      toast.error("Complete every add-on with a valid name and price.");
       return;
     }
 
@@ -853,7 +861,7 @@ const OrganizerEventCreate = () => {
 
           {currentStep === 3 && <section className="space-y-5 rounded-xl border bg-card p-6">
             <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold">Add-ons</h2><p className="text-sm text-muted-foreground">Offer optional or required extras. Prices are added to the selected ticket only when the participant chooses them.</p></div><Button type="button" variant="outline" size="sm" onClick={addAddon}><Plus className="mr-1 h-4 w-4" /> Add-on</Button></div>
-            {addonEditors.length === 0 ? <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No add-ons configured. Participants will pay only the ticket price.</p> : <div className="space-y-4">{addonEditors.map((addon) => <div key={addon.id} className="space-y-3 rounded-lg border p-4"><div className="flex items-center justify-between"><p className="font-semibold">{addon.name || "New add-on"}</p><Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => removeAddon(addon.id)} aria-label="Remove add-on"><Trash2 className="h-4 w-4" /></Button></div><div className="grid gap-3 sm:grid-cols-4"><div className="space-y-1 sm:col-span-2"><Label>Name *</Label><Input value={addon.name} onChange={(event) => updateAddon(addon.id, { name: event.target.value })} placeholder="Breakfast pack" /></div><div className="space-y-1"><Label>Price (₹)</Label><Input type="number" min="0" step="0.01" value={addon.priceRupees} onChange={(event) => updateAddon(addon.id, { priceRupees: event.target.value })} /></div><div className="space-y-1"><Label>Type</Label><Select value={addon.type} onValueChange={(value) => updateAddon(addon.id, { type: value as AddonDefinition["type"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="single_select">Single select</SelectItem><SelectItem value="quantity">Quantity</SelectItem></SelectContent></Select></div></div><div className="flex flex-wrap items-center gap-4"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={addon.required} onChange={(event) => updateAddon(addon.id, { required: event.target.checked })} /> Required</label>{addon.type === "quantity" && <div className="flex items-center gap-2 text-sm"><Label>Max quantity</Label><Input className="w-24" type="number" min="1" max="100" value={addon.max_qty ?? ""} onChange={(event) => updateAddon(addon.id, { max_qty: event.target.value ? Number(event.target.value) : null })} placeholder="No max" /></div>}</div>{addon.type === "single_select" && <div className="space-y-1"><Label>Options (comma separated) *</Label><Input value={addon.optionsText} onChange={(event) => updateAddon(addon.id, { optionsText: event.target.value })} placeholder="S, M, L, XL" /></div>}</div>)}</div>}
+            {addonEditors.length === 0 ? <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No add-ons configured. Participants will pay only the ticket price.</p> : <div className="space-y-4">{addonEditors.map((addon) => <div key={addon.id} className="space-y-3 rounded-lg border p-4"><div className="flex items-center justify-between"><p className="font-semibold">{addon.name || "New add-on"}</p><Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => removeAddon(addon.id)} aria-label="Remove add-on"><Trash2 className="h-4 w-4" /></Button></div><div className="grid gap-3 sm:grid-cols-4"><div className="space-y-1 sm:col-span-2"><Label>Name *</Label><Input value={addon.name} onChange={(event) => updateAddon(addon.id, { name: event.target.value })} placeholder="Breakfast pack" /></div><div className="space-y-1"><Label>Price (₹)</Label><Input type="number" min="0" step="0.01" value={addon.priceRupees} onChange={(event) => updateAddon(addon.id, { priceRupees: event.target.value })} /></div><div className="space-y-1"><Label>Type</Label><Select value={addon.type} onValueChange={(value) => updateAddon(addon.id, { type: value as AddonDefinition["type"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="single_select">Single select</SelectItem><SelectItem value="quantity">Quantity</SelectItem></SelectContent></Select></div></div><div className="flex flex-wrap items-center gap-4"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={addon.required} onChange={(event) => updateAddon(addon.id, { required: event.target.checked })} /> Required</label>{addon.type === "quantity" && <div className="flex items-center gap-2 text-sm"><Label>Max quantity</Label><Input className="w-24" type="number" min="1" max="100" value={addon.max_qty ?? ""} onChange={(event) => updateAddon(addon.id, { max_qty: event.target.value ? Number(event.target.value) : null })} placeholder="No max" /></div>}</div>{addon.type === "single_select" && <div className="space-y-1"><Label>Options (comma separated) *</Label><Input value={addon.optionsText} onChange={(event) => updateAddon(addon.id, { optionsText: event.target.value })} placeholder="S, M, L, XL" /><p className="text-xs text-muted-foreground">e.g. Yes — or sizes like S, M, L, XL</p></div>}</div>)}</div>}
             {addonEditors.length > 0 && <div className="rounded-lg border border-dashed p-4"><p className="mb-3 text-sm font-semibold">Add-on preview</p>{addonConfigPayload().addons.map((addon) => <div key={addon.id} className="flex items-center justify-between border-b py-2 last:border-0"><span>{addon.name}{addon.required ? " *" : ""}</span><span className="font-medium">{addon.type === "quantity" ? `₹${(addon.price_paise / 100).toFixed(2)} each` : addon.options?.join(" / ")}</span></div>)}<div className="mt-3 flex justify-between font-bold"><span>Estimated total</span><span>Ticket price + selected add-ons</span></div></div>}
           </section>}
 

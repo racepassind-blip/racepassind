@@ -881,16 +881,56 @@ class DiscountCode(Base):
 
 
 class RaceResult(Base):
+    """Per-participant timed result for running/cycling events.
+
+    Lifecycle:
+      result_set_status = "draft"     → saved but not publicly visible
+      result_set_status = "published" → visible on the public results page
+
+    result_status values: Finished | DNS | DNF | DSQ
+    finish_time is required only for Finished entries; NULL for DNS/DNF/DSQ.
+    rank is computed server-side (lowest finish_time wins); NULL for non-Finished.
+    pace_seconds_per_km and speed_kmh_x100 are pre-calculated on save.
+    """
+
     __tablename__ = "race_results"
+    __table_args__ = (
+        Index("ix_race_results_event_set_status", "event_id", "result_set_status"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
     participant_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("participants.id"), nullable=False, index=True)
+    # Optional: links to the SportPass registration row for bib number / name lookup
+    registration_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("registrations.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     category_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("event_categories.id"), nullable=True, index=True)
+    # Finish time (HH:MM:SS stored as timedelta / INTERVAL); NULL for DNS/DNF/DSQ
     finish_time: Mapped[dt.timedelta | None] = mapped_column(Interval, nullable=True)
+    # Computed rank within category (1-based, Finished only); NULL for non-Finished
     rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Participant finish status
+    result_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="Finished", default="Finished")
+    # Draft = not publicly visible; published = visible on public results page
+    result_set_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="draft", default="draft")
+    # Pre-calculated performance metrics (only set for Finished)
+    # Running: pace in whole seconds per km (e.g. 360 = 6:00 /km)
+    pace_seconds_per_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Cycling: average speed in km/h × 100 (e.g. 3500 = 35.00 km/h)
+    speed_kmh_x100: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Legacy — kept for backward compatibility, not used in new race results
     laps_completed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now(),
+    )
+
+    # Relationships
+    participant: Mapped["Participant"] = relationship(foreign_keys=[participant_id])
+    registration: Mapped["Registration | None"] = relationship(foreign_keys=[registration_id])
+    category: Mapped["EventCategory | None"] = relationship(foreign_keys=[category_id])
 
 
 class OrganizationMember(Base):

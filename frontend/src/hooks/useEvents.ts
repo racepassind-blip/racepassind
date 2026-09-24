@@ -310,6 +310,15 @@ export interface OrganizerEventDashboard {
     checkInStatus: string;
     createdAt: string;
   }>;
+  byAddon: Array<{
+    addonId: string;
+    addonName: string;
+    type: "single_select" | "quantity";
+    pricePaise: number;
+    totalQuantity: number;
+    totalRevenuePaise: number;
+    byOption: Array<{ option: string; count: number }>;
+  }>;
 }
 
 

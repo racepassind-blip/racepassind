@@ -73,13 +73,22 @@ def build_registration_confirmation_content(
     total_paid = _money(registration.total_amount_paise)
     whatsapp_url = event.whatsapp_group_url if event is not None else None
 
-    subject = f"Your ticket for {event_name}"
+    is_confirmed = registration.status in {"confirmed", "checked_in"}
+
+    subject = f"Your ticket for {event_name}" if is_confirmed else f"Registration received — {event_name}"
 
     # Plain-text body
+    if is_confirmed:
+        intro = f"Your registration for {event_name} is confirmed. Your ticket is attached as a PDF."
+        qr_note = "Please carry the QR code in the attached PDF for check-in at the event."
+    else:
+        intro = f"We've received your registration for {event_name}. Your payment is being reviewed — you'll receive your ticket PDF with QR code once your payment is confirmed."
+        qr_note = "Your QR code ticket will be sent in a follow-up email once payment is confirmed."
+
     lines = [
         f"Hi {participant_name},",
         "",
-        f"Your registration for {event_name} is confirmed. Your ticket is attached as a PDF.",
+        intro,
         "",
         "TICKET DETAILS",
         f"  Reference: {reference}",
@@ -93,12 +102,7 @@ def build_registration_confirmation_content(
     ]
     if whatsapp_url:
         lines += ["", f"Join the event WhatsApp community: {whatsapp_url}"]
-    lines += [
-        "",
-        "Please carry the QR code in the attached PDF for check-in at the event.",
-        "",
-        "See you there!",
-    ]
+    lines += ["", qr_note, "", "See you there!"]
     body = "\n".join(lines)
 
     # HTML body
@@ -108,10 +112,17 @@ def build_registration_confirmation_content(
         else ""
     )
     category_html = f" ({category})" if category else ""
+    if is_confirmed:
+        status_para = "<p>Your registration is <strong>confirmed</strong>. Your ticket is attached as a PDF with your QR code for check-in.</p>"
+        qr_para = '<p style="color:#666;font-size:13px;margin-top:16px;">Please carry the QR code in the attached PDF for check-in.</p>'
+    else:
+        status_para = "<p>We've received your registration. Your <strong>payment is under review</strong> — once confirmed, you'll receive a follow-up email with your ticket PDF and QR code.</p>"
+        qr_para = '<p style="color:#666;font-size:13px;margin-top:16px;">Your QR code ticket will be sent once your payment is confirmed.</p>'
+
     html_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111;">
-  <h2 style="color:#111;">Your ticket for {event_name}</h2>
+  <h2 style="color:#111;">{"Your ticket for" if is_confirmed else "Registration received —"} {event_name}</h2>
   <p>Hi {participant_name},</p>
-  <p>Your registration is <strong>confirmed</strong>. Your ticket is attached as a PDF with your QR code for check-in.</p>
+  {status_para}
   <table style="width:100%;border-collapse:collapse;margin:16px 0;">
     <tr><td style="padding:6px 0;color:#666;">Reference</td><td style="padding:6px 0;font-weight:bold;">{reference}</td></tr>
     <tr><td style="padding:6px 0;color:#666;">Ticket</td><td style="padding:6px 0;font-weight:bold;">{ticket_name}{category_html}</td></tr>
@@ -124,7 +135,7 @@ def build_registration_confirmation_content(
     <tr><td style="padding:6px 0;color:#666;">Where</td><td style="padding:6px 0;">{location}</td></tr>
   </table>
   {whatsapp_html}
-  <p style="color:#666;font-size:13px;margin-top:16px;">Please carry the QR code in the attached PDF for check-in.</p>
+  {qr_para}
 </div>"""
 
     # Build the ticket PDF attachment (best-effort; skip if not available yet)

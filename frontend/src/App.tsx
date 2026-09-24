@@ -48,6 +48,7 @@ import AdminOrganizers from "./pages/AdminOrganizers";
 import AdminCommunication from "./pages/AdminCommunication";
 import AdminRefunds from "./pages/AdminRefunds";
 import OrganizerRefunds from "./pages/OrganizerRefunds";
+import OrganizerEventRaceResults from "./pages/OrganizerEventRaceResults";
 import Signup from "./pages/Signup";
 import Confirmation from "./pages/Confirmation";
 import NotFound from "./pages/NotFound";
@@ -112,6 +113,7 @@ const App = () => (
             <Route path="/organizer/events/:eventId/tournament/results" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventTournamentResults /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/tournament/bracket" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventTournamentBracket /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/allocations" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventAllocations /></ProtectedRoute>} />
+            <Route path="/organizer/events/:eventId/race-results" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventRaceResults /></ProtectedRoute>} />
             <Route path="/event/:eventId/number-list" element={<PublicEventNumberList />} />
             <Route path="/organizer/events/:eventId" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventDashboard /></ProtectedRoute>} />
             <Route path="/organizer/pricing" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerPricing /></ProtectedRoute>} />

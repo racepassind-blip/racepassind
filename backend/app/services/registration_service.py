@@ -489,6 +489,7 @@ def serialize_organizer_registration(registration: Registration, event: Event) -
             "id": str(ticket.id),
             "name": ticket.name,
             "category": ticket.category.name if ticket.category else None,
+            "categoryId": str(ticket.category.id) if ticket.category else None,
         },
         "amountPaise": registration.total_amount_paise,
         "baseAmountPaise": registration.total_amount_paise,
@@ -1094,7 +1095,23 @@ def decide_registration_payment(db: Session, user, event_id, registration_id, *,
     if order is not None:
         order.status = "paid" if decision == "approve" else "cancelled"
     db.commit()
-    return _reload_organizer_registration(db, registration.id)
+    reloaded = _reload_organizer_registration(db, registration.id)
+
+    # Send confirmation email with PDF ticket to all approved registrations in the batch.
+    if decision == "approve":
+        from app.services.email_service import send_registration_confirmation
+        for child in batch:
+            try:
+                child_reg = db.scalar(
+                    registration_query().where(Registration.id == child.id)
+                )
+                if child_reg is not None:
+                    send_registration_confirmation(db, child_reg)
+            except Exception:
+                # Email must never block or fail the approval.
+                pass
+
+    return reloaded
 
 
 def load_confirmation_registration(db: Session, confirmation_token: str) -> Registration | None:
