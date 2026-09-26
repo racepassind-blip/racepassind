@@ -1,3 +1,4 @@
+import { getSportConfig } from "@/data/sportConfig";
 /**
  * PublicRaceTimeResults — public results page for running/cycling events.
  *
@@ -138,7 +139,7 @@ export default function PublicRaceTimeResults() {
   const [statusFilter, setStatusFilter] = useState<"all" | "Finished" | "DNS" | "DNF" | "DSQ">("all");
   const [page, setPage] = useState(1);
 
-  const isCycling = data?.sport === "cycling";
+  const isCycling = getSportConfig(data?.sport).race_metric === "speed";
 
   // Once data loads, default to the first category
   const categories = data?.categories ?? [];

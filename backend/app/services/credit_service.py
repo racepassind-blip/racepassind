@@ -147,15 +147,32 @@ def request_topup(db: Session, *, organization_id: UUID, amount_paise: int | Dec
     amount = _paise(amount_paise)
     if payment_method != "UPI":
         raise CreditValidationError("Only UPI top-ups are enabled currently")
-    utr = utr_reference.strip()
+    # UTRs are identifiers, not display text. Canonicalize case and outer
+    # whitespace before checking or storing so retries cannot create aliases.
+    utr = utr_reference.strip().upper()
     if not utr:
         raise CreditValidationError("UTR reference is required")
-    existing = db.scalar(select(CreditTopupRequest).where(CreditTopupRequest.utr_reference == utr))
+    existing = db.scalar(
+        select(CreditTopupRequest).where(func.lower(func.trim(CreditTopupRequest.utr_reference)) == utr.lower())
+    )
     if existing is not None:
         raise CreditValidationError("This UTR reference has already been submitted")
     request = CreditTopupRequest(organization_id=organization_id, amount_paise=amount, credits_paise=amount, payment_method=payment_method, utr_reference=utr, screenshot=screenshot, status="PENDING")
-    db.add(request)
-    db.flush()
+    try:
+        # Keep a duplicate race from rolling back unrelated work in the
+        # caller's transaction.
+        with db.begin_nested():
+            db.add(request)
+            db.flush()
+    except IntegrityError as exc:
+        # A concurrent request may pass the read above. Convert the unique
+        # constraint race into the same safe, user-facing validation error.
+        existing = db.scalar(
+            select(CreditTopupRequest).where(func.lower(func.trim(CreditTopupRequest.utr_reference)) == utr.lower())
+        )
+        if existing is not None:
+            raise CreditValidationError("This UTR reference has already been submitted") from exc
+        raise
     return request
 
 

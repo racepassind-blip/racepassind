@@ -15,15 +15,15 @@ class MatchGameIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     game_number: int = Field(ge=1, le=9)
-    score_a: int = Field(ge=0, le=30)
-    score_b: int = Field(ge=0, le=30)
+    score_a: int = Field(ge=0)
+    score_b: int = Field(ge=0)
 
 
 class ScoringConfigIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     games_to_win: int = Field(ge=1, le=5)
-    points_per_game: int = Field(ge=1, le=30)
+    points_per_game: int = Field(ge=1)
 
 
 MatchType = Literal["singles", "doubles"]

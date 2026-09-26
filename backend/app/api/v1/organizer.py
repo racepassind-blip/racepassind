@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html import escape as escape_html
 from urllib.parse import urlparse
 from uuid import UUID
 from typing import Literal
@@ -745,13 +746,7 @@ def broadcast_event_email(
 
     get_authorized_event(db, user, event_id)
 
-    # Simple HTML wrapper so the message renders nicely; the plain body is the raw message.
-    html_body = (
-        '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111;">'
-        f"<p>{payload.message.replace(chr(10), '<br>')}</p>"
-        '<p style="color:#666;font-size:13px;margin-top:16px;">Sent via SportPass India.</p>'
-        "</div>"
-    )
+    html_body = _broadcast_html_body(payload.message)
 
     summary = broadcast_event_update(
         db,
@@ -761,6 +756,17 @@ def broadcast_event_email(
         html_body=html_body,
     )
     return summary
+
+
+def _broadcast_html_body(message: str) -> str:
+    """Render organizer text as safe HTML while preserving line breaks."""
+    escaped_message = escape_html(message, quote=False).replace("\n", "<br>")
+    return (
+        '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111;">'
+        f"<p>{escaped_message}</p>"
+        '<p style="color:#666;font-size:13px;margin-top:16px;">Sent via SportPass India.</p>'
+        "</div>"
+    )
 
 
 @router.get("/credits")
@@ -804,7 +810,7 @@ def organizer_credit_topups(
 
 
 @router.post("/credits/topups")
-def organizer_request_credit_topup(payload: CreditTopupIn, user: User = Depends(require_roles("organizer", "admin")), db: Session = Depends(get_db)) -> dict:
+def organizer_request_credit_topup(payload: CreditTopupIn, _csrf: None = Depends(require_csrf), user: User = Depends(require_roles("organizer", "admin")), db: Session = Depends(get_db)) -> dict:
     if payload.organization_id not in _credit_org_ids(db, user):
         raise HTTPException(status_code=403, detail="Organization access denied")
     try:

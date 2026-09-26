@@ -125,5 +125,8 @@ def revoke_session(db: Session, raw_session: str | None) -> None:
         session.revoked_at = utc_now()
 
 
-def public_user(user: User) -> dict[str, str | None]:
-    return {"id": str(user.id), "name": user.name, "email": user.email, "phone": user.phone, "role": user.role}
+def public_user(user: User) -> dict[str, str | None | bool]:
+    return {
+        "id": str(user.id), "name": user.name, "email": user.email,
+        "phone": user.phone, "role": user.role, "mfaEnabled": bool(user.mfa_enabled),
+    }

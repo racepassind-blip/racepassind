@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.sports import get_adapter
+
 import datetime as dt
 from uuid import UUID
 
@@ -198,7 +200,8 @@ def get_public_results(
             {"id": str(category.id), "name": category.name, "distance": category.distance, "entryType": category.entry_type}
             for category in event.categories
         ],
-        "matches": list_public_match_results(db, event.id, category_id=category_id, status=match_status),
+        "matches": list_public_match_results(db, event.id, category_id=category_id, status=match_status)
+        if get_adapter(event.category).tournament_capable(any(c.entry_type == "team" for c in event.categories)) else [],
     }
 
 
@@ -213,20 +216,7 @@ def _public_display_name(full_name: str | None) -> str:
 
 
 def _sport_number_label(sport: str | None) -> str:
-    """Return the number label shown publicly for a sport."""
-    normalized = (sport or "").strip().lower()
-    labels = {
-        "running": "Bib Number",
-        "cycling": "Bib Number",
-        "badminton": "Jersey Number",
-        "tennis": "Player ID",
-        "squash": "Jersey Number",
-    }
-    if normalized in labels:
-        return labels[normalized]
-    if "badminton" in normalized or "squash" in normalized:
-        return "Jersey Number"
-    return "Bib Number"
+    return get_adapter(sport).number_label
 
 
 @router.get("/events/{event_id}/number-list")

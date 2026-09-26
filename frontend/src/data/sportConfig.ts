@@ -1,88 +1,15 @@
-export type ResultType = "match_score" | "race_time" | "none";
+import type { SportConfig } from "@/sports/types";
+export type { SportConfig, ResultType } from "@/sports/types";
+import running from "@/sports/running";
+import cycling from "@/sports/cycling";
+import badminton from "@/sports/badminton";
+import table_tennis from "@/sports/table_tennis";
+import tennis from "@/sports/tennis";
+import squash from "@/sports/squash";
+import hiking from "@/sports/hiking";
 
-export interface SportConfig {
-  participant_label: string;
-  supports_distance: boolean;
-  supports_bib: boolean;
-  supports_tournament: boolean;
-  supports_checkin: boolean;
-  supports_communications: boolean;
-  // Allocation / number configuration
-  numberEnabled: boolean;
-  numberLabel: string;
-  scope: "individual" | "team_member";
-  /**
-   * Determines which result UI adapter is used for this sport.
-   * match_score  – per-game scores tracked via Match/Bout tables (badminton, tennis, squash)
-   * race_time    – finish-time / bib-based results (running, cycling)
-   * none         – no result UI defined yet
-   */
-  result_type: ResultType;
-}
+export const sportConfig = { running, cycling, badminton, table_tennis, tennis, squash, hiking } as const satisfies Record<string, SportConfig>;
 
-export const sportConfig = {
-  running: {
-    participant_label: "Runner",
-    supports_distance: true,
-    supports_bib: true,
-    supports_tournament: false,
-    supports_checkin: true,
-    supports_communications: true,
-    numberEnabled: true,
-    numberLabel: "Bib Number",
-    scope: "individual",
-    result_type: "race_time",
-  },
-  cycling: {
-    participant_label: "Rider",
-    supports_distance: true,
-    supports_bib: true,
-    supports_tournament: false,
-    supports_checkin: true,
-    supports_communications: true,
-    numberEnabled: true,
-    numberLabel: "Bib Number",
-    scope: "individual",
-    result_type: "race_time",
-  },
-  badminton: {
-    participant_label: "Player",
-    supports_distance: false,
-    supports_bib: false,
-    supports_tournament: true,
-    supports_checkin: true,
-    supports_communications: true,
-    numberEnabled: true,
-    numberLabel: "Jersey Number",
-    scope: "team_member",
-    result_type: "match_score",
-    message: "Organize singles, doubles, and mixed doubles tournaments with ease. Track matches, scores, and results with built-in tournament management.",
-  },
-  tennis: {
-    participant_label: "Player",
-    supports_distance: false,
-    supports_bib: false,
-    supports_tournament: true,
-    supports_checkin: true,
-    supports_communications: true,
-    numberEnabled: true,
-    numberLabel: "Player ID",
-    scope: "individual",
-    result_type: "match_score",
-  },
-  squash: {
-    participant_label: "Player",
-    supports_distance: false,
-    supports_bib: false,
-    supports_tournament: true,
-    supports_checkin: true,
-    supports_communications: true,
-    numberEnabled: true,
-    numberLabel: "Jersey Number",
-    scope: "team_member",
-    result_type: "match_score",
-  },
-} as const satisfies Record<string, SportConfig>;
 
 export type ConfiguredSport = keyof typeof sportConfig;
 
@@ -99,20 +26,37 @@ const DEFAULT_SPORT_CONFIG: SportConfig = {
   result_type: "none",
 };
 
+export function normalizeSport(sport: string | null | undefined): string {
+  const key = (sport ?? "").trim().toLowerCase().replace(/[- ]/g, "_");
+  return key === "trekking" ? "hiking" : key;
+}
+
+export const sportOptions = [
+  { value: "running", label: "Running" },
+  { value: "cycling", label: "Cycling" },
+  { value: "badminton", label: "Badminton" },
+  { value: "table_tennis", label: "Table Tennis" },
+  { value: "triathlon", label: "Triathlons/Duathlons" },
+  { value: "swimming", label: "Swimming (open water/mass swims)" },
+  { value: "hiking", label: "Trekking/Hiking events" },
+  { value: "obstacle_course", label: "Obstacle course races (Spartan-style, mud runs)" },
+  { value: "walkathon", label: "Walkathons/charity walks" },
+];
+
 export function getSportConfig(
   sport: string | null | undefined,
   options?: { hasTeamCategories?: boolean },
 ): SportConfig {
-  const normalizedSport = sport?.trim().toLowerCase();
-  const base = (!normalizedSport ? DEFAULT_SPORT_CONFIG : sportConfig[normalizedSport as ConfiguredSport] ?? DEFAULT_SPORT_CONFIG);
+  const normalizedSport = normalizeSport(sport);
+  const base: SportConfig = (!normalizedSport ? DEFAULT_SPORT_CONFIG : sportConfig[normalizedSport as ConfiguredSport] ?? DEFAULT_SPORT_CONFIG);
   // Team-format events (any sport) unlock the tournament tooling.
-  if (options?.hasTeamCategories) {
+  if (options?.hasTeamCategories && base.team_tournament !== false) {
     return { ...base, supports_tournament: true };
   }
-  return base;
+  return { ...base };
 }
 
-/** True when an event should expose tournament tooling: badminton, or any event with a team category. */
+/** Select tournament tooling from sport capabilities and category format. */
 export function eventSupportsTournament(
   sport: string | null | undefined,
   categories?: Array<{ entryType?: string }> | null,

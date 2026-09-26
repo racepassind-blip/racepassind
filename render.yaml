@@ -39,6 +39,10 @@ services:
         sync: false
       - key: TICKET_SIGNING_SECRET
         sync: false
+      # Fernet key used to encrypt stored Gmail app passwords.
+      # Generate once with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      - key: COMMUNICATION_ENCRYPTION_KEY
+        sync: false
       # --- S3-compatible object storage (Cloudflare R2) ---
       - key: STORAGE_MODE
         value: s3
@@ -73,6 +77,28 @@ services:
       # Public API origin only (no /api/v1 suffix). Set to the backend URL.
       - key: VITE_API_URL
         sync: false
+    # Browser-facing security headers for the React application. These are
+    # served by Render's static-site CDN and therefore protect the frontend
+    # independently of the API response middleware.
+    headers:
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; worker-src 'self' blob:; frame-src 'self';"
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Permissions-Policy
+        value: "camera=(self), microphone=(), geolocation=()"
+      - path: /*
+        name: Strict-Transport-Security
+        value: "max-age=31536000; includeSubDomains"
     routes:
       # SPA fallback so client-side routes serve index.html.
       - type: rewrite

@@ -198,7 +198,7 @@ const OrganizerEventTournament = () => {
           </CardContent>
         </Card>
 
-        <OrganizerScoringConfig eventId={event.id} enabled={eventSportConfig.supports_tournament && event.sport.toLowerCase() === "badminton"} />
+        <OrganizerScoringConfig eventId={event.id} enabled={eventSportConfig.result_type === "match_score"} sport={event.sport} />
         <TeamScoringConfig eventId={event.id} categories={event.categories} />
 
         <Card>

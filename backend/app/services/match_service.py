@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.sports import get_adapter
+
 from uuid import UUID
 
 from sqlalchemy import select
@@ -13,8 +15,15 @@ class MatchValidationError(ValueError):
     pass
 
 
-DEFAULT_GAMES_TO_WIN = 2
-DEFAULT_POINTS_PER_GAME = 21
+def _policy(event):
+    return get_adapter(event.category).tournament
+
+
+def _validate_policy(call, *args):
+    try:
+        return call(*args)
+    except ValueError as exc:
+        raise MatchValidationError(str(exc)) from exc
 
 
 def _scoring_config(db: Session, event: Event, category_id: UUID, *, create: bool = False) -> BadmintonCategoryScoring | None:
@@ -28,8 +37,8 @@ def _scoring_config(db: Session, event: Event, category_id: UUID, *, create: boo
         config = BadmintonCategoryScoring(
             event_id=event.id,
             category_id=category_id,
-            games_to_win=DEFAULT_GAMES_TO_WIN,
-            points_per_game=DEFAULT_POINTS_PER_GAME,
+            games_to_win=_policy(event).games_to_win,
+            points_per_game=_policy(event).points_per_game,
         )
         db.add(config)
         db.flush()
@@ -46,8 +55,8 @@ def list_scoring_configs(db: Session, event: Event) -> list[dict]:
         {
             "categoryId": str(category.id),
             "categoryName": category.name,
-            "gamesToWin": configs[category.id].games_to_win if category.id in configs else DEFAULT_GAMES_TO_WIN,
-            "pointsPerGame": configs[category.id].points_per_game if category.id in configs else DEFAULT_POINTS_PER_GAME,
+            "gamesToWin": configs[category.id].games_to_win if category.id in configs else _policy(event).games_to_win,
+            "pointsPerGame": configs[category.id].points_per_game if category.id in configs else _policy(event).points_per_game,
         }
         for category in categories
     ]
@@ -57,6 +66,7 @@ def update_scoring_config(db: Session, event: Event, category_id: UUID, payload)
     category = db.scalar(select(EventCategory).where(EventCategory.id == category_id, EventCategory.event_id == event.id))
     if category is None:
         raise MatchValidationError("Category not found for this event")
+    _validate_policy(_policy(event).validate_config, payload.games_to_win, payload.points_per_game)
     config = _scoring_config(db, event, category.id, create=True)
     config.games_to_win = payload.games_to_win
     config.points_per_game = payload.points_per_game
@@ -67,23 +77,6 @@ def update_scoring_config(db: Session, event: Event, category_id: UUID, payload)
         "gamesToWin": config.games_to_win,
         "pointsPerGame": config.points_per_game,
     }
-
-
-def _normalize_games(games, games_to_win: int) -> list[dict[str, int]] | None:
-    if games is None:
-        return None
-    max_games = games_to_win * 2 - 1
-    if len(games) > max_games:
-        raise MatchValidationError(f"A match can contain at most {max_games} games")
-    game_numbers = [game.game_number for game in games]
-    if any(game_number > max_games for game_number in game_numbers):
-        raise MatchValidationError(f"Game numbers must be between 1 and {max_games}")
-    if len(set(game_numbers)) != len(game_numbers):
-        raise MatchValidationError("Game numbers must be unique")
-    return [
-        {"game_number": game.game_number, "score_a": game.score_a, "score_b": game.score_b}
-        for game in sorted(games, key=lambda item: item.game_number)
-    ]
 
 
 def _eligible_registrations(db: Session, user, event: Event, category_id: UUID) -> list[Registration]:
@@ -131,10 +124,7 @@ def _validate_match_context(db: Session, user, event: Event, payload) -> tuple[E
     }
     if len(registrations) != 2:
         raise MatchValidationError("Selected registration is not confirmed, visible, or in this category")
-    if payload.status == "completed" and payload.winner is None:
-        raise MatchValidationError("Completed matches require an explicit winner")
-    if payload.status != "completed" and payload.winner is not None:
-        raise MatchValidationError("Only completed matches may have a winner")
+    _validate_policy(_policy(event).validate_match, payload)
     return category, court, registrations[payload.entry_a_registration_id], registrations[payload.entry_b_registration_id]
 
 
@@ -265,53 +255,12 @@ def list_matches(db: Session, event_id: UUID, category_id: UUID | None = None, s
     return [serialize_match(match) for match in matches]
 
 
-def _resolve_team_player_selection(
-    category: EventCategory,
-    entry_a: Registration,
-    entry_b: Registration,
-    payload,
-) -> tuple[str | None, list[str] | None, list[str] | None]:
-    """Validate and normalize per-match player selection for team categories.
-
-    Returns (match_type, player_a_ids, player_b_ids). For non-team categories this
-    is a no-op that returns (None, None, None), leaving existing behaviour intact.
-    """
-    if category.entry_type != "team":
-        # Not a team category — ignore any player-selection input entirely.
-        return None, None, None
-
-    match_type = payload.match_type
-    if match_type is None:
-        # Team category but organizer scheduled a plain team-vs-team match without
-        # picking players — allowed, keeps backward compatibility.
-        if payload.player_a_participant_ids or payload.player_b_participant_ids:
-            raise MatchValidationError("Select a match type (singles or doubles) before choosing players")
-        return None, None, None
-
-    required = 1 if match_type == "singles" else 2
-    a_ids = [str(pid) for pid in (payload.player_a_participant_ids or [])]
-    b_ids = [str(pid) for pid in (payload.player_b_participant_ids or [])]
-    if len(a_ids) != required or len(b_ids) != required:
-        label = "1 player" if required == 1 else "2 players"
-        raise MatchValidationError(f"{match_type.capitalize()} matches require exactly {label} from each team")
-    if len(set(a_ids)) != len(a_ids) or len(set(b_ids)) != len(b_ids):
-        raise MatchValidationError("A player cannot be selected twice in the same match")
-
-    entry_a_member_ids = {str(rp.id) for rp in entry_a.participant_memberships}
-    entry_b_member_ids = {str(rp.id) for rp in entry_b.participant_memberships}
-    if not set(a_ids).issubset(entry_a_member_ids):
-        raise MatchValidationError("Selected players for team A must belong to team A")
-    if not set(b_ids).issubset(entry_b_member_ids):
-        raise MatchValidationError("Selected players for team B must belong to team B")
-    return match_type, a_ids, b_ids
-
-
 def create_match(db: Session, user, event: Event, payload) -> dict:
     category, court, entry_a, entry_b = _validate_match_context(db, user, event, payload)
     round_item = _validate_match_round(db, event, category, payload.round_id)
-    match_type, player_a_ids, player_b_ids = _resolve_team_player_selection(category, entry_a, entry_b, payload)
+    match_type, player_a_ids, player_b_ids = _validate_policy(_policy(event).select_players, category, entry_a, entry_b, payload)
     config = _scoring_config(db, event, category.id, create=True)
-    games = _normalize_games(payload.games, config.games_to_win)
+    games = _validate_policy(_policy(event).normalize_games, payload.games, config.games_to_win)
     match = Match(
         event_id=event.id,
         category_id=category.id,
@@ -349,8 +298,8 @@ def update_match(db: Session, user, event: Event, match_id: UUID, payload) -> di
         match.games_to_win = config.games_to_win
         match.points_per_game = config.points_per_game
         match.games = []
-    match_type, player_a_ids, player_b_ids = _resolve_team_player_selection(category, entry_a, entry_b, payload)
-    normalized_games = _normalize_games(payload.games, match.games_to_win)
+    match_type, player_a_ids, player_b_ids = _validate_policy(_policy(event).select_players, category, entry_a, entry_b, payload)
+    normalized_games = _validate_policy(_policy(event).normalize_games, payload.games, match.games_to_win)
     if normalized_games is not None:
         match.games = normalized_games
     match.category_id = category.id
@@ -628,23 +577,14 @@ def _recompute_match_winner(db: Session, match: Match) -> None:
     bouts = db.scalars(
         select(MatchBout).where(MatchBout.match_id == match.id, MatchBout.status == "completed")
     ).all()
-    wins_a = sum(1 for b in bouts if b.winner == "player_a")
-    wins_b = sum(1 for b in bouts if b.winner == "player_b")
-    if wins_a > wins_b:
-        match.winner = "entry_a"
-    elif wins_b > wins_a:
-        match.winner = "entry_b"
-    else:
-        match.winner = None  # tie — organiser can set manually
+    event = db.get(Event, match.event_id)
+    match.winner = _policy(event).bout_winner(bouts)
 
 
 # ---------------------------------------------------------------------------
 # Team match scoring config
 # ---------------------------------------------------------------------------
 
-DEFAULT_POINTS_FOR_WIN = 3
-DEFAULT_POINTS_FOR_DRAW = 1
-DEFAULT_POINTS_FOR_LOSS = 0
 
 
 def _team_scoring_config(db: Session, event: Event, category_id: UUID, *, create: bool = False) -> TeamMatchScoring | None:
@@ -658,6 +598,9 @@ def _team_scoring_config(db: Session, event: Event, category_id: UUID, *, create
         config = TeamMatchScoring(
             event_id=event.id,
             category_id=category_id,
+            points_for_win=_policy(event).points_for_win,
+            points_for_draw=_policy(event).points_for_draw,
+            points_for_loss=_policy(event).points_for_loss,
         )
         db.add(config)
         db.flush()
@@ -719,9 +662,8 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID) -> list[di
             TeamMatchScoring.category_id == category_id,
         )
     )
-    pts_win = config.points_for_win if config else DEFAULT_POINTS_FOR_WIN
-    pts_draw = config.points_for_draw if config else DEFAULT_POINTS_FOR_DRAW
-    pts_loss = config.points_for_loss if config else DEFAULT_POINTS_FOR_LOSS
+    event = db.get(Event, event_id)
+    policy = _policy(event)
 
     # Load all completed matches
     matches = db.scalars(
@@ -763,21 +705,18 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID) -> list[di
         sa["matchesPlayed"] += 1
         sb["matchesPlayed"] += 1
 
+        points_a, points_b = policy.standings_points(match.winner, config)
+        sa["points"] += points_a
+        sb["points"] += points_b
         if match.winner == "entry_a":
             sa["wins"] += 1
-            sa["points"] += pts_win
             sb["losses"] += 1
-            sb["points"] += pts_loss
         elif match.winner == "entry_b":
             sb["wins"] += 1
-            sb["points"] += pts_win
             sa["losses"] += 1
-            sa["points"] += pts_loss
         else:
             sa["draws"] += 1
-            sa["points"] += pts_draw
             sb["draws"] += 1
-            sb["points"] += pts_draw
 
     # Sort by points only (descending)
     return sorted(stats.values(), key=lambda r: -r["points"])

@@ -544,12 +544,24 @@ def create_manual_refund(
     if event is None:
         raise ValueError("Event not found or does not belong to your organisation")
 
-    # If registration_id given, resolve participant_id from it
+    # If registration_id is given, it must belong to this exact event and
+    # organization before any participant data is associated with the refund.
+    # The event ownership check above is not sufficient on its own because a
+    # caller could otherwise attach another organizer's registration ID.
     participant_id = None
     if registration_id:
-        reg = db.scalar(select(Registration).where(Registration.id == registration_id))
-        if reg:
-            participant_id = reg.participant_id
+        reg = db.scalar(
+            select(Registration)
+            .join(Event, Event.id == Registration.event_id)
+            .where(
+                Registration.id == registration_id,
+                Registration.event_id == event_id,
+                Event.organization_id == organizer_id,
+            )
+        )
+        if reg is None:
+            raise ValueError("Registration not found for this event or organisation")
+        participant_id = reg.participant_id
 
     now = utc_now()
     status = REFUND_STATUS_REFUND_SENT if refund_utr else REFUND_STATUS_APPROVED

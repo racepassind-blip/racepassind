@@ -1,6 +1,8 @@
 """Race-time results API router."""
 from __future__ import annotations
 
+from app.sports import get_adapter
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -118,8 +120,8 @@ def public_get_race_results(
 
 def _require_race_event(category: str) -> None:
     sport = category.strip().lower()
-    if sport not in ("running", "cycling"):
+    if get_adapter(sport).result_type != "race_time":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Race-time results are only available for running and cycling events, not '{sport}'.",
+            detail=f"Race-time results are not available for '{sport}'.",
         )

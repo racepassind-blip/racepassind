@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/api";
+import { csvCell } from "@/lib/csv";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const money = (paise: number) => `₹${(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
@@ -121,10 +122,20 @@ export default function AdminCredits() {
     if (organizerFilter !== "ALL") params.set("organization_id", organizerFilter);
     if (eventFilter !== "ALL") params.set("event_id", eventFilter);
     const response = await apiRequest<LedgerResponse>(`/admin/credits/ledger?${params}`);
-    const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const headers = ["Date", "Organizer", "Event", "Registration number", "Registration UUID", "Transaction type", "Description", "Reason", "Amount (Credits)", "Balance after (Credits)"];
-    const lines = response.items.map((row) => [new Date(row.createdAt).toLocaleString("en-IN"), row.organizationName, row.eventName || "Account-level", row.registrationReference || "", row.registrationId || "", row.type, row.description, row.reason || "", (row.amountPaise / 100).toFixed(2), (row.balanceAfterPaise / 100).toFixed(2)].map(escape).join(","));
-    const blob = new Blob([[headers.map(escape).join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
+    const lines = response.items.map((row) => [
+      csvCell(new Date(row.createdAt).toLocaleString("en-IN")),
+      csvCell(row.organizationName, true),
+      csvCell(row.eventName || "Account-level", true),
+      csvCell(row.registrationReference || "", true),
+      csvCell(row.registrationId || "", true),
+      csvCell(row.type, true),
+      csvCell(row.description, true),
+      csvCell(row.reason || "", true),
+      csvCell((row.amountPaise / 100).toFixed(2)),
+      csvCell((row.balanceAfterPaise / 100).toFixed(2)),
+    ].join(","));
+    const blob = new Blob([[headers.map((header) => csvCell(header)).join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;

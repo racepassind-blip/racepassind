@@ -47,6 +47,7 @@ import AdminCommunication from "./pages/AdminCommunication";
 import AdminRefunds from "./pages/AdminRefunds";
 import AdminCredits from "./pages/AdminCredits";
 import AdminOrganizerPricing from "./pages/AdminOrganizerPricing";
+import AdminMfaSetup from "./pages/AdminMfaSetup";
 import OrganizerCredits from "./pages/OrganizerCredits";
 import OrganizerRefunds from "./pages/OrganizerRefunds";
 import OrganizerEventRaceResults from "./pages/OrganizerEventRaceResults";
@@ -88,6 +89,7 @@ const App = () => (
             <Route path="/dashboard/profile" element={<ProtectedRoute allowedRoles={["participant", "user"]}><DashboardProfile /></ProtectedRoute>} />
 
             {/* Admin routes */}
+            <Route path="/admin/mfa" element={<ProtectedRoute allowedRoles={["admin"]}><AdminMfaSetup /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute allowedRoles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
             <Route path="/admin/communication" element={<ProtectedRoute allowedRoles={["admin"]}><AdminCommunication /></ProtectedRoute>} />
             <Route path="/admin/events" element={<ProtectedRoute allowedRoles={["admin"]}><AdminEventRecovery /></ProtectedRoute>} />

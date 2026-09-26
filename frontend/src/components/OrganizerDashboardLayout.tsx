@@ -32,11 +32,12 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const { data: creditAccounts = [] } = useQuery({
     queryKey: ["organizer-credit-accounts"],
     queryFn: async () => (await apiRequest<{ accounts: Array<{ organizationId: string; balancePaise: number }> }>("/organizer/credits")).accounts,
-    enabled: user?.role === "organizer" || user?.role === "admin",
+    enabled: user?.role === "organizer",
     staleTime: 30_000,
   });
   const availableCredits = creditAccounts.reduce((sum, account) => sum + account.balancePaise, 0) / 100;
-  const creditLabel = `${availableCredits.toLocaleString("en-IN", { maximumFractionDigits: 2 })} Credits`;
+  const isAdmin = user?.role === "admin";
+  const creditLabel = isAdmin ? "Administrator" : `${availableCredits.toLocaleString("en-IN", { maximumFractionDigits: 2 })} Credits`;
   const eventQuery = eventId ? `?event_id=${eventId}&status=all` : "";
   const currentSportConfig = getSportConfig(eventDashboard?.event.sport);
   const supportsTournament = eventSupportsTournament(eventDashboard?.event.sport, eventDashboard?.event.categories);
@@ -100,9 +101,9 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
         {showNavigation && (
           <aside className="w-full shrink-0 bg-slate-950 text-slate-100 lg:w-72">
             <div className="flex h-full flex-col p-4 lg:sticky lg:top-0 lg:h-screen">
-              <Link to="/organizer" className="mb-6 flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-white/10">
+              <Link to={isAdmin ? "/admin" : "/organizer"} className="mb-6 flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-white/10">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Ticket className="h-5 w-5" /></span>
-                <span><span className="block text-sm font-black tracking-tight">SportPass <span className="text-primary">India</span></span><span className="mt-0.5 block text-xs text-slate-400">Organizer console</span></span>
+                <span><span className="block text-sm font-black tracking-tight">SportPass <span className="text-primary">India</span></span><span className="mt-0.5 block text-xs text-slate-400">{isAdmin ? "Admin event operations" : "Organizer console"}</span></span>
               </Link>
               <nav className="flex gap-1 overflow-x-auto lg:block lg:space-y-1">
                 {availableItems.map((item) => {
@@ -164,7 +165,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
         )}
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-card/95 px-4 backdrop-blur sm:px-6 lg:px-8">
-            <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">{eventId ? "Event management" : "Organizer workspace"}</p><p className="mt-0.5 text-sm text-muted-foreground">Plan, publish, and run your events</p></div>
+            <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">{isAdmin ? "Admin event operations" : eventId ? "Event management" : "Organizer workspace"}</p><p className="mt-0.5 text-sm text-muted-foreground">{isAdmin ? "Manage events without leaving your admin account" : "Plan, publish, and run your events"}</p></div>
             <div className="flex items-center gap-2 sm:gap-3">
               <Button asChild variant="ghost" size="sm" className="hidden gap-2 text-muted-foreground sm:flex"><Link to="/"><ExternalLink className="h-4 w-4" /> Public site</Link></Button>
               <DropdownMenu>
@@ -172,8 +173,9 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
                 <DropdownMenuContent align="end" className="w-56">
                   <div className="px-2 py-1.5"><p className="text-sm font-medium">{user?.name ?? "Organizer"}</p><p className="text-xs text-muted-foreground">{user?.email ?? ""}</p></div>
                   <DropdownMenuSeparator />
+                  {isAdmin && <DropdownMenuItem onClick={() => navigate("/admin")}><Gauge className="mr-2 h-4 w-4" />Admin dashboard</DropdownMenuItem>}
                   <DropdownMenuItem onClick={() => navigate("/organizer")}><CalendarDays className="mr-2 h-4 w-4" />All events</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate("/organizer/credits")}><CreditCard className="mr-2 h-4 w-4" />{creditLabel}</DropdownMenuItem>
+                  {!isAdmin && <DropdownMenuItem onClick={() => navigate("/organizer/credits")}><CreditCard className="mr-2 h-4 w-4" />{creditLabel}</DropdownMenuItem>}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => void handleLogout()} className="text-destructive"><LogOut className="mr-2 h-4 w-4" />Log out</DropdownMenuItem>
                 </DropdownMenuContent>

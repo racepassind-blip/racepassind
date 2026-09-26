@@ -27,6 +27,9 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # Admin accounts must enroll in TOTP MFA before accessing privileged APIs.
+    mfa_secret_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
@@ -635,6 +638,14 @@ class Registration(Base):
         Index("ix_registrations_event_status_created_id", "event_id", "status", "created_at", "id"),
         Index("ix_registrations_event_checked_created_id", "event_id", "checked_in", "created_at", "id"),
         Index("ix_registrations_event_created_id", "event_id", "created_at", "id"),
+        Index(
+            "uq_registrations_event_allocation_number",
+            "event_id",
+            "allocation_number",
+            unique=True,
+            postgresql_where=text("allocation_number IS NOT NULL"),
+            sqlite_where=text("allocation_number IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -1209,7 +1220,16 @@ class CreditTransaction(Base):
 
 class CreditTopupRequest(Base):
     __tablename__ = "credit_topup_requests"
-    __table_args__ = (Index("ix_credit_topup_requests_organization_status", "organization_id", "status"),)
+    __table_args__ = (
+        Index("ix_credit_topup_requests_organization_status", "organization_id", "status"),
+        # Keep uniqueness case-insensitive even if a future write path misses
+        # the service-level canonicalization.
+        Index(
+            "uq_credit_topup_requests_utr_reference_ci",
+            text("lower(trim(utr_reference))"),
+            unique=True,
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)

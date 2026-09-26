@@ -11,6 +11,8 @@ Responsibilities:
 """
 from __future__ import annotations
 
+from app.sports import get_adapter
+
 import datetime as dt
 import re
 import uuid
@@ -75,45 +77,11 @@ def parse_distance_to_metres(distance: str | None) -> float | None:
     return value * 1000.0 if unit == "KM" else value
 
 
-def is_cycling_sport(sport: str) -> bool:
-    return sport.strip().lower() == "cycling"
-
-
-# ---------------------------------------------------------------------------
-# Calculation helpers
-# ---------------------------------------------------------------------------
-
-def calc_pace_seconds_per_km(total_seconds: float, distance_metres: float) -> int | None:
-    """Running pace: seconds per km.  Returns None if inputs are invalid."""
-    if distance_metres <= 0 or total_seconds <= 0:
-        return None
-    distance_km = distance_metres / 1000.0
-    return round(total_seconds / distance_km)
-
-
-def calc_speed_kmh_x100(total_seconds: float, distance_metres: float) -> int | None:
-    """Cycling speed × 100 to keep integer storage (e.g. 3500 = 35.00 km/h)."""
-    if distance_metres <= 0 or total_seconds <= 0:
-        return None
-    distance_km = distance_metres / 1000.0
-    hours = total_seconds / 3600.0
-    speed_kmh = distance_km / hours
-    return round(speed_kmh * 100)
-
-
-def format_pace(pace_seconds_per_km: int | None) -> str | None:
-    """Format pace as "M:SS /km"."""
-    if pace_seconds_per_km is None:
-        return None
-    m, s = divmod(pace_seconds_per_km, 60)
-    return f"{m}:{s:02d} /km"
-
-
-def format_speed(speed_kmh_x100: int | None) -> str | None:
-    """Format speed as "35.00 km/h"."""
-    if speed_kmh_x100 is None:
-        return None
-    return f"{speed_kmh_x100 / 100:.2f} km/h"
+def _race_adapter(event):
+    adapter = get_adapter(event.category)
+    if adapter.result_type != "race_time":
+        raise HTTPException(status_code=422, detail="Race-time results are not supported for this sport")
+    return adapter
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +132,7 @@ def bulk_save_draft(
     reinserted — all other categories are left untouched.
     If payload.category_id is None, all rows for the event are replaced.
     """
-    sport = event.category.strip().lower()
+    adapter = _race_adapter(event)
     cats = _load_categories(db, event.id)
 
     # Delete only the scoped category's rows (or all if no scope)
@@ -224,10 +192,7 @@ def bulk_save_draft(
             dist_m = parse_distance_to_metres(cat.distance if cat else None)
 
             if dist_m is not None:
-                if is_cycling_sport(sport):
-                    speed = calc_speed_kmh_x100(total_seconds, dist_m)
-                else:
-                    pace = calc_pace_seconds_per_km(total_seconds, dist_m)
+                pace, speed = adapter.race_metrics(total_seconds, dist_m)
 
         row = RaceResult(
             event_id=event.id,
@@ -255,6 +220,7 @@ def bulk_save_draft(
 
 def publish_results(db: Session, event: Event, category_id: uuid.UUID | None = None) -> OrganizerRaceResultsOut:
     """Flip rows to published, scoped to one category or all."""
+    _race_adapter(event)
     query = select(RaceResult).where(RaceResult.event_id == event.id)
     if category_id is not None:
         query = query.where(RaceResult.category_id == category_id)
@@ -275,6 +241,7 @@ def publish_results(db: Session, event: Event, category_id: uuid.UUID | None = N
 
 def unpublish_results(db: Session, event: Event, category_id: uuid.UUID | None = None) -> OrganizerRaceResultsOut:
     """Revert rows back to draft, scoped to one category or all."""
+    _race_adapter(event)
     query = select(RaceResult).where(RaceResult.event_id == event.id)
     if category_id is not None:
         query = query.where(RaceResult.category_id == category_id)
@@ -325,6 +292,7 @@ def get_public_results(db: Session, event_id: uuid.UUID) -> PublicRaceResultsOut
 
     cats = _load_categories(db, event_id)
     sport = event.category.strip().lower()
+    adapter = _race_adapter(event)
 
     # Determine overall result_set_status: published if ANY row is published
     overall_status = "published" if rows else "draft"
@@ -355,8 +323,7 @@ def get_public_results(db: Session, event_id: uuid.UUID) -> PublicRaceResultsOut
             bib = r.registration.allocation_number if r.registration else None
             ft = timedelta_to_hhmmss(r.finish_time) if r.finish_time else None
 
-            pace_disp = format_pace(r.pace_seconds_per_km) if not is_cycling_sport(sport) else None
-            speed_disp = format_speed(r.speed_kmh_x100) if is_cycling_sport(sport) else None
+            pace_disp, speed_disp = adapter.race_display(r.pace_seconds_per_km, r.speed_kmh_x100)
 
             entries.append(
                 PublicRaceResultEntry(
@@ -400,6 +367,7 @@ def _build_organizer_out(
     cats: dict[uuid.UUID, EventCategory],
 ) -> OrganizerRaceResultsOut:
     sport = event.category.strip().lower()
+    _race_adapter(event)
 
     # Per-category publish status
     cat_status: dict[str, str] = {}

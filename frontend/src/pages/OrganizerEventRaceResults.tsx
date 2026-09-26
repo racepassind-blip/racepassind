@@ -1,3 +1,4 @@
+import { getSportConfig } from "@/data/sportConfig";
 /**
  * OrganizerEventRaceResults — organizer editor for running/cycling timed results.
  *
@@ -311,7 +312,7 @@ export default function OrganizerEventRaceResults() {
   const isLoading  = resultsLoading || regsLoading;
   const isMutating = saveDraft.isPending || publish.isPending || unpublish.isPending;
   const sport      = savedResults?.sport ?? "";
-  const isCycling  = sport === "cycling";
+  const isCycling  = getSportConfig(sport).race_metric === "speed";
   const validFinishCount = rows.filter((row) => row.resultStatus === "Finished" && isValidTime(row.finishTimeHhmmss)).length;
   const missingTimeCount = rows.filter((row) => row.resultStatus === "Finished" && !isValidTime(row.finishTimeHhmmss)).length;
   const nonFinisherCount = rows.filter((row) => row.resultStatus !== "Finished").length;

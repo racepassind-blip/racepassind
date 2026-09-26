@@ -18,9 +18,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, uploadFile } from "@/lib/api";
 import type { AddonDefinition, EventAddonConfig, EventFieldConfig, ParticipantFieldConfig, ParticipantFieldType } from "@/data/mockEvents";
 import { TeamFieldEditor, DEFAULT_MAIN_REGISTRANT_FIELDS, DEFAULT_PARTICIPANT_FIELDS, type TeamFieldEditorItem } from "@/components/TeamFieldEditor";
-import { getSportConfig } from "@/data/sportConfig";
+import { getSportConfig, sportOptions, normalizeSport } from "@/data/sportConfig";
 import type { CommunicationEvent } from "@/lib/eventCommunication";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface TicketForm {
   id: string;
@@ -176,6 +177,15 @@ interface OrganizerEventResponse {
   platformFeeBearerLocked?: boolean;
 }
 
+interface OrganizerOrganizationOption {
+  id: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  status: string;
+  allowDirectUpi?: boolean;
+}
+
 const MAX_IMAGE_BYTES = 2_000_000;
 
 const rupeeFormatter = new Intl.NumberFormat("en-IN", {
@@ -202,16 +212,7 @@ function validateImageFile(file: File | undefined, label: string): File | null {
   return file;
 }
 
-const sports = [
-  { value: "running", label: "Running" },
-  { value: "cycling", label: "Cycling" },
-  { value: "badminton", label: "Badminton" },
-  { value: "triathlon", label: "Triathlons/Duathlons" },
-  { value: "swimming", label: "Swimming (open water/mass swims)" },
-  { value: "hiking", label: "Trekking/Hiking events" },
-  { value: "obstacle_course", label: "Obstacle course races (Spartan-style, mud runs)" },
-  { value: "walkathon", label: "Walkathons/charity walks" },
-];
+const sports = sportOptions;
 
 /** Parse a stored distance string like "21.1 KM" or "5 M" back into value + unit. */
 function parseDistanceString(raw: string): { value: string; unit: "KM" | "M" } {
@@ -236,12 +237,16 @@ const newCategory = (): CategoryForm => ({ id: crypto.randomUUID(), persisted: f
 const OrganizerEventCreate = () => {
   const navigate = useNavigate();
   const { eventId } = useParams();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   // Prevent double-submission: synchronous guard that fires before React re-renders
   const savingRef = useRef(false);
   // Track the ID of an event created in this session so repeated saves use PUT, not POST
   const createdEventIdRef = useRef<string | null>(null);
   const [organizationId, setOrganizationId] = useState("");
+  const [organizationOptions, setOrganizationOptions] = useState<OrganizerOrganizationOption[]>([]);
+  const [organizationsLoading, setOrganizationsLoading] = useState(!eventId);
+  const [organizationsError, setOrganizationsError] = useState<string | null>(null);
   const [eventName, setEventName] = useState("");
   const [description, setDescription] = useState("");
   const [sport, setSport] = useState("");
@@ -360,18 +365,44 @@ const OrganizerEventCreate = () => {
 
   useEffect(() => {
     if (eventId) return;
-    apiRequest<Array<{ id: string; allowDirectUpi?: boolean }>>("/organizer/organizations")
+    setOrganizationsLoading(true);
+    setOrganizationsError(null);
+    apiRequest<OrganizerOrganizationOption[]>("/organizer/organizations")
       .then((organizations) => {
-        const org = organizations[0];
-        setOrganizationId(org?.id ?? "");
-        setAllowDirectUpi(org?.allowDirectUpi ?? false);
-        // If Direct UPI isn't allowed, default to PAYMENT_GATEWAY (no method pre-selected)
-        if (!(org?.allowDirectUpi ?? false)) {
+        const activeOrganizations = organizations.filter((organization) => organization.status === "active");
+        setOrganizationOptions(activeOrganizations);
+
+        // A normal organizer with one organization has no decision to make. Admins
+        // and multi-organization users must choose explicitly so a new event is
+        // never assigned to whichever organization happened to be returned first.
+        if (user?.role !== "admin" && activeOrganizations.length === 1) {
+          const organization = activeOrganizations[0];
+          setOrganizationId(organization.id);
+          setAllowDirectUpi(organization.allowDirectUpi ?? false);
+          if (!(organization.allowDirectUpi ?? false)) {
+            setPaymentCollectionMethod("PAYMENT_GATEWAY");
+          }
+        } else {
+          setOrganizationId("");
+          setAllowDirectUpi(false);
           setPaymentCollectionMethod("PAYMENT_GATEWAY");
         }
       })
-      .catch(() => undefined);
-  }, [eventId]);
+      .catch((error) => {
+        setOrganizationOptions([]);
+        setOrganizationsError(error instanceof Error ? error.message : "Could not load organizers");
+      })
+      .finally(() => setOrganizationsLoading(false));
+  }, [eventId, user?.role]);
+
+  const handleOrganizationChange = (nextOrganizationId: string) => {
+    const organization = organizationOptions.find((option) => option.id === nextOrganizationId);
+    setOrganizationId(nextOrganizationId);
+    setAllowDirectUpi(organization?.allowDirectUpi ?? false);
+    setPaymentCollectionMethod(organization?.allowDirectUpi ? "DIRECT_UPI" : "PAYMENT_GATEWAY");
+  };
+
+  const selectedOrganization = organizationOptions.find((organization) => organization.id === organizationId);
 
   useEffect(() => {
     if (!eventId) return;
@@ -381,7 +412,7 @@ const OrganizerEventCreate = () => {
         setOrganizationId(event.organizationId);
         setEventName(event.name);
         setDescription(event.description);
-        setSport(event.sport);
+        setSport(normalizeSport(event.sport));
         setLocation(event.location.name ?? "");
         setAddress(event.location.address ?? "");
         setCity(event.location.city ?? "");
@@ -695,7 +726,7 @@ const OrganizerEventCreate = () => {
   const validateStep = (step: number): boolean => {
     if (step === 0) {
       const missingFields = [
-        !organizationId ? "organizer organization" : null,
+        !organizationId ? "event organizer" : null,
         !eventName.trim() ? "event name" : null,
         !description.trim() ? "event description" : null,
         !sport ? "sport" : null,
@@ -803,7 +834,7 @@ const OrganizerEventCreate = () => {
 
   const saveEvent = async (publish: boolean) => {
     const missingFields = [
-      !organizationId ? "organizer organization" : null,
+      !organizationId ? "event organizer" : null,
       !eventName.trim() ? "event name" : null,
       !description.trim() ? "event description" : null,
       !sport ? "sport" : null,
@@ -1022,6 +1053,24 @@ const OrganizerEventCreate = () => {
           {currentStep === 0 && <section className="space-y-5 rounded-xl border bg-card p-6">
             <h2 className="text-lg font-bold">About This Event</h2>
             <div className="grid gap-4 sm:grid-cols-2">
+              {!eventId && <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/[0.035] p-4 sm:col-span-2">
+                <div>
+                  <Label htmlFor="event-organization">Event organizer *</Label>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {user?.role === "admin"
+                      ? "Choose the organizer that will own this event. You will remain signed in as a SportPass admin."
+                      : "This organization will own the event and receive its registrations."}
+                  </p>
+                </div>
+                {organizationsLoading ? <p className="text-sm text-muted-foreground">Loading organizers…</p> : organizationOptions.length > 0 ? <Select value={organizationId} onValueChange={handleOrganizationChange}>
+                  <SelectTrigger id="event-organization" className="bg-background"><SelectValue placeholder="Select an organizer" /></SelectTrigger>
+                  <SelectContent>{organizationOptions.map((organization) => {
+                    const locationLabel = [organization.city, organization.state].filter(Boolean).join(", ");
+                    return <SelectItem key={organization.id} value={organization.id}>{organization.name}{locationLabel ? ` · ${locationLabel}` : ""}</SelectItem>;
+                  })}</SelectContent>
+                </Select> : <p className="text-sm font-medium text-destructive">{organizationsError ?? "No active organizer is available for this event."}</p>}
+                {selectedOrganization && <p className="text-sm font-semibold text-foreground">Creating for: {selectedOrganization.name}</p>}
+              </div>}
               <div className="space-y-2 sm:col-span-2"><Label>Event name *</Label><Input value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="e.g. Bengaluru Community Sports Day" /></div>
               <div className="space-y-2 sm:col-span-2"><Label>Event description *</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Tell participants what makes this event special." /></div>
               <div className="space-y-2"><Label>Sport *</Label><Select value={sport} onValueChange={setSport}><SelectTrigger><SelectValue placeholder="Select sport" /></SelectTrigger><SelectContent>{sports.map((sportOption) => <SelectItem key={sportOption.value} value={sportOption.value}>{sportOption.label}</SelectItem>)}</SelectContent></Select></div>

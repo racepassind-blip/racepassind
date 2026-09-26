@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.sports import get_adapter
+
 import datetime as dt
 from decimal import Decimal
 from typing import Any, Literal
@@ -113,12 +115,9 @@ class OrganizerEventCreateV1(BaseModel):
 
     @model_validator(mode="after")
     def validate_category_distances(self):
-        is_badminton = self.sport.strip().lower() == "badminton"
+        adapter = get_adapter(self.sport)
         for category in self.categories:
-            normalized_distance = category.distance.strip() if category.distance else None
-            if not is_badminton and not normalized_distance:
-                raise ValueError("Distance is required for non-badminton events")
-            category.distance = normalized_distance if not is_badminton else None
+            category.distance = adapter.category_distance(category.distance)
         return self
 
     @model_validator(mode="after")
@@ -233,12 +232,9 @@ class OrganizerEventUpdateV1(BaseModel):
 
     @model_validator(mode="after")
     def validate_category_distances(self):
-        is_badminton = self.sport.strip().lower() == "badminton"
+        adapter = get_adapter(self.sport)
         for category in self.categories:
-            normalized_distance = category.distance.strip() if category.distance else None
-            if not is_badminton and not normalized_distance:
-                raise ValueError("Distance is required for non-badminton events")
-            category.distance = normalized_distance if not is_badminton else None
+            category.distance = adapter.category_distance(category.distance)
         return self
 
     @model_validator(mode="after")

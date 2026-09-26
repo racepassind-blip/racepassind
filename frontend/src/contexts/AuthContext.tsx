@@ -11,6 +11,7 @@ export interface AuthUser {
   email: string;
   phone: string | null;
   role: UserRole;
+  mfaEnabled: boolean;
 }
 
 interface AuthResponse {
@@ -22,7 +23,7 @@ interface AuthContextType {
   isLoading: boolean;
   isInitialized: boolean;
   authError: string | null;
-  login: (email: string, password: string) => Promise<AuthUser>;
+  login: (email: string, password: string, mfaCode?: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   retryBootstrap: () => void;
   isAdmin: boolean;
@@ -42,7 +43,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearSession = useCallback(() => {
     setUser(null);
     clearCsrfToken();
-    queryClient.removeQueries({ queryKey: ["participant-registrations"] });
+    // Account-scoped organizer/admin data must never survive a logout or an
+    // expired session. Clearing the full cache also prevents a newly signed-in
+    // admin from briefly seeing the previous organizer's events or Credits.
+    queryClient.clear();
   }, [queryClient]);
 
   const bootstrap = useCallback(async () => {
@@ -68,21 +72,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, [bootstrap, clearSession]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, mfaCode?: string) => {
     setIsLoading(true);
     setAuthError(null);
     try {
       const response = await apiRequest<AuthResponse>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, ...(mfaCode ? { mfa_code: mfaCode } : {}) }),
       });
+      queryClient.clear();
       setUser(response.user);
       setIsInitialized(true);
       return response.user;
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [queryClient]);
 
   const logout = useCallback(async () => {
     setIsLoading(true);

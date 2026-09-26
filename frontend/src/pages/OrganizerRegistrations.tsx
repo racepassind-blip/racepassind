@@ -727,6 +727,7 @@ const OrganizerRegistrations = () => {
       await apiRequest(`/organizer/events/${registration.event.id}/registrations/${registration.id}/${decision}`, {
         method: "POST",
         body: JSON.stringify(decision === "reject" ? { reason: reason.trim() } : {}),
+        timeoutMs: decision === "approve" ? 60_000 : undefined,
       });
       toast.success(decision === "approve" ? "Payment approved." : "Payment rejected.");
       setDecisionTarget(null);

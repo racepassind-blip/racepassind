@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.sports import get_adapter
+
 import base64
 import csv
 import datetime as dt
@@ -56,20 +58,6 @@ def _member_payload(membership: RegistrationParticipant) -> dict:
         "participant": _participant_payload(membership.participant),
         "responses": membership.responses or {},
     }
-
-
-def _entry_size(ticket: Ticket) -> int:
-    """Minimum required number of participants for this ticket (= team_size_min for team entries)."""
-    category = ticket.category
-    return category.participants_per_entry if category is not None else 1
-
-
-def _max_entry_size(ticket: Ticket) -> int:
-    """Maximum allowed number of participants for this ticket."""
-    category = ticket.category
-    if category is not None and category.entry_type == "team" and category.team_size_max is not None:
-        return category.team_size_max
-    return _entry_size(ticket)
 
 
 def _contact_value(value) -> str | None:
@@ -260,6 +248,7 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
     if ticket.available < 1:
         raise ValueError("Ticket is sold out")
 
+    get_adapter(event.category).validate_registration(ticket.category, 1)
     field_config, addon_config = normalize_event_configs(event.field_config, event.addon_config)
     try:
         responses, selections, computed_total = calculate_registration_total(
@@ -1428,14 +1417,7 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
     prepared: list[dict] = []
     for entry in entries:
         ticket = tickets[entry.ticket_id]
-        min_members = _entry_size(ticket)
-        max_members = _max_entry_size(ticket)
-        count = len(entry.participants)
-        if count < min_members or count > max_members:
-            category_label = ticket.category.name if ticket.category else "This"
-            if min_members == max_members:
-                raise ValueError(f"{category_label} entry requires exactly {min_members} participants")
-            raise ValueError(f"{category_label} entry requires between {min_members} and {max_members} participants")
+        get_adapter(event.category).validate_registration(ticket.category, len(entry.participants))
         first_responses = dict(entry.participants[0].responses or {})
         shared_email, shared_phone = _resolve_shared_contact(
             getattr(entry, "email", None),
@@ -1595,14 +1577,7 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
         category_options=sorted({category.distance for category in event.categories if category.distance}),
     )
     raw_member_responses = [member.responses for member in payload.participants] if payload.participants else [payload.responses]
-    min_members = _entry_size(ticket)
-    max_members = _max_entry_size(ticket)
-    count = len(raw_member_responses)
-    if count < min_members or count > max_members:
-        category_label = ticket.category.name if ticket.category else "This"
-        if min_members == max_members:
-            raise ValueError(f"{category_label} entry requires exactly {min_members} participants")
-        raise ValueError(f"{category_label} entry requires between {min_members} and {max_members} participants")
+    get_adapter(event.category).validate_registration(ticket.category, len(raw_member_responses))
     shared_email, shared_phone = _resolve_shared_contact(
         getattr(payload, "email", None),
         getattr(payload, "phone", None),

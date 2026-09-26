@@ -158,7 +158,8 @@ def get_bouts(
     user: User = Depends(require_roles("organizer", "admin")),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    get_authorized_event(db, user, event_id)
+    event = get_authorized_event(db, user, event_id)
+    require_tournament_capable(event, db)
     try:
         return list_bouts(db, event_id, match_id)
     except MatchValidationError as exc:
@@ -174,7 +175,8 @@ def post_bout(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
-    get_authorized_event(db, user, event_id)
+    event = get_authorized_event(db, user, event_id)
+    require_tournament_capable(event, db)
     try:
         return create_bout(db, event_id, match_id, payload)
     except MatchValidationError as exc:
@@ -192,7 +194,8 @@ def put_bout(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
-    get_authorized_event(db, user, event_id)
+    event = get_authorized_event(db, user, event_id)
+    require_tournament_capable(event, db)
     try:
         return update_bout(db, event_id, match_id, bout_id, payload)
     except MatchValidationError as exc:
@@ -209,7 +212,8 @@ def remove_bout(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> None:
-    get_authorized_event(db, user, event_id)
+    event = get_authorized_event(db, user, event_id)
+    require_tournament_capable(event, db)
     try:
         delete_bout(db, event_id, match_id, bout_id)
     except MatchValidationError as exc:
@@ -229,6 +233,7 @@ def get_team_scoring_config(
     db: Session = Depends(get_db),
 ) -> dict:
     event = get_authorized_event(db, user, event_id)
+    require_tournament_capable(event, db)
     try:
         return get_team_scoring(db, event, category_id)
     except MatchValidationError as exc:
@@ -245,6 +250,7 @@ def put_team_scoring_config(
     db: Session = Depends(get_db),
 ) -> dict:
     event = get_authorized_event(db, user, event_id)
+    require_tournament_capable(event, db)
     try:
         return update_team_scoring(db, event, category_id, payload)
     except MatchValidationError as exc:
@@ -263,7 +269,8 @@ def get_standings(
     user: User = Depends(require_roles("organizer", "admin")),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    get_authorized_event(db, user, event_id)
+    event = get_authorized_event(db, user, event_id)
+    require_tournament_capable(event, db)
     try:
         return compute_standings(db, event_id, category_id)
     except MatchValidationError as exc:

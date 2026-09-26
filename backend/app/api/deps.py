@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.sports import get_adapter
+
 import datetime as dt
 from collections.abc import Callable
 
@@ -109,6 +111,8 @@ def require_roles(*roles: str) -> Callable:
     def dependency(user: User = Depends(get_current_user)) -> User:
         if user.role not in roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        if user.role == "admin" and not user.mfa_enabled:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin_mfa_required")
         return user
 
     return dependency
@@ -144,13 +148,13 @@ def get_authorized_event(db: Session, user: User, event_id):
 
 
 def require_tournament_capable(event, db: Session) -> None:
-    """Raise 404 unless the event is badminton or has at least one team-format category."""
+    """Resolve tournament access through the sport policy and category format."""
     from models import EventCategory
 
-    if event.category.casefold() == "badminton":
+    if get_adapter(event.category).tournament_capable():
         return
     loaded_cats = event.categories if hasattr(event, "categories") else []
-    if any(cat.entry_type == "team" for cat in loaded_cats):
+    if get_adapter(event.category).tournament_capable(any(cat.entry_type == "team" for cat in loaded_cats)):
         return
     has_team = db.scalar(
         select(EventCategory.id).where(
@@ -158,9 +162,9 @@ def require_tournament_capable(event, db: Session) -> None:
             EventCategory.entry_type == "team",
         )
     )
-    if has_team:
+    if get_adapter(event.category).tournament_capable(bool(has_team)):
         return
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail="Tournament features are only available for badminton events or events with team categories",
+        detail="Tournament features are not available for this sport and category format",
     )

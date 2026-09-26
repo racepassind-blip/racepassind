@@ -45,6 +45,13 @@ class CreditServiceTests(unittest.TestCase):
             with self.assertRaises(CreditValidationError):
                 request_topup(db, organization_id=self.organization_id, amount_paise=50000, utr_reference="UTR-1")
 
+    def test_topup_utr_is_canonicalized_case_insensitively(self):
+        with Session(self.engine) as db:
+            request = request_topup(db, organization_id=self.organization_id, amount_paise=50000, utr_reference="  abc123  ")
+            self.assertEqual(request.utr_reference, "ABC123")
+            with self.assertRaises(CreditValidationError):
+                request_topup(db, organization_id=self.organization_id, amount_paise=50000, utr_reference="abc123")
+
     def test_registration_debit_source_is_idempotent(self):
         with Session(self.engine) as db:
             add_credits(db, organization_id=self.organization_id, amount=5000, description="seed")

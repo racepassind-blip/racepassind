@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api";
+import { getSafeRedirectPath } from "@/lib/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 
 const Login = () => {
@@ -17,20 +18,31 @@ const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
+  const [needsMfa, setNeedsMfa] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const from = (location.state as { from?: string })?.from;
+  const from = getSafeRedirectPath((location.state as { from?: unknown })?.from);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
     try {
-      const loggedInUser = await login(email.trim(), password);
+      const loggedInUser = await login(email.trim(), password, needsMfa ? mfaCode : undefined);
       toast.success("Welcome back!");
+      if (loggedInUser.role === "admin" && !loggedInUser.mfaEnabled) {
+        navigate("/admin/mfa", { replace: true });
+        return;
+      }
       const destination = from ?? (loggedInUser.role === "admin" ? "/admin" : loggedInUser.role === "organizer" ? "/organizer" : "/dashboard");
       navigate(destination, { replace: true });
     } catch (loginError) {
-      setError(loginError instanceof ApiError ? loginError.message : "Could not sign in. Please try again.");
+      if (loginError instanceof ApiError && loginError.message === "admin_mfa_required") {
+        setNeedsMfa(true);
+        setError("Enter the 6-digit code from your authenticator app.");
+      } else {
+        setError(loginError instanceof ApiError ? loginError.message : "Could not sign in. Please try again.");
+      }
     }
   };
 
@@ -88,6 +100,11 @@ const Login = () => {
                     required
                   />
                 </div>
+                {needsMfa && <div className="space-y-2">
+                  <Label htmlFor="mfa-code">Authenticator code</Label>
+                  <Input id="mfa-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" placeholder="123456" value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, ""))} required />
+                  <p className="text-xs text-muted-foreground">Use the code from the authenticator app enrolled for this admin account.</p>
+                </div>}
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
                   <div className="relative">

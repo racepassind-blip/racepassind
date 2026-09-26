@@ -6,12 +6,15 @@ that works across all sports (running, cycling, badminton, etc.).
 
 from __future__ import annotations
 
+from app.sports import get_adapter
+
 import datetime as dt
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_authorized_event, get_authorized_organization, get_current_user, require_csrf, require_roles
@@ -160,6 +163,7 @@ def get_allocation_summary(
 def batch_allocate_numbers(
     event_id: UUID,
     payload: AllocationBatchRequest,
+    _csrf: None = Depends(require_csrf),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AllocationBatchResult:
@@ -176,27 +180,43 @@ def batch_allocate_numbers(
     skipped = 0
     errors: list[str] = []
 
+    # Lock the rows participating in this batch where the database supports
+    # row locks. The unique index below remains the final concurrency guard.
+    incoming_ids = {a.registration_id for a in payload.assignments}
+    locked_regs = {
+        reg.id: reg
+        for reg in db.scalars(
+            select(Registration).where(Registration.id.in_(incoming_ids), Registration.event_id == event_id).with_for_update()
+        ).all()
+    }
+
     # Numbers already used by other draft/published registrations in this event
     # (excluding the ones we're about to reassign).
-    incoming_ids = {a.registration_id for a in payload.assignments}
     used_numbers: set[int] = set()
     existing_stmt = select(Registration.id, Registration.allocation_number).where(
         Registration.event_id == event_id,
         Registration.allocation_number.isnot(None),
         Registration.allocation_status.in_(("draft", "published")),
     )
-    for reg_id, number in db.execute(existing_stmt).all():
+    for reg_id, number in db.execute(existing_stmt.with_for_update()).all():
         if number is not None and reg_id not in incoming_ids:
             used_numbers.add(number)
 
     # Detect duplicate numbers within the incoming payload itself.
     seen_in_payload: set[int] = set()
+    seen_registrations: set[UUID] = set()
+    valid_assignments: list[tuple[Registration, int]] = []
+    old_numbers: dict[UUID, int | None] = {}
 
     now = dt.datetime.now(dt.UTC)
     for assignment in payload.assignments:
         total_processed += 1
         number = assignment.allocation_number
 
+        if assignment.registration_id in seen_registrations:
+            skipped += 1
+            errors.append(f"Registration {assignment.registration_id} appears more than once in this batch")
+            continue
         if number in seen_in_payload:
             skipped += 1
             errors.append(f"Duplicate number {number} in this batch")
@@ -206,13 +226,30 @@ def batch_allocate_numbers(
             errors.append(f"Number {number} is already taken by another participant")
             continue
 
-        reg = db.get(Registration, assignment.registration_id)
-        if reg is None or reg.event_id != event_id:
+        reg = locked_regs.get(assignment.registration_id)
+        if reg is None:
             skipped += 1
             errors.append(f"Registration {assignment.registration_id} not found for this event")
             continue
 
-        old_number = reg.allocation_number
+        seen_registrations.add(assignment.registration_id)
+        seen_in_payload.add(number)
+        used_numbers.add(number)
+        old_numbers[reg.id] = reg.allocation_number
+        valid_assignments.append((reg, number))
+        assigned += 1
+
+    # Clear changed numbers first so a valid batch can swap two existing
+    # assignments without transiently violating the unique index.
+    for reg, number in valid_assignments:
+        if reg.allocation_number != number:
+            reg.allocation_number = None
+    # Flush the clears as a separate statement set; otherwise the ORM may
+    # collapse a swap into direct updates and the unique index can reject it.
+    db.flush()
+
+    for reg, number in valid_assignments:
+        old_number = old_numbers[reg.id]
         reg.allocation_number = number
         # New assignments become draft; already-published entries stay published.
         if reg.allocation_status != "published":
@@ -231,11 +268,11 @@ def batch_allocate_numbers(
             )
         )
 
-        seen_in_payload.add(number)
-        used_numbers.add(number)
-        assigned += 1
-
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="One or more allocation numbers were taken concurrently") from exc
     return AllocationBatchResult(
         total_processed=total_processed,
         assigned=assigned,
@@ -249,6 +286,7 @@ def edit_allocation(
     event_id: UUID,
     registration_id: UUID,
     payload: EditNumberRequest,
+    _csrf: None = Depends(require_csrf),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RegistrationWithAllocation:
@@ -266,6 +304,16 @@ def edit_allocation(
             detail="Registration not found",
         )
 
+    conflict = db.scalar(
+        select(Registration.id).where(
+            Registration.event_id == event_id,
+            Registration.allocation_number == payload.new_number,
+            Registration.id != registration_id,
+        )
+    )
+    if conflict is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Allocation number is already taken for this event")
+
     old_number = reg.allocation_number
     now = dt.datetime.now(dt.UTC)
     reg.allocation_number = payload.new_number
@@ -280,7 +328,11 @@ def edit_allocation(
         changed_by=user.id,
     )
     db.add(history)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Allocation number was taken concurrently") from exc
 
     # Reload for fresh data
     db.refresh(reg)
@@ -310,6 +362,7 @@ def edit_allocation(
 def publish_allocations(
     event_id: UUID,
     payload: PublishRequest,
+    _csrf: None = Depends(require_csrf),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> PublishResult:
@@ -414,50 +467,8 @@ def get_sport_allocation_config(
 
 
 def _get_sport_allocation_config(sport: str) -> SportAllocationConfig:
-    """Get allocation config for a sport."""
-    # Default config
-    config = SportAllocationConfig(
-        number_enabled=True,
-        number_label="Bib Number",
-        scope="individual",
-    )
-
-    # Sport-specific overrides
-    sport_map = {
-        "running": SportAllocationConfig(
-            number_enabled=True,
-            number_label="Bib Number",
-            scope="individual",
-        ),
-        "cycling": SportAllocationConfig(
-            number_enabled=True,
-            number_label="Bib Number",
-            scope="individual",
-        ),
-        "badminton": SportAllocationConfig(
-            number_enabled=True,
-            number_label="Jersey Number",
-            scope="team_member",
-        ),
-        "tennis": SportAllocationConfig(
-            number_enabled=True,
-            number_label="Player ID",
-            scope="individual",
-        ),
-    }
-
-    if sport in sport_map:
-        return sport_map[sport]
-
-    # Fallback for unknown sports
-    if "badminton" in sport or "squash" in sport:
-        return SportAllocationConfig(
-            number_enabled=True,
-            number_label="Jersey Number",
-            scope="team_member",
-        )
-
-    return config
+    adapter = get_adapter(sport)
+    return SportAllocationConfig(number_enabled=True, number_label=adapter.number_label, scope=adapter.number_scope)
 
 
 @router.get("/config", response_model=SportAllocationConfig)

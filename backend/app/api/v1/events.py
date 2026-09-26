@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.sports import get_adapter
+
 import datetime as dt
 from urllib.parse import urlparse
 from uuid import UUID
@@ -177,7 +179,7 @@ def _category_distances(payload: OrganizerEventCreateV1 | OrganizerEventUpdateV1
 
 def _legacy_event_distance(payload: OrganizerEventCreateV1 | OrganizerEventUpdateV1) -> str:
     distances = _category_distances(payload)
-    return distances[0] if distances else "badminton"
+    return distances[0] if distances else get_adapter(payload.sport).key
 
 
 @router.get("/events")

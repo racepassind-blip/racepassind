@@ -31,6 +31,8 @@ FRONTEND_ORIGINS=https://your-frontend-origin.example
 SESSION_SECRET=<random secret>
 CSRF_SECRET=<different random secret>
 TICKET_SIGNING_SECRET=<different random secret>
+# Fernet key for stored communication credentials (generate, then keep stable)
+COMMUNICATION_ENCRYPTION_KEY=<Fernet.generate_key() output>
 STORAGE_MODE=s3
 STORAGE_ENDPOINT=https://your-s3-compatible-endpoint.example
 STORAGE_BUCKET=<private bucket>
@@ -40,6 +42,18 @@ STORAGE_SECRET_KEY=<secret-managed secret key>
 ```
 
 Google sign-in also requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI`. Email/password sign-in can be used as the initial preview flow if Google OAuth has not been configured; do not advertise Google sign-in until its callback and credentials are configured.
+
+Generate the communication-encryption key once and store it only in the deployment
+platform's secret manager:
+
+```sh
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Set the resulting value as `COMMUNICATION_ENCRYPTION_KEY` on the backend service before
+the first production deploy. Keep this key stable: it decrypts existing encrypted Gmail
+app passwords. If it may have been exposed, rotate the Gmail app password and perform a
+planned key migration rather than replacing the key without re-encrypting stored values.
 
 `PORT` is supplied by the backend host. The container defaults to `8000` for local use.
 
@@ -162,3 +176,6 @@ Before calling the POC publicly launch-ready, complete T025's non-sensitive end-
 - The deployed frontend can reach the backend through the configured `VITE_API_URL`.
 - A participant can register, submit UPI reference, receive organizer approval, view a ticket, and be checked in once.
 - Cross-organizer and cross-participant access remains denied.
+# Admin MFA
+
+Admin accounts use time-based one-time-password (TOTP) multi-factor authentication. After the migration, an admin signs in with their password, scans the setup QR code at `/admin/mfa`, and confirms a six-digit authenticator code. Privileged admin APIs remain unavailable until enrollment is complete. The encrypted TOTP secret uses the same `COMMUNICATION_ENCRYPTION_KEY` configuration used for other application secrets; keep that key stable and rotate it only with a planned secret migration.

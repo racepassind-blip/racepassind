@@ -7,6 +7,7 @@ Currently supports Gmail for email sending via SMTP.
 from __future__ import annotations
 
 import base64
+import hashlib
 import smtplib
 import ssl
 from email.mime.multipart import MIMEMultipart
@@ -14,6 +15,7 @@ from email.mime.text import MIMEText
 from typing import Any
 from uuid import UUID
 
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -31,62 +33,51 @@ GMAIL_SMTP_USE_TLS = True
 
 # Sensitive keys in configuration
 _SENSITIVE_KEYS = frozenset({"gmail_app_password"})
+_FERNET_PREFIX = "fernet:v1:"
+
+
+def _fernet() -> Fernet:
+    """Build authenticated encryption from the configured application key."""
+    settings = get_settings()
+    configured = settings.communication_encryption_key or settings.session_secret or "development-communication-key"
+    try:
+        decoded = base64.urlsafe_b64decode(configured.encode("ascii"))
+    except (ValueError, UnicodeEncodeError):
+        decoded = b""
+    key_material = decoded if len(decoded) == 32 else hashlib.sha256(configured.encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(key_material))
 
 
 def _encrypt_value(value: str | None) -> str | None:
-    """Encrypt a sensitive value for storage.
-
-    Currently uses a simple obfuscation pattern. This can be upgraded to
-    proper encryption (e.g., Fernet with a key from environment) in the future
-    without changing the API.
-
-    For production, replace the XOR-based approach with:
-    ```
-    from cryptography.fernet import Fernet
-
-    _fernet = Fernet(settings.communication_encryption_key.encode())
-
-    def _encrypt_value(value: str | None) -> str | None:
-        if value is None:
-            return None
-        return _fernet.encrypt(value.encode()).decode()
-
-    def _decrypt_value(encrypted: str | None) -> str | None:
-        if encrypted is None:
-            return None
-        return _fernet.decrypt(encrypted.encode()).decode()
-    ```
-    And add COMMUNICATION_ENCRYPTION_KEY to the Settings class.
-    """
+    """Encrypt a sensitive value with authenticated encryption for storage."""
     if value is None:
         return None
-    # Simple XOR-based obfuscation for development
-    # For production, replace with proper encryption (Fernet, etc.)
-    key = 0x5A
-    return "".join(chr(ord(c) ^ key) for c in value)
+    return _FERNET_PREFIX + _fernet().encrypt(value.encode("utf-8")).decode("ascii")
 
 
 def _decrypt_value(encrypted: str | None) -> str | None:
-    """Decrypt a previously encrypted value.
-
-    This mirrors _encrypt_value. The same key must be used.
-
-    For production with Fernet:
-    ```
-    from cryptography.fernet import Fernet
-
-    _fernet = Fernet(settings.communication_encryption_key.encode())
-
-    def _decrypt_value(encrypted: str | None) -> str | None:
-        if encrypted is None:
-            return None
-        return _fernet.decrypt(encrypted.encode()).decode()
-    ```
-    """
+    """Decrypt a value, retaining read-only compatibility with old XOR rows."""
     if encrypted is None:
         return None
+    if encrypted.startswith(_FERNET_PREFIX):
+        try:
+            return _fernet().decrypt(encrypted.removeprefix(_FERNET_PREFIX).encode("ascii")).decode("utf-8")
+        except (InvalidToken, ValueError, UnicodeDecodeError):
+            return None
+
+    # Legacy values are accepted only so they can be upgraded after a
+    # successful read. New writes always use Fernet above.
     key = 0x5A
     return "".join(chr(ord(c) ^ key) for c in encrypted)
+
+
+def _upgrade_legacy_gmail_password(config: CommunicationConfig, encrypted: str, plaintext: str) -> None:
+    """Replace a legacy XOR value after it has been successfully read."""
+    if encrypted.startswith(_FERNET_PREFIX):
+        return
+    configuration = dict(config.configuration or {})
+    configuration["gmail_app_password"] = _encrypt_value(plaintext)
+    config.configuration = configuration
 
 
 def _serialize_config_for_api(config: dict[str, Any], *, redact_sensitive: bool = True) -> dict[str, Any]:
@@ -131,6 +122,13 @@ def get_communication_settings(db: Session) -> dict[str, Any]:
         }
 
     config_data = config.configuration or {}
+    legacy_password = config_data.get("gmail_app_password")
+    if legacy_password and not legacy_password.startswith(_FERNET_PREFIX):
+        plaintext = _decrypt_value(legacy_password)
+        if plaintext:
+            _upgrade_legacy_gmail_password(config, legacy_password, plaintext)
+            db.commit()
+            config_data = config.configuration or {}
     return {
         "channel": config.channel,
         "enabled": config.enabled,
@@ -226,6 +224,9 @@ def send_test_email(
 
     if not decrypted_password:
         return False, "Invalid Gmail credentials"
+
+    _upgrade_legacy_gmail_password(config, gmail_app_password, decrypted_password)
+    db.commit()
 
     # Normalize: strip spaces and non-breaking spaces that Gmail may include
     decrypted_password = decrypted_password.replace("\xa0", "").replace(" ", "").strip()

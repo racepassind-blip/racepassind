@@ -12,7 +12,7 @@
  *   3. Add a case below — existing types are never touched.
  */
 import { useParams } from "react-router-dom";
-import { usePublicEventResults } from "@/hooks/useEvents";
+import { useEvent } from "@/hooks/useEvents";
 import { getSportConfig } from "@/data/sportConfig";
 import type { ResultType } from "@/data/sportConfig";
 
@@ -39,12 +39,10 @@ function resolveResultComponent(resultType: ResultType): React.ComponentType {
 const ResultAdapter = () => {
   const { id } = useParams();
 
-  // We use the same hook PublicEventResults uses. When result_type is
-  // match_score we hand off to PublicEventResults which calls this hook again
-  // — React Query deduplicates the network request.
-  const { data } = usePublicEventResults(id);
+  // Resolve capabilities from event metadata; races never fetch match results.
+  const { data } = useEvent(id);
 
-  const sport = data?.event.category ?? null;
+  const sport = data?.category ?? null;
   const resultType = getSportConfig(sport).result_type;
   const ResultComponent = resolveResultComponent(resultType);
 

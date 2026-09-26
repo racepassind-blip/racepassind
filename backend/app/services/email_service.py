@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.services.audit_service import record_audit
-from app.services.communication_service import _encrypt_value
+from app.services.communication_service import _decrypt_value, _upgrade_legacy_gmail_password
 from models import CommunicationConfig, EmailLog, Registration
 
 # Email limits (per 24-hour rolling window)
@@ -252,8 +252,6 @@ def send_email(
         )
 
     # Decrypt password and normalize (strip spaces)
-    from app.services.communication_service import _decrypt_value
-
     decrypted_password = _decrypt_value(gmail_app_password_encrypted)
     if not decrypted_password:
         log = _get_or_create_email_log(
@@ -274,6 +272,8 @@ def send_email(
             message="Invalid Gmail credentials",
             email_log=log,
         )
+
+    _upgrade_legacy_gmail_password(config, gmail_app_password_encrypted, decrypted_password)
 
     # Normalize: strip spaces that may be present in App Password display
     decrypted_password = decrypted_password.replace("\xa0", "").replace(" ", "").strip()
@@ -493,14 +493,14 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
     gmail_address = config_data.get("gmail_address", "")
     encrypted = config_data.get("gmail_app_password", "")
 
-    from app.services.communication_service import _decrypt_value
-
     password = _decrypt_value(encrypted) if encrypted else None
     if not sender_name or not gmail_address or not password:
         email_log.status = "failed"
         email_log.failure_reason = FAILURE_REASON_AUTH_FAILED
         db.commit()
         return SendEmailResult(False, "FAILED", "Invalid Gmail credentials", email_log)
+
+    _upgrade_legacy_gmail_password(config, encrypted, password)
 
     password = password.replace("\xa0", "").replace(" ", "").strip()
     settings = get_settings()

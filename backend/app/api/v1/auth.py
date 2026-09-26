@@ -20,6 +20,14 @@ from app.services.auth_service import (
     validate_required_phone,
     verify_password,
 )
+from app.services.mfa_service import (
+    decrypt_totp_secret,
+    encrypt_totp_secret,
+    generate_totp_secret,
+    otpauth_uri,
+    verify_totp_code,
+)
+from app.services.payment_service import generate_qr_data_url
 from app.services.rate_limit_service import RateLimitExceeded, enforce_account_registration_limit, enforce_login_limit
 from db import get_db
 from models import Organization, OrganizationMember, User
@@ -62,6 +70,11 @@ class RegisterIn(BaseModel):
 class LoginIn(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=256)
+    mfa_code: str | None = Field(default=None, min_length=6, max_length=6)
+
+
+class MfaCodeIn(BaseModel):
+    code: str = Field(min_length=6, max_length=6)
 
 
 class OrganizerApplicationIn(BaseModel):
@@ -279,6 +292,11 @@ def login(
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
+    if user.role == "admin" and user.mfa_enabled:
+        secret = decrypt_totp_secret(user.mfa_secret_encrypted)
+        if not verify_totp_code(secret, payload.mfa_code):
+            raise HTTPException(status_code=401, detail="admin_mfa_required")
+
     raw_session, csrf_token = create_session(
         db,
         user,
@@ -289,6 +307,42 @@ def login(
     db.commit()
     _set_session_cookies(response, raw_session, csrf_token)
     return {"user": public_user(user), "csrfToken": csrf_token}
+
+
+@router.post("/admin/mfa/setup")
+def setup_admin_mfa(
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    if user.mfa_enabled:
+        raise HTTPException(status_code=409, detail="Admin MFA is already enabled")
+    secret = generate_totp_secret()
+    user.mfa_secret_encrypted = encrypt_totp_secret(secret)
+    db.commit()
+    uri = otpauth_uri(secret, user.email)
+    return {"secret": secret, "otpauthUri": uri, "qrDataUrl": generate_qr_data_url(uri)}
+
+
+@router.post("/admin/mfa/verify")
+def verify_admin_mfa(
+    payload: MfaCodeIn,
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    secret = decrypt_totp_secret(user.mfa_secret_encrypted)
+    if not verify_totp_code(secret, payload.code):
+        raise HTTPException(status_code=422, detail="Invalid authenticator code")
+    user.mfa_enabled = True
+    db.commit()
+    record_audit(db, actor_user_id=user.id, action="admin_mfa_enabled", resource_type="user", resource_id=user.id)
+    db.commit()
+    return {"user": public_user(user)}
 
 
 @router.get("/me")

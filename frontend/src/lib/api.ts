@@ -2,6 +2,11 @@ const API_ORIGIN = (import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8010").rep
 export const API_BASE = `${API_ORIGIN}/api/v1`;
 const API_REQUEST_TIMEOUT_MS = 15_000;
 
+export type ApiRequestOptions = RequestInit & {
+  /** Override the client-side timeout for slow, non-idempotent operations. */
+  timeoutMs?: number;
+};
+
 let unauthorizedHandler: (() => void) | null = null;
 let activeApiRequests = 0;
 const apiLoadingListeners = new Set<() => void>();
@@ -196,9 +201,11 @@ async function executeRequest(
   });
 }
 
-export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const method = (options.method ?? "GET").toUpperCase();
   const isMutation = !["GET", "HEAD", "OPTIONS"].includes(method);
+  const { timeoutMs: timeoutOverride, ...requestOptions } = options;
+  const timeoutMs = timeoutOverride ?? API_REQUEST_TIMEOUT_MS;
 
   // Resolve a CSRF token upfront for mutations, but don't block GET requests.
   let csrfToken: string | null = isMutation ? await resolveCsrfToken() : null;
@@ -210,11 +217,11 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     if (externalSignal.aborted) requestController.abort();
     else externalSignal.addEventListener("abort", forwardAbort, { once: true });
   }
-  const timeoutId = setTimeout(() => requestController.abort(), API_REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => requestController.abort(), timeoutMs);
 
   beginApiRequest();
   try {
-    let response = await executeRequest(path, { ...options, signal: requestController.signal }, csrfToken);
+    let response = await executeRequest(path, { ...requestOptions, signal: requestController.signal }, csrfToken);
     let body = await readResponseBody(response);
 
     // -----------------------------------------------------------------------
@@ -231,7 +238,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
       csrfToken = await fetchCsrfFromBackend();
       if (csrfToken) {
         // New inner controller — original timeout is already ticking
-        response = await executeRequest(path, { ...options, signal: requestController.signal }, csrfToken);
+        response = await executeRequest(path, { ...requestOptions, signal: requestController.signal }, csrfToken);
         body = await readResponseBody(response);
       }
     }
