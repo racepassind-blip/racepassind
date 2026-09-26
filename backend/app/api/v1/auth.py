@@ -319,9 +319,14 @@ def setup_admin_mfa(
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     if user.mfa_enabled:
         raise HTTPException(status_code=409, detail="Admin MFA is already enabled")
-    secret = generate_totp_secret()
-    user.mfa_secret_encrypted = encrypt_totp_secret(secret)
-    db.commit()
+    # Setup may be requested more than once (for example, React development
+    # strict mode can replay effects). Reuse the pending secret so the QR code
+    # displayed to the admin always matches the secret stored in the database.
+    secret = decrypt_totp_secret(user.mfa_secret_encrypted)
+    if not secret:
+        secret = generate_totp_secret()
+        user.mfa_secret_encrypted = encrypt_totp_secret(secret)
+        db.commit()
     uri = otpauth_uri(secret, user.email)
     return {"secret": secret, "otpauthUri": uri, "qrDataUrl": generate_qr_data_url(uri)}
 
