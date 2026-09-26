@@ -1,3 +1,4 @@
+import { MAX_TICKETS_PER_TRANSACTION } from "@/lib/registration-limits";
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
@@ -103,7 +104,8 @@ const EventDetail = () => {
     setQuantities((prev) => {
       const tier = event.tiers.find((t) => t.id === tierId);
       const current = prev[tierId] || 0;
-      const next = Math.max(0, Math.min(current + delta, tierMaxQty(tier)));
+      const otherTickets = Object.values(prev).reduce((sum, quantity) => sum + quantity, 0) - current;
+      const next = Math.max(0, Math.min(current + delta, tierMaxQty(tier), MAX_TICKETS_PER_TRANSACTION - otherTickets));
       return { ...prev, [tierId]: next };
     });
   };
@@ -330,6 +332,7 @@ const EventDetail = () => {
               {registrationClosed && <div className="border-b border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-950"><p className="font-semibold">Registration is closed</p><p className="mt-1 leading-5">The organizer is no longer accepting new registrations.</p></div>}
 
               <div className="space-y-4 p-4 sm:p-5">
+                <p className="text-sm text-muted-foreground" aria-live="polite">{totalTickets} / {MAX_TICKETS_PER_TRANSACTION} tickets selected. Maximum {MAX_TICKETS_PER_TRANSACTION} tickets per transaction.</p>
                 <div className="space-y-3">
                   {event.tiers.map((tier) => {
                     const qty = quantities[tier.id] || 0;
@@ -347,7 +350,7 @@ const EventDetail = () => {
                         <div className="flex items-center rounded-lg border bg-card" aria-label={`Quantity for ${tier.name}`}>
                           <button aria-label={`Remove one ${tier.name}`} onClick={() => updateQty(tier.id, -1)} disabled={registrationClosed || qty === 0} className="flex h-9 w-9 items-center justify-center rounded-l-lg text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-30"><Minus className="h-4 w-4" /></button>
                           <span className="w-9 text-center text-sm font-bold" aria-live="polite">{qty}</span>
-                          <button aria-label={`Add one ${tier.name}`} onClick={() => updateQty(tier.id, 1)} disabled={registrationClosed || soldOut || qty >= tierMaxQty(tier)} className="flex h-9 w-9 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-30"><Plus className="h-4 w-4" /></button>
+                          <button aria-label={`Add one ${tier.name}`} onClick={() => updateQty(tier.id, 1)} disabled={registrationClosed || soldOut || qty >= tierMaxQty(tier) || totalTickets >= MAX_TICKETS_PER_TRANSACTION} className="flex h-9 w-9 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-30"><Plus className="h-4 w-4" /></button>
                         </div>
                       </div>
                     </div>;
@@ -362,7 +365,7 @@ const EventDetail = () => {
                   </div> : <div className="flex items-center justify-between"><div><p className="text-xs text-muted-foreground">{totalTickets} {totalTickets === 1 ? "entry" : "entries"} selected</p><p className="font-bold">Total</p></div><span className="text-xl font-extrabold">{formatPaise(baseTotalPaise)}</span></div>}
                 </div>
 
-                <Button className="h-12 w-full gap-2 text-base" size="lg" disabled={registrationClosed || totalTickets === 0} onClick={() => {
+                <Button className="h-12 w-full gap-2 text-base" size="lg" disabled={registrationClosed || totalTickets === 0 || totalTickets > MAX_TICKETS_PER_TRANSACTION} onClick={() => {
                   const cart = Object.entries(quantities).filter(([, quantity]) => quantity > 0).map(([ticketId, quantity]) => ({ ticketId, quantity }));
                   sessionStorage.setItem(`sportpass_cart_${event.id}`, JSON.stringify(cart));
                   navigate(`/checkout/${event.id}`);

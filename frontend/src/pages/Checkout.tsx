@@ -1,3 +1,4 @@
+import { MAX_TICKETS_PER_TRANSACTION } from "@/lib/registration-limits";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Download, Plus, Shield } from "lucide-react";
@@ -379,6 +380,8 @@ const Checkout = () => {
   if (isLoading) return <Layout><div className="py-20 text-center text-muted-foreground">Loading event…</div></Layout>;
   if (isError || !event || selectedTiers.length === 0) return <Layout><div className="py-20 text-center text-muted-foreground">Event or ticket selection not found.</div></Layout>;
   if (event.registrationStatus === "closed") return <Layout><div className="mx-auto max-w-2xl px-4 py-20 text-center"><h1 className="text-2xl font-extrabold">Registration is closed</h1><p className="mt-3 text-muted-foreground">The organizer is not accepting new responses for {event.title}.</p><Button className="mt-6" onClick={() => navigate(`/event/${event.id}`)}>Back to event</Button></div></Layout>;
+
+  if (cart.reduce((sum, line) => sum + line.quantity, 0) > MAX_TICKETS_PER_TRANSACTION) return <Layout><div className="mx-auto max-w-2xl px-4 py-20 text-center"><h1 className="text-2xl font-extrabold">Maximum {MAX_TICKETS_PER_TRANSACTION} tickets per transaction</h1><p className="mt-3 text-muted-foreground">Your selection exceeds the limit. Reduce your selection before entering participant details.</p><Button className="mt-6" onClick={() => navigate(`/event/${event.id}`)}>Change ticket selection</Button></div></Layout>;
 
   const createRegistration = async () => {
     if (!participantReady || !eventId) {

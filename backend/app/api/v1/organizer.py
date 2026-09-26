@@ -41,7 +41,7 @@ from app.services.media_service import resolve_media_url, upload_media
 from app.services.storage_service import StorageError
 from app.services.audit_service import record_audit
 from db import get_db
-from models import CreditTopupRequest, CreditTransaction, Organization, OrganizationMember, Registration, User
+from models import CreditTopupRequest, CreditTransaction, Event, Organization, OrganizationMember, Registration, User
 
 router = APIRouter()
 
@@ -807,15 +807,21 @@ def organizer_credits(amount_paise: int | None = Query(default=None, ge=0), user
 def organizer_credit_transactions(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
+    event_id: UUID | None = Query(default=None),
     user: User = Depends(require_roles("organizer", "admin")),
     db: Session = Depends(get_db),
 ) -> dict:
     organization_ids = _credit_org_ids(db, user)
     filters = [CreditTransaction.organization_id.in_(organization_ids)]
+    if event_id:
+        filters.append(CreditTransaction.event_id == event_id)
     total = int(db.scalar(select(func.count()).select_from(CreditTransaction).where(*filters)) or 0)
     rows = db.scalars(select(CreditTransaction).where(*filters).order_by(CreditTransaction.created_at.desc(), CreditTransaction.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
     registration_refs = {str(registration.id): registration.registration_reference or str(registration.id) for registration in db.scalars(select(Registration).where(Registration.id.in_([row.registration_id for row in rows if row.registration_id]))).all()}
-    return {"items": [{"id": str(row.id), "organizationId": str(row.organization_id), "type": row.type, "amountPaise": row.balance_after_paise - row.balance_before_paise, "balanceBeforePaise": row.balance_before_paise, "balanceAfterPaise": row.balance_after_paise, "eventId": str(row.event_id) if row.event_id else None, "registrationId": str(row.registration_id) if row.registration_id else None, "registrationReference": registration_refs.get(str(row.registration_id)) if row.registration_id else None, "description": f"{row.description} · Registration: {registration_refs.get(str(row.registration_id))}" if row.registration_id else row.description, "reason": row.reason, "createdAt": row.created_at} for row in rows], "page": page, "pageSize": page_size, "total": total}
+    event_ids = {row.event_id for row in rows if row.event_id}
+    event_names = {str(event.id): event.name for event in db.scalars(select(Event).where(Event.id.in_(event_ids))).all()} if event_ids else {}
+    event_options = db.execute(select(Event.id, Event.name).where(Event.organization_id.in_(organization_ids)).order_by(Event.start_date.desc().nullslast(), Event.name)).all() if organization_ids else []
+    return {"items": [{"id": str(row.id), "organizationId": str(row.organization_id), "type": row.type, "amountPaise": row.balance_after_paise - row.balance_before_paise, "balanceBeforePaise": row.balance_before_paise, "balanceAfterPaise": row.balance_after_paise, "eventId": str(row.event_id) if row.event_id else None, "eventName": event_names.get(str(row.event_id)) if row.event_id else None, "registrationId": str(row.registration_id) if row.registration_id else None, "registrationReference": registration_refs.get(str(row.registration_id)) if row.registration_id else None, "description": f"{row.description} · Registration: {registration_refs.get(str(row.registration_id))}" if row.registration_id else row.description, "reason": row.reason, "createdAt": row.created_at} for row in rows], "page": page, "pageSize": page_size, "total": total, "eventOptions": [{"id": str(row.id), "name": row.name} for row in event_options]}
 
 
 @router.get("/credits/topups")

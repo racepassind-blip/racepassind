@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections import Counter
 from typing import Any
 from uuid import UUID
 
@@ -95,13 +96,17 @@ class BatchRegistrationCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_id: UUID
-    entries: list[EntryRegistrationIn] | None = Field(default=None, min_length=1, max_length=10)
-    riders: list[RiderRegistrationIn] | None = Field(default=None, min_length=1, max_length=10)
+    # Limit tickets per transaction; doubles participants share one ticket.
+    entries: list[EntryRegistrationIn] | None = Field(default=None, min_length=1, max_length=15)
+    riders: list[RiderRegistrationIn] | None = Field(default=None, min_length=1, max_length=15)
 
     @model_validator(mode="after")
     def require_one_payload(self) -> "BatchRegistrationCreateIn":
         if bool(self.entries) == bool(self.riders):
             raise ValueError("Provide either entries or riders")
+        counts = Counter(entry.ticket_id for entry in (self.entries or self.riders or []))
+        if any(count > 10 for count in counts.values()):
+            raise ValueError("At most 10 entries per ticket type are allowed")
         return self
 
     @property

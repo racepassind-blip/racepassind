@@ -134,8 +134,13 @@ def get_communication_settings(db: Session) -> dict[str, Any]:
         "enabled": config.enabled,
         "sender_name": config_data.get("sender_name", ""),
         "gmail_address": config_data.get("gmail_address", ""),
-        "gmail_app_password_configured": config_data.get("gmail_app_password") is not None
-        and len(config_data.get("gmail_app_password", "")) > 0,
+        # A ciphertext row is not enough: report configured only when the
+        # current application key can actually decrypt it. This prevents the
+        # admin UI from claiming email is ready after key rotation/mismatch.
+        "gmail_app_password_configured": bool(
+            config_data.get("gmail_app_password")
+            and _decrypt_value(config_data.get("gmail_app_password"))
+        ),
     }
 
 
@@ -217,13 +222,13 @@ def send_test_email(
 
     # Validate we have all required credentials
     if not sender_name or not gmail_address or not gmail_app_password:
-        return False, "Invalid Gmail credentials"
+        return False, "Gmail credentials are not configured"
 
     # Decrypt the password
     decrypted_password = _decrypt_value(gmail_app_password)
 
     if not decrypted_password:
-        return False, "Invalid Gmail credentials"
+        return False, "Stored Gmail credential cannot be decrypted; set COMMUNICATION_ENCRYPTION_KEY and save the App Password again"
 
     _upgrade_legacy_gmail_password(config, gmail_app_password, decrypted_password)
     db.commit()
@@ -255,7 +260,10 @@ If you're reading this, your email configuration is working!"""
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
 
-        with smtplib.SMTP(GMAIL_SMTP_HOST, GMAIL_SMTP_PORT) as server:
+        # Never let an unavailable SMTP endpoint hold a request open
+        # indefinitely. The frontend has a finite request timeout, so return
+        # a useful connection error instead of making the browser abort.
+        with smtplib.SMTP(GMAIL_SMTP_HOST, GMAIL_SMTP_PORT, timeout=10) as server:
             server.starttls(context=context)
             server.login(gmail_address, decrypted_password)
             server.send_message(msg)

@@ -103,6 +103,9 @@ const AdminCommunication = () => {
       const response = await apiRequest<{ success: boolean; message: string }>("/admin/communication/test-email", {
         method: "POST",
         body: JSON.stringify({ recipient_email: testRecipient }),
+        // SMTP can take a few seconds to establish TLS; let the backend
+        // return its bounded error instead of aborting the browser request.
+        timeoutMs: 20_000,
       });
       if (response.success) {
         setTestStatus("success");
