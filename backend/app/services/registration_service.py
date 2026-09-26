@@ -995,7 +995,17 @@ def _release_reservation(ticket: Ticket, quantity: int) -> None:
     ticket.quantity_reserved = max(0, ticket.quantity_reserved - quantity)
 
 
-def decide_registration_payment(db: Session, user, event_id, registration_id, *, decision: str, reason: str | None = None):
+def decide_registration_payment(
+    db: Session,
+    user,
+    event_id,
+    registration_id,
+    *,
+    decision: str,
+    reason: str | None = None,
+    send_confirmation_emails: bool = True,
+    confirmation_registration_ids: list[UUID] | None = None,
+):
     if decision not in {"approve", "reject"}:
         raise ValueError("Unsupported payment decision")
     if decision == "reject" and not reason:
@@ -1108,7 +1118,12 @@ def decide_registration_payment(db: Session, user, event_id, registration_id, *,
     reloaded = _reload_organizer_registration(db, registration.id)
 
     # Send confirmation email with PDF ticket to all approved registrations in the batch.
-    if decision == "approve":
+    # Organizer HTTP requests pass send_confirmation_emails=False and dispatch
+    # this work after the response; direct service callers retain the legacy
+    # synchronous behavior by default.
+    if decision == "approve" and confirmation_registration_ids is not None:
+        confirmation_registration_ids.extend(child.id for child in batch)
+    if decision == "approve" and send_confirmation_emails:
         from app.services.email_service import send_registration_confirmation
         for child in batch:
             try:

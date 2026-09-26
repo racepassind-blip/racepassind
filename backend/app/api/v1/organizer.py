@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
@@ -489,6 +489,7 @@ def _decide_registration(
     user: User,
     db: Session,
     client_ip: str,
+    background_tasks: BackgroundTasks | None = None,
 ) -> dict:
     try:
         enforce_payment_decision_limit(
@@ -506,6 +507,7 @@ def _decide_registration(
             headers={"Retry-After": str(exc.retry_after_seconds)},
         ) from exc
     try:
+        confirmation_registration_ids: list[UUID] = []
         registration, event = decide_registration_payment(
             db,
             user,
@@ -513,12 +515,33 @@ def _decide_registration(
             registration_id,
             decision=decision,
             reason=payload.reason,
+            send_confirmation_emails=background_tasks is None,
+            confirmation_registration_ids=confirmation_registration_ids,
         )
     except ValueError as exc:
         db.rollback()
         code = status.HTTP_404_NOT_FOUND if str(exc) == "Registration not found" else status.HTTP_409_CONFLICT
         raise HTTPException(status_code=code, detail=str(exc)) from exc
+    if background_tasks is not None and decision == "approve":
+        for approved_registration_id in confirmation_registration_ids:
+            background_tasks.add_task(_send_registration_confirmation_background, approved_registration_id)
     return serialize_organizer_registration(registration, event)
+
+
+def _send_registration_confirmation_background(registration_id: UUID) -> None:
+    """Send the approval email after the organizer response has been returned."""
+    from db import SessionLocal
+    from app.services.email_service import send_registration_confirmation
+
+    db = SessionLocal()
+    try:
+        registration = db.get(Registration, registration_id)
+        if registration is not None:
+            send_registration_confirmation(db, registration)
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 @router.post("/events/{event_id}/registrations/{registration_id}/approve")
@@ -526,13 +549,14 @@ def approve_registration(
     event_id: UUID,
     registration_id: UUID,
     request: Request,
+    background_tasks: BackgroundTasks,
     payload: PaymentDecisionIn = PaymentDecisionIn(),
     user: User = Depends(require_roles("organizer", "admin")),
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
     get_authorized_event(db, user, event_id)
-    return _decide_registration(event_id, registration_id, "approve", payload, user, db, request.client.host if request.client else "unknown")
+    return _decide_registration(event_id, registration_id, "approve", payload, user, db, request.client.host if request.client else "unknown", background_tasks)
 
 
 @router.post("/events/{event_id}/registrations/{registration_id}/reject")
