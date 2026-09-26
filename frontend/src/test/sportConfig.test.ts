@@ -36,8 +36,8 @@ describe("sport policy isolation", () => {
     expect(eventSupportsTournament("legacy", [{ entryType: "team" }])).toBe(true);
     expect(eventSupportsTournament("legacy")).toBe(false);
   });
-  it("offers Table Tennis but does not add Cricket", () => {
+  it("offers Table Tennis and Cricket", () => {
     expect(sportOptions.some(({ value }) => value === "table_tennis")).toBe(true);
-    expect(sportOptions.some(({ value }) => value === "cricket")).toBe(false);
+    expect(sportOptions.some(({ value }) => value === "cricket")).toBe(true);
   });
 });

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 from .tournament import GameTournamentPolicy
 from typing import Literal
 
@@ -17,6 +18,10 @@ class SportAdapter:
     number_label: str = "Bib Number"
     number_scope: str = "individual"
     tournament: GameTournamentPolicy = field(default_factory=GameTournamentPolicy)
+
+    def normalize_event_config(self, config: dict[str, Any] | None) -> dict[str, Any]:
+        """Validate sport-specific event setup without coupling generic APIs to a sport."""
+        return {}
 
     def category_distance(self, value: str | None) -> str | None:
         distance = value.strip() if value else None

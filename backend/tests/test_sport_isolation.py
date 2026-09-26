@@ -30,7 +30,7 @@ def db():
     engine.dispose()
 
 
-def make_event(db, sport, quantity=10):
+def make_event(db, sport, quantity=10, sport_config=None):
     organization = Organization(name="Isolation test", status="active", allow_direct_upi=True)
     user = User(name="Admin", email=f"{uuid4()}@example.test", password_hash="test", role="admin", is_active=True)
     db.add_all([organization, user])
@@ -41,6 +41,7 @@ def make_event(db, sport, quantity=10):
         field_config={"fields": [
             {"id": "full_name", "label": "Full name", "type": "text", "required": True},
             {"id": "email", "label": "Email", "type": "email", "required": True}]},
+        sport_config=sport_config or {},
         categories=[dict(name="Open", distance="5 KM" if get_adapter(sport).supports_distance else None,
             tickets=[dict(name="Regular", price_rupees="0", quantity=quantity)])])
     out = create_event(OrganizerEventCreateV1.model_validate(payload), user=user, db=db, storage=None)
@@ -102,6 +103,43 @@ def test_old_unknown_events_still_serialize(db):
     event, _, _ = make_event(db, "legacy_activity")
     assert _event_response(event)["sport"] == "legacy_activity"
     assert get_adapter(None).result_type == "none"
+
+
+def test_cricket_setup_round_trips_and_isolated_from_race_logic(db):
+    config = {
+        "tournament_format": "league_knockout",
+        "ball_type": "leather",
+        "overs_per_innings": 20,
+        "minimum_players": 11,
+        "maximum_players": 15,
+    }
+    event, user, payload = make_event(db, "cricket", sport_config=config)
+    assert get_adapter("cricket").supports_distance is False
+    assert get_adapter("cricket").supports_tournament is True
+    assert get_adapter("cricket").result_type == "none"
+    assert _event_response(event)["sportConfig"] == config
+    payload.pop("organization_id")
+    payload["categories"][0]["id"] = event.categories[0].id
+    payload["categories"][0]["tickets"][0]["id"] = event.categories[0].tickets[0].id
+    payload["sport_config"] = {**config, "overs_per_innings": 10}
+    updated = update_event(event.id, OrganizerEventUpdateV1.model_validate(payload), user=user, db=db, storage=None)
+    assert updated["sportConfig"]["overs_per_innings"] == 10
+    assert get_adapter("cricket") is not get_adapter("badminton")
+
+
+@pytest.mark.parametrize("invalid", [
+    {"overs_per_innings": 0},
+    {"minimum_players": 0},
+    {"minimum_players": 16, "maximum_players": 15},
+])
+def test_cricket_setup_validation(invalid):
+    with pytest.raises(ValueError):
+        OrganizerEventCreateV1.model_validate({
+            "organization_id": uuid4(), "name": "Cricket", "description": "Test", "sport": "cricket",
+            "event_date": "2026-10-10", "location_name": "Ground", "max_participants": 100,
+            "sport_config": invalid,
+            "categories": [{"name": "Open", "tickets": [{"name": "Entry", "price_rupees": 0, "quantity": 1}]}],
+        })
 
 
 def test_badminton_config_changes_do_not_change_table_tennis(db):

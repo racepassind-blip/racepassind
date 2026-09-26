@@ -102,6 +102,7 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
         "rules": event.rules,
         "schedule": event.schedule or [],
         "fieldConfig": field_config,
+        "sportConfig": (event.field_config or {}).get("sport_config", {}),
         "addonConfig": addon_config,
         "categories": [
             {
@@ -273,7 +274,7 @@ def create_event(
         participants=0,
         rules=payload.rules,
         schedule=[item.model_dump(mode="json", exclude_none=True) for item in payload.schedule],
-        field_config=field_config,
+        field_config={**field_config, "sport_config": payload.sport_config},
         addon_config=addon_config,
         payment_collection_method=payload.payment_collection_method,
         platform_fee_bearer=payload.platform_fee_bearer,
@@ -538,7 +539,7 @@ def update_event(
     event.longitude = payload.longitude
     event.rules = payload.rules
     event.schedule = [item.model_dump(mode="json", exclude_none=True) for item in payload.schedule]
-    event.field_config = field_config
+    event.field_config = {**field_config, "sport_config": payload.sport_config}
     event.addon_config = addon_config
     event.registration_open = payload.registration_open
     event.registration_close = payload.registration_close

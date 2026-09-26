@@ -22,4 +22,5 @@ export interface SportConfig {
    * none         – no result UI defined yet
    */
   result_type: ResultType;
+  event_setup?: "cricket";
 }

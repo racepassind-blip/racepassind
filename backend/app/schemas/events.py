@@ -90,6 +90,7 @@ class OrganizerEventCreateV1(BaseModel):
     schedule: list[EventScheduleItem] = Field(default_factory=list, max_length=50)
     field_config: dict[str, Any] = Field(default_factory=lambda: normalize_field_config(None))
     addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
+    sport_config: dict[str, Any] = Field(default_factory=dict)
     payment_collection_method: Literal["DIRECT_UPI", "PAYMENT_GATEWAY"] = Field(default="DIRECT_UPI")
     platform_fee_bearer: Literal["ORGANIZER", "PARTICIPANT"] = Field(default="ORGANIZER")
     # Refund policy (all optional — refund_policy_enabled defaults to false)
@@ -116,6 +117,7 @@ class OrganizerEventCreateV1(BaseModel):
     @model_validator(mode="after")
     def validate_category_distances(self):
         adapter = get_adapter(self.sport)
+        self.sport_config = adapter.normalize_event_config(self.sport_config)
         for category in self.categories:
             category.distance = adapter.category_distance(category.distance)
         return self
@@ -207,6 +209,7 @@ class OrganizerEventUpdateV1(BaseModel):
     registration_close: dt.datetime | None = None
     field_config: dict[str, Any] = Field(default_factory=lambda: normalize_field_config(None))
     addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
+    sport_config: dict[str, Any] = Field(default_factory=dict)
     payment_collection_method: Literal["DIRECT_UPI", "PAYMENT_GATEWAY"] | None = None
     platform_fee_bearer: Literal["ORGANIZER", "PARTICIPANT"] | None = None
     # Refund policy (all optional)
@@ -233,6 +236,7 @@ class OrganizerEventUpdateV1(BaseModel):
     @model_validator(mode="after")
     def validate_category_distances(self):
         adapter = get_adapter(self.sport)
+        self.sport_config = adapter.normalize_event_config(self.sport_config)
         for category in self.categories:
             category.distance = adapter.category_distance(category.distance)
         return self

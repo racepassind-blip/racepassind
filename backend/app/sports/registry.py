@@ -6,6 +6,7 @@ from .badminton import adapter as badminton
 from .table_tennis import adapter as table_tennis
 from .running import adapter as running
 from .cycling import adapter as cycling
+from .cricket import adapter as cricket
 from .trekking import adapter as trekking
 from .tournament import GameTournamentPolicy
 
@@ -37,7 +38,7 @@ class SportAdapterRegistry:
 
 
 registry = SportAdapterRegistry()
-for adapter in (badminton, table_tennis, running, cycling):
+for adapter in (badminton, table_tennis, running, cycling, cricket):
     registry.register(adapter)
 registry.register(trekking, "trekking")
 # Existing generic game-scoring behavior is retained for tennis/squash.

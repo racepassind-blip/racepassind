@@ -7,8 +7,9 @@ import table_tennis from "@/sports/table_tennis";
 import tennis from "@/sports/tennis";
 import squash from "@/sports/squash";
 import hiking from "@/sports/hiking";
+import cricket from "@/sports/cricket";
 
-export const sportConfig = { running, cycling, badminton, table_tennis, tennis, squash, hiking } as const satisfies Record<string, SportConfig>;
+export const sportConfig = { running, cycling, badminton, table_tennis, tennis, squash, hiking, cricket } as const satisfies Record<string, SportConfig>;
 
 
 export type ConfiguredSport = keyof typeof sportConfig;
@@ -41,6 +42,7 @@ export const sportOptions = [
   { value: "hiking", label: "Trekking/Hiking events" },
   { value: "obstacle_course", label: "Obstacle course races (Spartan-style, mud runs)" },
   { value: "walkathon", label: "Walkathons/charity walks" },
+  { value: "cricket", label: "Cricket" },
 ];
 
 export function getSportConfig(
