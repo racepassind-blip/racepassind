@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_authorized_event, require_csrf, require_roles, require_tournament_capable
-from app.schemas.matches import BoutIn, MatchIn, ScoringConfigIn, TeamMatchScoringIn
+from app.schemas.matches import BoutIn, MatchIn, MatchResultApprovalIn, ScoringConfigIn, TeamMatchScoringIn
 from app.services.match_service import (
     MatchValidationError,
     compute_standings,
@@ -19,6 +19,7 @@ from app.services.match_service import (
     list_match_entries,
     list_matches,
     list_scoring_configs,
+    set_match_result_approval,
     update_bout,
     update_match,
     update_scoring_config,
@@ -125,6 +126,30 @@ def put_match(
     require_tournament_capable(event, db)
     try:
         return update_match(db, user, event, match_id, payload)
+    except MatchValidationError as exc:
+        db.rollback()
+        raise _validation_error(exc) from exc
+
+
+@router.put("/events/{event_id}/matches/{match_id}/result-approval")
+def put_match_result_approval(
+    event_id: UUID,
+    match_id: UUID,
+    payload: MatchResultApprovalIn,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_authorized_event(db, user, event_id)
+    require_tournament_capable(event, db)
+    try:
+        return set_match_result_approval(
+            db,
+            event,
+            match_id,
+            approved=payload.approved,
+            approved_by=user.id,
+        )
     except MatchValidationError as exc:
         db.rollback()
         raise _validation_error(exc) from exc

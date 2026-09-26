@@ -205,6 +205,13 @@ def test_tournament_registration_fixture_score_public_flow(db, sport, points):
     out = match_service.create_match(db, user, event, payload)
     assert out["pointsPerGame"] == points
     assert out["winner"] == "entry_a"
+    match_service.set_match_result_approval(
+        db,
+        event,
+        UUID(out["id"]),
+        approved=True,
+        approved_by=user.id,
+    )
     public = match_service.list_public_match_results(db, event.id)
     assert public[0]["games"][0]["scoreA"] == points
     # Existing match snapshots stay fixed when category defaults are changed.

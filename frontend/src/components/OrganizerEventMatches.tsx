@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { OrganizerCourt, OrganizerEventCategory, OrganizerMatch, OrganizerMatchEntry } from "@/hooks/useEvents";
 import { useOrganizerMatchEntries, useOrganizerMatches, useOrganizerTournamentRounds } from "@/hooks/useEvents";
@@ -69,6 +70,7 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
   const [scheduledTime, setScheduledTime] = useState("");
   const [matchStatus, setMatchStatus] = useState<OrganizerMatch["status"]>("scheduled");
   const [winner, setWinner] = useState<"entry_a" | "entry_b" | "">("");
+  const [autoAdvance, setAutoAdvance] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [page, setPage] = useState(1);
@@ -83,6 +85,8 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
   const { data: entries = [], isLoading: isLoadingEntries } = useOrganizerMatchEntries(eventId, categoryId || undefined);
   const { data: rounds = [], isLoading: isLoadingRounds } = useOrganizerTournamentRounds(eventId, categoryId || undefined, supportsTournament);
   const hasConfiguredRounds = rounds.length > 0;
+  const selectedRound = rounds.find((round) => round.id === roundId);
+  const canAutoAdvance = Boolean(selectedRound && rounds.some((round) => round.position > selectedRound.position));
 
   // Team-mode helpers. For non-team categories these stay inert so existing flow is unchanged.
   const selectedCategory = categories.find((category) => category.id === categoryId);
@@ -128,6 +132,7 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
     setScheduledTime("");
     setMatchStatus("scheduled");
     setWinner("");
+    setAutoAdvance(true);
     setMatchType("");
     setPlayerAIds([]);
     setPlayerBIds([]);
@@ -155,6 +160,7 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
     setScheduledTime(inputDateTime(match.scheduledTime));
     setMatchStatus(match.status);
     setWinner(match.winner ?? "");
+    setAutoAdvance(match.autoAdvance);
     setMatchType(match.matchType ?? "");
     setPlayerAIds((match.playersA ?? []).map((player) => player.regParticipantId));
     setPlayerBIds((match.playersB ?? []).map((player) => player.regParticipantId));
@@ -162,7 +168,6 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
 
   const submitMatch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const selectedRound = rounds.find((round) => round.id === roundId);
     const resolvedRoundLabel = selectedRound?.name ?? roundLabel.trim();
     if (!categoryId || !entryAId || !entryBId || !courtId || (hasConfiguredRounds ? !selectedRound : !resolvedRoundLabel)) {
       toast.error(hasConfiguredRounds ? "Select a configured round." : "Enter a round label.");
@@ -205,7 +210,7 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
 
     setIsSaving(true);
     try {
-      await apiRequest(editingId ? `/organizer/events/${eventId}/matches/${editingId}` : `/organizer/events/${eventId}/matches`, {
+      const savedMatch = await apiRequest<OrganizerMatch>(editingId ? `/organizer/events/${eventId}/matches/${editingId}` : `/organizer/events/${eventId}/matches`, {
         method: editingId ? "PUT" : "POST",
         body: JSON.stringify({
           category_id: categoryId,
@@ -217,11 +222,16 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
           scheduled_time: scheduledTime ? new Date(scheduledTime).toISOString() : null,
           status: matchStatus,
           winner: matchStatus === "completed" ? winner : null,
+          auto_advance: canAutoAdvance && autoAdvance,
           ...playerPayload,
         }),
       });
       await queryClient.invalidateQueries({ queryKey: ["organizer-matches", eventId] });
-      toast.success(editingId ? "Match updated." : "Match created.");
+      toast.success(
+        savedMatch.nextMatchId
+          ? "Match completed and the winner advanced automatically."
+          : editingId ? "Match updated." : "Match created."
+      );
       resetForm();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save the match.");
@@ -244,7 +254,7 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
 
   return (
     <Card>
-      <CardHeader><CardTitle>Schedule & manage matches</CardTitle><CardDescription>Create the draw manually, assign courts and times, then maintain the event match schedule. Confirmed registrations are the only entries available, and team names are shown for doubles grouping.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Schedule & manage matches</CardTitle><CardDescription>Create the opening-round draw and record results. When both matches in a bracket pair are complete, SportPass creates the next-round match and advances both winners automatically.</CardDescription></CardHeader>
       <CardContent className="space-y-6">
         {categories.length === 0 || courts.length === 0 ? <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">Add at least one event category and one court before creating a match.</div> : <form onSubmit={submitMatch} className="space-y-4 rounded-lg border bg-muted/20 p-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -257,6 +267,8 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
             <div className="space-y-2"><Label htmlFor="match-status">Status</Label><select id="match-status" className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={matchStatus} onChange={(event) => { const value = event.target.value as OrganizerMatch["status"]; setMatchStatus(value); if (value !== "completed") setWinner(""); }}><option value="scheduled">Scheduled</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></div>
             {matchStatus === "completed" && <div className="space-y-2"><Label htmlFor="match-winner">Winner</Label><select id="match-winner" className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={winner} onChange={(event) => setWinner(event.target.value as "entry_a" | "entry_b" | "")} required><option value="">Select winner</option><option value="entry_a">Entry A</option><option value="entry_b">Entry B</option></select></div>}
           </div>
+
+          {canAutoAdvance && <div className="flex items-start justify-between gap-4 rounded-lg border border-primary/20 bg-primary/5 p-4"><div><Label htmlFor="auto-advance" className="font-semibold">Advance winner automatically</Label><p className="mt-1 text-xs text-muted-foreground">This match is paired by bracket order. After both paired matches finish, SportPass creates the next-round match.</p></div><Switch id="auto-advance" checked={autoAdvance} onCheckedChange={setAutoAdvance} /></div>}
 
           {isTeamCategory && (
             <div className="space-y-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
@@ -332,7 +344,7 @@ const OrganizerEventMatches = ({ eventId, categories, courts, supportsTournament
           <div className="flex gap-2"><Button type="submit" disabled={isSaving || isLoadingEntries}><Plus className="mr-2 h-4 w-4" />{isSaving ? "Saving…" : editingId ? "Save match" : "Schedule match"}</Button>{editingId && <Button type="button" variant="ghost" onClick={resetForm}>Cancel</Button>}</div>
         </form>}
 
-        {isLoadingMatches ? <p className="py-6 text-center text-sm text-muted-foreground">Loading matches…</p> : isMatchesError ? <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">Could not load matches.</div> : matches.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No matches scheduled yet. Use the form above to create the first match.</div> : <><Table><TableHeader><TableRow><TableHead>Round</TableHead><TableHead>Entries</TableHead><TableHead>Court / time</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{visibleMatches.map((match) => <TableRow key={match.id}><TableCell><div className="font-medium">{match.roundLabel}</div><div className="text-xs text-muted-foreground">{match.category.name}</div></TableCell><TableCell><div>{matchSideLabel(match.entryA, match.playersA)} <span className="text-muted-foreground">vs</span> {matchSideLabel(match.entryB, match.playersB)}</div>{match.matchType && <div className="text-xs font-medium text-primary">{match.matchType === "singles" ? "Singles" : "Doubles"}</div>}{(match.entryA.teamName || match.entryB.teamName) && !match.matchType && <div className="text-xs text-muted-foreground">{match.entryA.teamName ? entryMemberNames(match.entryA) : "No team"} <span className="text-muted-foreground">vs</span> {match.entryB.teamName ? entryMemberNames(match.entryB) : "No team"}</div>}</TableCell><TableCell><div>{match.court.name}</div><div className="text-xs text-muted-foreground">{match.scheduledTime ? new Date(match.scheduledTime).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Time not set"}</div></TableCell><TableCell><Badge variant={match.status === "completed" ? "default" : match.status === "in_progress" ? "outline" : "secondary"}>{statusLabels[match.status]}{match.winner ? ` · ${match.winner === "entry_a" ? "A wins" : "B wins"}` : ""}</Badge></TableCell><TableCell><div className="flex justify-end gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => editMatch(match)}><Pencil className="mr-2 h-4 w-4" />Edit</Button><Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => void deleteMatch(match)}><Trash2 className="mr-2 h-4 w-4" />Delete</Button></div></TableCell></TableRow>)}</TableBody></Table>{matches.length > pageSize && <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4"><p className="text-sm text-muted-foreground">Page {safePage} of {pageCount} · {matches.length} matches</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" disabled={safePage >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>}</>}
+        {isLoadingMatches ? <p className="py-6 text-center text-sm text-muted-foreground">Loading matches…</p> : isMatchesError ? <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">Could not load matches.</div> : matches.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No matches scheduled yet. Use the form above to create the first match.</div> : <><Table><TableHeader><TableRow><TableHead>Round</TableHead><TableHead>Entries</TableHead><TableHead>Court / time</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{visibleMatches.map((match) => <TableRow key={match.id}><TableCell><div className="font-medium">{match.roundLabel}</div><div className="text-xs text-muted-foreground">{match.category.name}</div>{match.autoAdvance && <div className="mt-1 text-xs font-medium text-primary">Auto advancement on</div>}</TableCell><TableCell><div>{matchSideLabel(match.entryA, match.playersA)} <span className="text-muted-foreground">vs</span> {matchSideLabel(match.entryB, match.playersB)}</div>{match.matchType && <div className="text-xs font-medium text-primary">{match.matchType === "singles" ? "Singles" : "Doubles"}</div>}{(match.entryA.teamName || match.entryB.teamName) && !match.matchType && <div className="text-xs text-muted-foreground">{match.entryA.teamName ? entryMemberNames(match.entryA) : "No team"} <span className="text-muted-foreground">vs</span> {match.entryB.teamName ? entryMemberNames(match.entryB) : "No team"}</div>}</TableCell><TableCell><div>{match.court.name}</div><div className="text-xs text-muted-foreground">{match.scheduledTime ? new Date(match.scheduledTime).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Time not set"}</div></TableCell><TableCell><Badge variant={match.status === "completed" ? "default" : match.status === "in_progress" ? "outline" : "secondary"}>{statusLabels[match.status]}{match.winner ? ` · ${match.winner === "entry_a" ? "A wins" : "B wins"}` : ""}</Badge></TableCell><TableCell><div className="flex justify-end gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => editMatch(match)}><Pencil className="mr-2 h-4 w-4" />Edit</Button><Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => void deleteMatch(match)}><Trash2 className="mr-2 h-4 w-4" />Delete</Button></div></TableCell></TableRow>)}</TableBody></Table>{matches.length > pageSize && <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4"><p className="text-sm text-muted-foreground">Page {safePage} of {pageCount} · {matches.length} matches</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" disabled={safePage >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>}</>}
       </CardContent>
     </Card>
   );

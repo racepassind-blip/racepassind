@@ -63,6 +63,8 @@ const OrganizerEventTournamentBracket = () => {
     });
     return [...grouped.values()]
       .map((round) => ({ ...round, matches: round.matches.sort((a, b) => {
+        const bracketOrder = (a.bracketPosition ?? Number.MAX_SAFE_INTEGER) - (b.bracketPosition ?? Number.MAX_SAFE_INTEGER);
+        if (bracketOrder !== 0) return bracketOrder;
         const left = a.scheduledTime ? new Date(a.scheduledTime).getTime() : Number.MAX_SAFE_INTEGER;
         const right = b.scheduledTime ? new Date(b.scheduledTime).getTime() : Number.MAX_SAFE_INTEGER;
         return left - right || a.createdAt.localeCompare(b.createdAt);
@@ -126,7 +128,7 @@ const OrganizerEventTournamentBracket = () => {
           <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => navigate(`/organizer/events/${event.id}/tournament/matches`)}>Schedule matches</Button><Button variant="outline" onClick={() => void refetch()} disabled={isFetching}><RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />Refresh</Button></div>
         </div>
 
-        <Card className="border-primary/20 bg-primary/5"><CardContent className="flex gap-3 p-4"><GitBranch className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div className="text-sm"><p className="font-semibold">How advancement is shown</p><p className="mt-1 text-muted-foreground">First-round positions are shown as slots because seed numbers are not stored yet. A winner is connected to a later round when that later match contains the same registration.</p></div></CardContent></Card>
+        <Card className="border-primary/20 bg-primary/5"><CardContent className="flex gap-3 p-4"><GitBranch className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div className="text-sm"><p className="font-semibold">Automatic winner advancement</p><p className="mt-1 text-muted-foreground">Complete both matches in a bracket pair and SportPass creates the next-round match automatically. Set its court and time before play begins.</p></div></CardContent></Card>
 
         <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Matches</p><p className="mt-2 text-2xl font-black">{filteredMatches.length}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Completed</p><p className="mt-2 text-2xl font-black">{completedCount}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Winners recorded</p><p className="mt-2 text-2xl font-black">{winnersCount}</p></CardContent></Card></div>
 

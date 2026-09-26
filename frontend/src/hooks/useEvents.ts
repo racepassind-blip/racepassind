@@ -123,10 +123,16 @@ export interface OrganizerMatch {
   roundId: string | null;
   round: { id: string; name: string; position: number } | null;
   roundLabel: string;
+  bracketPosition: number | null;
+  autoAdvance: boolean;
+  nextMatchId: string | null;
+  nextMatchSlot: "entry_a" | "entry_b" | null;
   scheduledTime: string | null;
   status: "scheduled" | "in_progress" | "completed";
   winner: "entry_a" | "entry_b" | null;
   winnerBy?: "bouts" | "manual" | null;
+  resultApproved: boolean;
+  resultApprovedAt: string | null;
   createdAt: string;
   updatedAt: string;
   gamesToWin: number;
@@ -155,6 +161,9 @@ export interface PublicMatchResult {
   court: { name: string };
   scheduledTime: string | null;
   status: "scheduled" | "in_progress" | "completed";
+  resultApproved: true;
+  approvedAt: string;
+  finalStatus: "Final";
   winner: "entry_a" | "entry_b" | null;
   entryA: { displayName: string };
   entryB: { displayName: string };
@@ -364,6 +373,8 @@ export function usePublicEventResults(eventId: string | undefined, enabled = tru
     queryKey: ["public-event-results", eventId],
     enabled: Boolean(eventId) && enabled,
     queryFn: () => apiRequest<PublicEventResults>(`/events/${eventId}/results`),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -443,6 +454,8 @@ export function usePublicStandings(eventId: string | undefined, categoryId: stri
     queryKey: ["public-standings", eventId, categoryId],
     enabled: Boolean(eventId && categoryId),
     queryFn: () => apiRequest<TeamStanding[]>(`/events/${eventId}/categories/${categoryId}/standings`),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   });
 }
 

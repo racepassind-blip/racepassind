@@ -714,6 +714,28 @@ class Registration(Base):
 
 class Match(Base):
     __tablename__ = "matches"
+    __table_args__ = (
+        CheckConstraint(
+            "next_match_slot IS NULL OR next_match_slot IN ('entry_a', 'entry_b')",
+            name="ck_matches_next_match_slot",
+        ),
+        Index(
+            "uq_matches_round_bracket_position",
+            "round_id",
+            "bracket_position",
+            unique=True,
+            postgresql_where=text("round_id IS NOT NULL AND bracket_position IS NOT NULL"),
+            sqlite_where=text("round_id IS NOT NULL AND bracket_position IS NOT NULL"),
+        ),
+        Index(
+            "uq_matches_next_match_slot",
+            "next_match_id",
+            "next_match_slot",
+            unique=True,
+            postgresql_where=text("next_match_id IS NOT NULL AND next_match_slot IS NOT NULL"),
+            sqlite_where=text("next_match_id IS NOT NULL AND next_match_slot IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
@@ -722,11 +744,25 @@ class Match(Base):
     entry_b_registration_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("registrations.id"), nullable=False, index=True)
     court_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("courts.id"), nullable=False, index=True)
     round_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("tournament_rounds.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Stable zero-based position within a configured round. Consecutive pairs
+    # feed the same match in the following round.
+    bracket_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    auto_advance: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # Destination populated when both matches in a pair have winners. These
+    # fields make advancement idempotent and auditable.
+    next_match_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("matches.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    next_match_slot: Mapped[str | None] = mapped_column(String(16), nullable=True)
     round_label: Mapped[str] = mapped_column(String(160), nullable=False)
     scheduled_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="scheduled")
     winner: Mapped[str | None] = mapped_column(String(20), nullable=True)
     winner_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    result_approved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    result_approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     games_to_win: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
     points_per_game: Mapped[int] = mapped_column(Integer, nullable=False, server_default="21")
     # Per-match player selection — only populated for team-category matches.

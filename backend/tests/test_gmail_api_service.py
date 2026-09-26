@@ -159,3 +159,20 @@ def test_local_limit_does_not_send(settings):
         result = email_service.send_email(db, recipient="recipient@example.com", subject="Ticket", body="Confirmed", email_type="TICKET")
     assert result.status == "PENDING_LIMIT"
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("key,reason,expected", [
+    ("errors", "accessNotConfigured", "API_NOT_ENABLED"),
+    ("details", "SERVICE_DISABLED", "API_NOT_ENABLED"),
+    ("errors", "insufficientPermissions", "AUTHENTICATION_FAILED"),
+    ("details", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "AUTHENTICATION_FAILED"),
+    ("errors", "userRateLimitExceeded", "PROVIDER_LIMIT_REACHED"),
+    ("errors", "domainPolicy", "AUTHENTICATION_FAILED"),
+])
+def test_specific_403_reason_without_exposing_provider_message(key, reason, expected):
+    response = httpx.Response(403, json={"error": {"message": "private-content", key: [{"reason": reason}]}})
+    with pytest.raises(gmail.GmailDeliveryError) as error:
+        gmail._check_response(response)
+    assert error.value.reason == expected
+    assert "private-content" not in str(error.value)
+    assert "denied access" not in str(error.value)

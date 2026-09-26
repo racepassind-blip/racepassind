@@ -62,6 +62,14 @@ def update_tournament_rounds(db: Session, event: Event, category_id: UUID, paylo
     if removed_ids and db.scalar(select(Match.id).where(Match.round_id.in_(removed_ids)).limit(1)) is not None:
         raise TournamentRoundValidationError("A round cannot be removed while matches use it")
 
+    reordered_ids = {
+        item.id
+        for index, item in enumerate(submitted)
+        if item.id is not None and existing[item.id].position != index
+    }
+    if reordered_ids and db.scalar(select(Match.id).where(Match.round_id.in_(reordered_ids)).limit(1)) is not None:
+        raise TournamentRoundValidationError("Round order cannot change after matches have been created")
+
     ordered_rounds: list[TournamentRound] = []
     for index, item in enumerate(submitted):
         round_item = existing.get(item.id) if item.id is not None else TournamentRound(

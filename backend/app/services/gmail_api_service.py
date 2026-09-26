@@ -35,6 +35,25 @@ def _check_response(response: httpx.Response, *, token_request: bool = False) ->
     if response.status_code == 429:
         raise GmailDeliveryError("Gmail sending quota reached. Try again later.", "PROVIDER_LIMIT_REACHED")
     if response.status_code == 403:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {}
+        error = payload.get("error", {}) if isinstance(payload, dict) else {}
+        reasons = set()
+        if isinstance(error, dict):
+            for key in ("errors", "details"):
+                items = error.get(key, [])
+                if isinstance(items, list):
+                    reasons.update(item["reason"] for item in items if isinstance(item, dict) and isinstance(item.get("reason"), str))
+        if reasons & {"accessNotConfigured", "SERVICE_DISABLED"}:
+            raise GmailDeliveryError("Gmail API is disabled in the OAuth client's Google Cloud project. Enable Gmail API in that same project, wait a few minutes, then retry.", "API_NOT_ENABLED")
+        if reasons & {"insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"}:
+            raise GmailDeliveryError("Gmail send permission is missing. Authorize https://www.googleapis.com/auth/gmail.send using your own OAuth client, then replace GMAIL_OAUTH_REFRESH_TOKEN in Render and redeploy.", "AUTHENTICATION_FAILED")
+        if reasons & {"rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded", "quotaExceeded", "RATE_LIMIT_EXCEEDED"}:
+            raise GmailDeliveryError("Google's Gmail API quota or rate limit has been reached. Check the project's quotas and retry later.", "PROVIDER_LIMIT_REACHED")
+        if "domainPolicy" in reasons:
+            raise GmailDeliveryError("Your Google Workspace policy blocks this app's Gmail access. Ask your Workspace administrator to allow it.", "AUTHENTICATION_FAILED")
         raise GmailDeliveryError("Gmail API denied access. Check that the API is enabled, gmail.send permission is granted, and the account has sending quota.", "AUTHENTICATION_FAILED")
     raise GmailDeliveryError(f"Gmail API could not send the email (HTTP {response.status_code}).")
 

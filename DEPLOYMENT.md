@@ -104,7 +104,7 @@ sh scripts/migrate.sh
 alembic current
 ```
 
-The expected current head is `0028_event_checkpoints`. Keep `AUTO_MIGRATE=false` in production. Application startup must not run migrations, create demo data, or create a default admin account.
+The expected current head is `0063_match_result_approval`. Keep `AUTO_MIGRATE=false` in production. Application startup must not run migrations, create demo data, or create a default admin account.
 
 Build the backend image from the repository root:
 

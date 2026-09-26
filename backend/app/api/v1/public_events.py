@@ -323,7 +323,7 @@ def get_public_standings(
         raise _HTTPException(status_code=404, detail="Event not found")
 
     try:
-        return compute_standings(db, event_uuid, category_uuid)
+        return compute_standings(db, event_uuid, category_uuid, approved_only=True)
     except MatchValidationError as exc:
         from fastapi import HTTPException as _HTTPException
         raise _HTTPException(status_code=404, detail=str(exc))

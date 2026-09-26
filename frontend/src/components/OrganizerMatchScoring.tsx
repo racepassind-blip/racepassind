@@ -130,7 +130,7 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
             player_b_participant_ids: (selectedMatch.playersB ?? []).map((player) => player.regParticipantId),
           }
         : {};
-      await apiRequest(`/organizer/events/${eventId}/matches/${selectedMatch.id}`, {
+      const savedMatch = await apiRequest<OrganizerMatch>(`/organizer/events/${eventId}/matches/${selectedMatch.id}`, {
         method: "PUT",
         body: JSON.stringify({
           category_id: selectedMatch.category.id,
@@ -142,12 +142,17 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
           scheduled_time: selectedMatch.scheduledTime,
           status: complete ? "completed" : "in_progress",
           winner: complete ? winner : null,
+          auto_advance: selectedMatch.autoAdvance,
           games,
           ...playerPayload,
         }),
       });
       await queryClient.invalidateQueries({ queryKey: ["organizer-matches", eventId] });
-      toast.success(complete ? "Match completed." : "Scores saved.");
+      toast.success(
+        complete && savedMatch.nextMatchId
+          ? "Match completed. Winner advanced to the next round."
+          : complete ? "Match completed." : "Scores saved."
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save match scores.");
     } finally {

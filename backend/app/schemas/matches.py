@@ -41,6 +41,7 @@ class MatchIn(BaseModel):
     scheduled_time: dt.datetime | None = None
     status: MatchStatus = "scheduled"
     winner: MatchWinner | None = None
+    auto_advance: bool = False
     games: list[MatchGameIn] | None = Field(default=None, max_length=9)
     # Team-mode only: which specific players play this match. Ignored for
     # singles/doubles categories. When provided, match_type decides how many
@@ -56,6 +57,12 @@ class MatchIn(BaseModel):
         if not normalized or any(ord(character) < 32 or ord(character) == 127 for character in normalized):
             raise ValueError("Round label contains unsupported characters")
         return normalized
+
+
+class MatchResultApprovalIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approved: bool
 
 
 BoutStatus = Literal["scheduled", "in_progress", "completed"]

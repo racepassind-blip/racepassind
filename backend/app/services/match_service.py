@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import datetime as dt
+
 from app.sports import get_adapter
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.organizer_visibility_service import confirmed_registration_condition, get_event_visibility
@@ -201,10 +203,16 @@ def serialize_match(match: Match, *, include_bouts: bool = False) -> dict:
             "position": match.round.position,
         } if match.round else None,
         "roundLabel": match.round.name if match.round else match.round_label,
+        "bracketPosition": match.bracket_position,
+        "autoAdvance": match.auto_advance,
+        "nextMatchId": str(match.next_match_id) if match.next_match_id else None,
+        "nextMatchSlot": match.next_match_slot,
         "scheduledTime": match.scheduled_time.isoformat() if match.scheduled_time else None,
         "status": match.status,
         "winner": match.winner,
         "winnerBy": match.winner_by,
+        "resultApproved": match.result_approved_at is not None,
+        "resultApprovedAt": match.result_approved_at.isoformat() if match.result_approved_at else None,
         "gamesToWin": match.games_to_win,
         "pointsPerGame": match.points_per_game,
         "games": [
@@ -255,6 +263,139 @@ def list_matches(db: Session, event_id: UUID, category_id: UUID | None = None, s
     return [serialize_match(match) for match in matches]
 
 
+def _next_bracket_position(db: Session, round_item: TournamentRound | None) -> int | None:
+    """Allocate a stable position while serializing creates for one round."""
+    if round_item is None:
+        return None
+    db.scalar(select(TournamentRound.id).where(TournamentRound.id == round_item.id).with_for_update())
+    current = db.scalar(select(func.max(Match.bracket_position)).where(Match.round_id == round_item.id))
+    return (current if current is not None else -1) + 1
+
+
+def _winner_registration_id(match: Match) -> UUID | None:
+    if match.winner == "entry_a":
+        return match.entry_a_registration_id
+    if match.winner == "entry_b":
+        return match.entry_b_registration_id
+    return None
+
+
+def _link_sources_to_destination(db: Session, sources: list[Match], destination: Match) -> None:
+    """Link a paired set of source matches to the matching destination slots."""
+    expected = {
+        destination.entry_a_registration_id: "entry_a",
+        destination.entry_b_registration_id: "entry_b",
+    }
+    for source in sources:
+        winner_id = _winner_registration_id(source)
+        slot = expected.get(winner_id)
+        if slot is None:
+            raise MatchValidationError("The existing next-round match contains different entries")
+        source.next_match_id = destination.id
+        source.next_match_slot = slot
+
+
+def _advance_completed_match(db: Session, event: Event, match: Match) -> None:
+    """Create/link the next-round match after both feeder matches finish.
+
+    The configured round row is locked so simultaneous completion requests for
+    the paired matches cannot create duplicate next-round matches.
+    """
+    if (
+        match.status != "completed"
+        or not match.auto_advance
+        or _winner_registration_id(match) is None
+        or match.round_id is None
+        or match.bracket_position is None
+    ):
+        return
+
+    # An already-linked completion is an idempotent retry.
+    if match.next_match_id is not None:
+        return
+
+    current_round = db.scalar(
+        select(TournamentRound).where(TournamentRound.id == match.round_id).with_for_update()
+    )
+    if current_round is None:
+        return
+
+    next_round = db.scalar(
+        select(TournamentRound)
+        .where(
+            TournamentRound.event_id == event.id,
+            TournamentRound.category_id == match.category_id,
+            TournamentRound.position > current_round.position,
+        )
+        .order_by(TournamentRound.position)
+        .limit(1)
+    )
+    if next_round is None:
+        return  # This is the final.
+
+    pair_start = match.bracket_position - (match.bracket_position % 2)
+    sources = list(
+        db.scalars(
+            select(Match)
+            .where(
+                Match.event_id == event.id,
+                Match.category_id == match.category_id,
+                Match.round_id == match.round_id,
+                Match.bracket_position.in_([pair_start, pair_start + 1]),
+            )
+            .order_by(Match.bracket_position)
+        ).all()
+    )
+    if len(sources) != 2 or any(
+        not source.auto_advance or source.status != "completed" or _winner_registration_id(source) is None
+        for source in sources
+    ):
+        return
+
+    linked_ids = {source.next_match_id for source in sources if source.next_match_id is not None}
+    if len(linked_ids) > 1:
+        raise MatchValidationError("Paired matches point to different next-round matches")
+    if linked_ids:
+        destination = db.get(Match, linked_ids.pop())
+        if destination is None:
+            raise MatchValidationError("Next-round match could not be found")
+        _link_sources_to_destination(db, sources, destination)
+        return
+
+    target_position = pair_start // 2
+    destination = db.scalar(
+        select(Match).where(
+            Match.round_id == next_round.id,
+            Match.bracket_position == target_position,
+        )
+    )
+    winners = [_winner_registration_id(source) for source in sources]
+    if winners[0] == winners[1]:
+        raise MatchValidationError("The same entry cannot advance from both matches in a bracket pair")
+    if destination is None:
+        destination = Match(
+            event_id=event.id,
+            category_id=match.category_id,
+            entry_a_registration_id=winners[0],
+            entry_b_registration_id=winners[1],
+            court_id=sources[0].court_id,
+            round_id=next_round.id,
+            round_label=next_round.name,
+            bracket_position=target_position,
+            scheduled_time=None,
+            status="scheduled",
+            winner=None,
+            games_to_win=sources[0].games_to_win,
+            points_per_game=sources[0].points_per_game,
+            games=[],
+            auto_advance=True,
+        )
+        db.add(destination)
+        db.flush()
+
+    _link_sources_to_destination(db, sources, destination)
+
+
 def create_match(db: Session, user, event: Event, payload) -> dict:
     category, court, entry_a, entry_b = _validate_match_context(db, user, event, payload)
     round_item = _validate_match_round(db, event, category, payload.round_id)
@@ -269,6 +410,8 @@ def create_match(db: Session, user, event: Event, payload) -> dict:
         court_id=court.id,
         round_id=round_item.id if round_item else None,
         round_label=round_item.name if round_item else payload.round_label,
+        bracket_position=_next_bracket_position(db, round_item),
+        auto_advance=payload.auto_advance,
         scheduled_time=payload.scheduled_time,
         status=payload.status,
         winner=payload.winner,
@@ -280,6 +423,8 @@ def create_match(db: Session, user, event: Event, payload) -> dict:
         player_b_participant_ids=player_b_ids,
     )
     db.add(match)
+    db.flush()
+    _advance_completed_match(db, event, match)
     db.commit()
     return _get_serialized_match(db, event.id, match.id)
 
@@ -288,6 +433,31 @@ def update_match(db: Session, user, event: Event, match_id: UUID, payload) -> di
     match = db.scalar(_match_query(event.id).where(Match.id == match_id))
     if match is None:
         raise MatchValidationError("Match not found")
+    previous_public_result = (
+        match.category_id,
+        match.entry_a_registration_id,
+        match.entry_b_registration_id,
+        match.court_id,
+        match.round_id,
+        match.round_label,
+        match.scheduled_time,
+        match.status,
+        match.winner,
+        tuple((game["game_number"], game["score_a"], game["score_b"]) for game in (match.games or [])),
+    )
+    original_round_id = match.round_id
+    if match.next_match_id is not None and (
+        payload.status != match.status
+        or payload.winner != match.winner
+        or payload.category_id != match.category_id
+        or payload.entry_a_registration_id != match.entry_a_registration_id
+        or payload.entry_b_registration_id != match.entry_b_registration_id
+        or payload.round_id != match.round_id
+        or payload.auto_advance != match.auto_advance
+    ):
+        raise MatchValidationError(
+            "This winner has already advanced; delete the next-round match before changing participants, round, or result"
+        )
     category, court, entry_a, entry_b = _validate_match_context(db, user, event, payload)
     round_item = _validate_match_round(db, event, category, payload.round_id)
     has_scores = bool(match.games)
@@ -308,12 +478,34 @@ def update_match(db: Session, user, event: Event, match_id: UUID, payload) -> di
     match.court_id = court.id
     match.round_id = round_item.id if round_item else None
     match.round_label = round_item.name if round_item else payload.round_label
+    if original_round_id != match.round_id:
+        match.bracket_position = None
+        db.flush()
+        match.bracket_position = _next_bracket_position(db, round_item)
     match.scheduled_time = payload.scheduled_time
     match.status = payload.status
     match.winner = payload.winner
+    match.auto_advance = payload.auto_advance
     match.match_type = match_type
     match.player_a_participant_ids = player_a_ids
     match.player_b_participant_ids = player_b_ids
+    current_public_result = (
+        match.category_id,
+        match.entry_a_registration_id,
+        match.entry_b_registration_id,
+        match.court_id,
+        match.round_id,
+        match.round_label,
+        match.scheduled_time,
+        match.status,
+        match.winner,
+        tuple((game["game_number"], game["score_a"], game["score_b"]) for game in (match.games or [])),
+    )
+    if previous_public_result != current_public_result:
+        match.result_approved_at = None
+        match.result_approved_by = None
+    db.flush()
+    _advance_completed_match(db, event, match)
     db.commit()
     return _get_serialized_match(db, event.id, match.id)
 
@@ -322,8 +514,44 @@ def delete_match(db: Session, event_id: UUID, match_id: UUID) -> None:
     match = db.scalar(select(Match).where(Match.id == match_id, Match.event_id == event_id))
     if match is None:
         raise MatchValidationError("Match not found")
+    if match.next_match_id is not None:
+        raise MatchValidationError("Delete the next-round match before deleting this feeder match")
+    db.execute(
+        update(Match)
+        .where(Match.next_match_id == match.id)
+        .values(next_match_id=None, next_match_slot=None)
+    )
     db.delete(match)
     db.commit()
+
+
+def set_match_result_approval(
+    db: Session,
+    event: Event,
+    match_id: UUID,
+    *,
+    approved: bool,
+    approved_by: UUID,
+) -> dict:
+    match = db.scalar(
+        select(Match)
+        .where(Match.id == match_id, Match.event_id == event.id)
+        .with_for_update()
+    )
+    if match is None:
+        raise MatchValidationError("Match not found")
+    if approved:
+        if match.status != "completed" or _winner_registration_id(match) is None:
+            raise MatchValidationError("Only a completed match with a winner can be approved")
+        if not match.games:
+            raise MatchValidationError("Record the match score before approving the result")
+        match.result_approved_at = dt.datetime.now(dt.timezone.utc)
+        match.result_approved_by = approved_by
+    else:
+        match.result_approved_at = None
+        match.result_approved_by = None
+    db.commit()
+    return _get_serialized_match(db, event.id, match.id)
 
 
 def list_public_match_results(db: Session, event_id: UUID, category_id: UUID | None = None, status: str | None = None) -> list[dict]:
@@ -338,7 +566,11 @@ def list_public_match_results(db: Session, event_id: UUID, category_id: UUID | N
             joinedload(Match.entry_b_registration).joinedload(Registration.participant),
             joinedload(Match.entry_b_registration).joinedload(Registration.participant_memberships).joinedload(RegistrationParticipant.participant),
         )
-        .where(Match.event_id == event_id)
+        .where(
+            Match.event_id == event_id,
+            Match.status == "completed",
+            Match.result_approved_at.is_not(None),
+        )
     )
     if category_id is not None:
         query = query.where(Match.category_id == category_id)
@@ -383,6 +615,9 @@ def _serialize_public_match(match: Match) -> dict:
         "court": {"name": match.court.name},
         "scheduledTime": match.scheduled_time.isoformat() if match.scheduled_time else None,
         "status": match.status,
+        "resultApproved": True,
+        "approvedAt": match.result_approved_at.isoformat() if match.result_approved_at else None,
+        "finalStatus": "Final",
         "winner": match.winner,
         "entryA": public_entry(match.entry_a_registration),
         "entryB": public_entry(match.entry_b_registration),
@@ -647,7 +882,7 @@ def _serialize_team_scoring(config: TeamMatchScoring) -> dict:
 # Standings computation
 # ---------------------------------------------------------------------------
 
-def compute_standings(db: Session, event_id: UUID, category_id: UUID) -> list[dict]:
+def compute_standings(db: Session, event_id: UUID, category_id: UUID, *, approved_only: bool = False) -> list[dict]:
     """Return sorted standings for a team category."""
     category = db.scalar(select(EventCategory).where(EventCategory.id == category_id))
     if category is None or category.event_id != event_id:
@@ -666,7 +901,7 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID) -> list[di
     policy = _policy(event)
 
     # Load all completed matches
-    matches = db.scalars(
+    matches_query = (
         select(Match)
         .options(
             joinedload(Match.entry_a_registration).joinedload(Registration.participant),
@@ -677,7 +912,10 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID) -> list[di
             Match.category_id == category_id,
             Match.status == "completed",
         )
-    ).unique().all()
+    )
+    if approved_only:
+        matches_query = matches_query.where(Match.result_approved_at.is_not(None))
+    matches = db.scalars(matches_query).unique().all()
 
     # Accumulate stats per registration_id
     stats: dict[str, dict] = {}
