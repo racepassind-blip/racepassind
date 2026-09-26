@@ -33,7 +33,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 
-  if (user.role === "admin" && !user.mfaEnabled && location.pathname !== "/admin/mfa") {
+  if (user.role === "admin" && user.mfaRequired && !user.mfaEnabled && location.pathname !== "/admin/mfa") {
     return <Navigate to="/admin/mfa" state={{ from: location.pathname }} replace />;
   }
 

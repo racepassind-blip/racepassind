@@ -30,7 +30,7 @@ const Login = () => {
     try {
       const loggedInUser = await login(email.trim(), password, needsMfa ? mfaCode : undefined);
       toast.success("Welcome back!");
-      if (loggedInUser.role === "admin" && !loggedInUser.mfaEnabled) {
+      if (loggedInUser.role === "admin" && loggedInUser.mfaRequired && !loggedInUser.mfaEnabled) {
         navigate("/admin/mfa", { replace: true });
         return;
       }

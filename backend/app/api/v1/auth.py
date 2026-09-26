@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import CSRF_COOKIE, SESSION_COOKIE, get_current_user, require_csrf
 from app.services.audit_service import record_audit
+from app.config import get_settings
 from app.services.auth_service import (
     create_session,
     hash_password,
@@ -292,7 +293,7 @@ def login(
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    if user.role == "admin" and user.mfa_enabled:
+    if user.role == "admin" and get_settings().admin_mfa_enabled and user.mfa_enabled:
         secret = decrypt_totp_secret(user.mfa_secret_encrypted)
         if not verify_totp_code(secret, payload.mfa_code):
             raise HTTPException(status_code=401, detail="admin_mfa_required")

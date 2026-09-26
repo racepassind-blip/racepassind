@@ -1,5 +1,6 @@
 import unittest
 import uuid
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -29,10 +30,11 @@ class MfaServiceTests(unittest.TestCase):
     def test_admin_role_guard_requires_mfa(self):
         dependency = require_roles("admin")
         admin = User(id=uuid.uuid4(), name="Admin", email="a@example.com", password_hash="x", role="admin", mfa_enabled=False)
-        with self.assertRaisesRegex(HTTPException, "admin_mfa_required"):
-            dependency(admin)
-        admin.mfa_enabled = True
-        self.assertIs(dependency(admin), admin)
+        with patch("app.api.deps.get_settings", return_value=type("Settings", (), {"admin_mfa_enabled": True})()):
+            with self.assertRaisesRegex(HTTPException, "admin_mfa_required"):
+                dependency(admin)
+            admin.mfa_enabled = True
+            self.assertIs(dependency(admin), admin)
 
 
 if __name__ == "__main__":

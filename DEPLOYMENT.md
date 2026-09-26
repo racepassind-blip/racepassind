@@ -179,3 +179,5 @@ Before calling the POC publicly launch-ready, complete T025's non-sensitive end-
 # Admin MFA
 
 Admin accounts use time-based one-time-password (TOTP) multi-factor authentication. After the migration, an admin signs in with their password, scans the setup QR code at `/admin/mfa`, and confirms a six-digit authenticator code. Privileged admin APIs remain unavailable until enrollment is complete. The encrypted TOTP secret uses the same `COMMUNICATION_ENCRYPTION_KEY` configuration used for other application secrets; keep that key stable and rotate it only with a planned secret migration.
+
+MFA enforcement is currently disabled while the rollout is paused. Set `ADMIN_MFA_ENABLED=true` to enforce enrollment and code verification for admin accounts.

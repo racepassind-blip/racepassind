@@ -129,4 +129,5 @@ def public_user(user: User) -> dict[str, str | None | bool]:
     return {
         "id": str(user.id), "name": user.name, "email": user.email,
         "phone": user.phone, "role": user.role, "mfaEnabled": bool(user.mfa_enabled),
+        "mfaRequired": bool(get_settings().admin_mfa_enabled and user.role == "admin"),
     }

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.auth_service import hash_opaque_token, utc_now
+from app.config import get_settings
 from db import get_db
 from models import AuthSession, Organization, OrganizationMember, User
 
@@ -111,7 +112,7 @@ def require_roles(*roles: str) -> Callable:
     def dependency(user: User = Depends(get_current_user)) -> User:
         if user.role not in roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-        if user.role == "admin" and not user.mfa_enabled:
+        if user.role == "admin" and get_settings().admin_mfa_enabled and not user.mfa_enabled:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin_mfa_required")
         return user
 

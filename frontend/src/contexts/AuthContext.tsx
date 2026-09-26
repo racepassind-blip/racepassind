@@ -12,6 +12,7 @@ export interface AuthUser {
   phone: string | null;
   role: UserRole;
   mfaEnabled: boolean;
+  mfaRequired: boolean;
 }
 
 interface AuthResponse {

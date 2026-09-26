@@ -70,6 +70,8 @@ class Settings:
     # Communication encryption key (for encrypting sensitive credentials like app passwords)
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     communication_encryption_key: str | None = field(default=None, repr=False)
+    # MFA remains available but is opt-in until the rollout is complete.
+    admin_mfa_enabled: bool = False
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -98,6 +100,7 @@ class Settings:
             storage_max_upload_bytes=int(os.getenv("STORAGE_MAX_UPLOAD_BYTES", "2000000")),
             storage_max_dimension=int(os.getenv("STORAGE_MAX_DIMENSION", "4096")),
             communication_encryption_key=os.getenv("COMMUNICATION_ENCRYPTION_KEY"),
+            admin_mfa_enabled=_as_bool(os.getenv("ADMIN_MFA_ENABLED"), default=False),
         )
 
     @property
