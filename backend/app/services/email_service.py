@@ -26,14 +26,11 @@ from enum import Enum
 from typing import Any, Literal
 from uuid import UUID
 
-import smtplib
-import ssl
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.services.audit_service import record_audit
-from app.services.communication_service import _decrypt_value, _upgrade_legacy_gmail_password
+from app.services.gmail_api_service import GmailDeliveryError, gmail_api_configured, send_gmail_message
 from models import CommunicationConfig, EmailLog, Registration
 
 # Email limits (per 24-hour rolling window)
@@ -229,9 +226,8 @@ def send_email(
     config_data = config.configuration or {}
     sender_name = config_data.get("sender_name", "")
     gmail_address = config_data.get("gmail_address", "")
-    gmail_app_password_encrypted = config_data.get("gmail_app_password", "")
 
-    if not sender_name or not gmail_address or not gmail_app_password_encrypted:
+    if not sender_name or not gmail_address or not gmail_api_configured():
         log = _get_or_create_email_log(
             db,
             recipient=recipient,
@@ -251,33 +247,6 @@ def send_email(
             email_log=log,
         )
 
-    # Decrypt password and normalize (strip spaces)
-    decrypted_password = _decrypt_value(gmail_app_password_encrypted)
-    if not decrypted_password:
-        log = _get_or_create_email_log(
-            db,
-            recipient=recipient,
-            subject=subject,
-            email_type=email_type,
-            reference_type=reference_type,
-            reference_id=reference_id,
-            event_id=event_id,
-            status="failed",
-            failure_reason=FAILURE_REASON_AUTH_FAILED,
-        )
-        db.commit()
-        return SendEmailResult(
-            success=False,
-            status="FAILED",
-            message="Invalid Gmail credentials",
-            email_log=log,
-        )
-
-    _upgrade_legacy_gmail_password(config, gmail_app_password_encrypted, decrypted_password)
-
-    # Normalize: strip spaces that may be present in App Password display
-    decrypted_password = decrypted_password.replace("\xa0", "").replace(" ", "").strip()
-
     # Create log entry for attempted send
     log = _get_or_create_email_log(
         db,
@@ -291,7 +260,6 @@ def send_email(
     )
     db.flush()
 
-    settings = get_settings()
     attempted_at = dt.datetime.now(dt.timezone.utc)
 
     try:
@@ -316,16 +284,7 @@ def send_email(
             part.add_header("Content-Disposition", "attachment", filename=filename)
             msg.attach(part)
 
-        # Send via Gmail SMTP
-        context = ssl.create_default_context()
-        if settings.environment != "production":
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
-            server.starttls(context=context)
-            server.login(gmail_address, decrypted_password)
-            server.send_message(msg)
+        send_gmail_message(msg)
 
         # Mark as sent
         log.status = "sent"
@@ -345,39 +304,12 @@ def send_email(
             email_log=log,
         )
 
-    except smtplib.SMTPAuthenticationError:
+    except GmailDeliveryError as exc:
         log.status = "failed"
         log.attempted_at = attempted_at
-        log.failure_reason = FAILURE_REASON_AUTH_FAILED
+        log.failure_reason = exc.reason
         db.commit()
-        return SendEmailResult(
-            success=False,
-            status="FAILED",
-            message="Gmail authentication failed",
-            email_log=log,
-        )
-    except smtplib.SMTPConnectError:
-        log.status = "failed"
-        log.attempted_at = attempted_at
-        log.failure_reason = FAILURE_REASON_SMTP_CONNECTION_FAILED
-        db.commit()
-        return SendEmailResult(
-            success=False,
-            status="FAILED",
-            message="Unable to connect to Gmail SMTP",
-            email_log=log,
-        )
-    except (TimeoutError, OSError) as exc:
-        log.status = "failed"
-        log.attempted_at = attempted_at
-        log.failure_reason = FAILURE_REASON_SMTP_CONNECTION_FAILED
-        db.commit()
-        return SendEmailResult(
-            success=False,
-            status="FAILED",
-            message=f"Gmail SMTP timed out: {exc}",
-            email_log=log,
-        )
+        return SendEmailResult(False, "FAILED", str(exc), log)
     except Exception as exc:
         log.status = "failed"
         log.attempted_at = attempted_at
@@ -479,7 +411,7 @@ def retry_pending_emails(db: Session) -> list[SendEmailResult]:
 
 
 def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
-    """Attempt SMTP delivery for an existing email log and update it in place.
+    """Attempt Gmail API delivery for an existing email log and update it in place.
 
     Rebuilds the message body since only the subject/recipient are persisted.
     Never creates a new log record.
@@ -491,19 +423,12 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
     config_data = config.configuration or {}
     sender_name = config_data.get("sender_name", "")
     gmail_address = config_data.get("gmail_address", "")
-    encrypted = config_data.get("gmail_app_password", "")
-
-    password = _decrypt_value(encrypted) if encrypted else None
-    if not sender_name or not gmail_address or not password:
+    if not sender_name or not gmail_address or not gmail_api_configured():
         email_log.status = "failed"
         email_log.failure_reason = FAILURE_REASON_AUTH_FAILED
         db.commit()
-        return SendEmailResult(False, "FAILED", "Invalid Gmail credentials", email_log)
+        return SendEmailResult(False, "FAILED", "Gmail API credentials not configured", email_log)
 
-    _upgrade_legacy_gmail_password(config, encrypted, password)
-
-    password = password.replace("\xa0", "").replace(" ", "").strip()
-    settings = get_settings()
     attempted_at = dt.datetime.now(dt.timezone.utc)
 
     try:
@@ -519,15 +444,7 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
         )
         msg.attach(MIMEText(body, "plain", "utf-8"))
 
-        context = ssl.create_default_context()
-        if settings.environment != "production":
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
-            server.starttls(context=context)
-            server.login(gmail_address, password)
-            server.send_message(msg)
+        send_gmail_message(msg)
 
         email_log.status = "sent"
         email_log.attempted_at = attempted_at
@@ -535,24 +452,12 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
         db.commit()
         return SendEmailResult(True, "SENT", "Email sent successfully", email_log)
 
-    except smtplib.SMTPAuthenticationError:
+    except GmailDeliveryError as exc:
         email_log.status = "failed"
         email_log.attempted_at = attempted_at
-        email_log.failure_reason = FAILURE_REASON_AUTH_FAILED
+        email_log.failure_reason = exc.reason
         db.commit()
-        return SendEmailResult(False, "FAILED", "Gmail authentication failed", email_log)
-    except smtplib.SMTPConnectError:
-        email_log.status = "failed"
-        email_log.attempted_at = attempted_at
-        email_log.failure_reason = FAILURE_REASON_SMTP_CONNECTION_FAILED
-        db.commit()
-        return SendEmailResult(False, "FAILED", "Unable to connect", email_log)
-    except (TimeoutError, OSError) as exc:
-        email_log.status = "failed"
-        email_log.attempted_at = attempted_at
-        email_log.failure_reason = FAILURE_REASON_SMTP_CONNECTION_FAILED
-        db.commit()
-        return SendEmailResult(False, "FAILED", f"Gmail SMTP timed out: {exc}", email_log)
+        return SendEmailResult(False, "FAILED", str(exc), email_log)
     except Exception as exc:
         email_log.status = "failed"
         email_log.attempted_at = attempted_at

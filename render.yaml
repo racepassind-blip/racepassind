@@ -43,6 +43,13 @@ services:
       # Generate once with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
       - key: COMMUNICATION_ENCRYPTION_KEY
         sync: false
+      # Gmail send-only OAuth credentials; see backend/GMAIL_API_SETUP.md.
+      - key: GMAIL_OAUTH_CLIENT_ID
+        sync: false
+      - key: GMAIL_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GMAIL_OAUTH_REFRESH_TOKEN
+        sync: false
       # --- S3-compatible object storage (Cloudflare R2) ---
       - key: STORAGE_MODE
         value: s3

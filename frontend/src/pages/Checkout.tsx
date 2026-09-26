@@ -1,7 +1,7 @@
 import { MAX_TICKETS_PER_TRANSACTION } from "@/lib/registration-limits";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Download, Plus, Shield } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Download, Plus, Shield, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Layout } from "@/components/Layout";
@@ -617,6 +617,44 @@ const Checkout = () => {
     );
   };
 
+  const usesParticipantWizard = selectedTiers[0]?.entryType !== "team";
+  const participantNavigator = () => (
+    <nav aria-label="Participants" className="space-y-4">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-semibold">Participants</span>
+        <span className="text-muted-foreground">{completedRiders}/{totalParticipants} complete</span>
+      </div>
+      <div className="max-h-[50vh] space-y-4 overflow-y-auto overscroll-contain pr-1">
+        {entryGroups.map((group, entryIndex) => (
+          <div key={group[0].entryKey} className="space-y-1">
+            <p className="px-2 text-xs font-medium text-muted-foreground">Entry {entryIndex + 1} · {tierById.get(group[0].ticketId)?.name}</p>
+            {group.map((rider) => {
+              const index = riders.findIndex((item) => item.key === rider.key);
+              const active = index === activeRiderIndex;
+              const name = String(rider.responses.full_name ?? "").trim();
+              const complete = riderReady(rider);
+              return (
+                <button key={rider.key} type="button" aria-current={active ? "step" : undefined}
+                  onClick={(event) => {
+                    setActiveRiderIndex(index);
+                    event.currentTarget.closest("details")?.removeAttribute("open");
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-lg border-l-4 px-3 py-3 text-left text-sm transition-colors ${active ? "border-primary bg-primary/10" : "border-transparent hover:bg-muted"}`}>
+                  <span className="text-xs tabular-nums text-muted-foreground">{index + 1}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className={`block break-words font-medium ${active ? "text-primary" : ""}`}>{name || "Add participant name"}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">{group.length > 1 ? `Player ${rider.participantIndex + 1} · ` : ""}{active ? "Editing" : complete ? "Complete" : "Needs details"}</span>
+                  </span>
+                  {complete && <CheckCircle2 aria-label="Complete" className="h-4 w-4 shrink-0 text-accent" />}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </nav>
+  );
+
   return (
     <Layout>
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
@@ -626,6 +664,11 @@ const Checkout = () => {
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
           <main className="min-w-0">
+            {currentStep === 1 && usesParticipantWizard && <details className="mb-5 rounded-xl border bg-card p-4 lg:hidden">
+              <summary className="cursor-pointer text-sm font-semibold">Participant {activeRiderIndex + 1} of {totalParticipants} · Change</summary>
+              <div className="mt-4">{participantNavigator()}</div>
+            </details>}
+
             {currentStep === 0 && <section className="space-y-5"><div><h2 className="text-xl font-bold">Review your tickets</h2><p className="mt-1 text-sm text-muted-foreground">We’ll collect the required participant profiles for every entry below.</p></div><div className="space-y-3">{selectedTiers.map((tier) => { const quantity = cart.find((line) => line.ticketId === tier.id)?.quantity ?? 0; return <div key={tier.id} className="flex items-center justify-between rounded-2xl border bg-card p-5 shadow-sm"><div><p className="font-bold">{tier.name} <span className="font-normal text-muted-foreground">× {quantity}</span></p><p className="mt-1 text-sm text-muted-foreground">{tier.description}</p></div><p className="text-lg font-bold text-primary">₹{(tier.price * quantity).toLocaleString("en-IN")}</p></div>; })}</div><div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground"><p className="font-semibold text-foreground">What happens next?</p><p className="mt-1">We’ll collect member details for each entry, then make one payment for the paid entries.</p></div><div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground"><p className="font-semibold text-foreground">Save your registration</p>{!isInitialized ? <p className="mt-1">Checking your account session…</p> : isParticipant ? <p className="mt-1">You are signed in as <span className="font-semibold text-foreground">{user?.email}</span>. This registration will be linked to your participant account so you can easily access your records, tickets, and results.</p> : <div className="mt-3 space-y-3"><p>Create a free participant account to keep your registrations, tickets, and results together. You can also continue as a guest. Guest checkout gives you a private claim code on the confirmation page; save it with your registration reference so you can link this registration to an account later.</p><div className="flex flex-col gap-2 sm:flex-row"><Button type="button" onClick={() => { setRegistrationMode("guest"); setCurrentStep(1); }}>Continue as guest</Button><Button type="button" variant="outline" onClick={() => navigate("/login", { state: { from: checkoutReturnPath } })}>I have an account — sign in</Button><Button type="button" variant="ghost" onClick={() => navigate("/signup?type=participant", { state: { from: checkoutReturnPath } })}>Create participant account</Button></div>{registrationMode === "guest" && <p className="font-medium text-foreground">Guest checkout selected. After registration, your confirmation page will show a private one-time claim code. Save it with your registration reference; use both in your participant dashboard to link this registration later. This is separate from your event ticket QR.</p>}</div>}</div><Button onClick={() => setCurrentStep(1)} disabled={!isInitialized || !effectiveRegistrationMode} size="lg" className="w-full">Start {participantLabel.toLowerCase()} details <ArrowRight className="ml-2 h-4 w-4" /></Button></section>}
 
             {currentStep === 1 && activeRider && (() => {
@@ -676,28 +719,6 @@ const Checkout = () => {
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-secondary">
                     <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${totalParticipants ? (completedRiders / totalParticipants) * 100 : 0}%` }} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {riders.map((rider, index) => {
-                      const tier = event.tiers.find((candidate) => candidate.id === rider.ticketId);
-                      const complete = riderReady(rider);
-                      const active = index === activeRiderIndex;
-                      return (
-                        <button
-                          key={rider.key}
-                          type="button"
-                          onClick={() => setActiveRiderIndex(index)}
-                          className={`rounded-xl border p-3 text-left transition-colors ${active ? "border-primary bg-primary/10 shadow-sm" : "border-border bg-card hover:border-primary/40"}`}
-                        >
-                          <span className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            {participantLabel} {index + 1}
-                            {complete && <CheckCircle2 className="h-4 w-4 text-accent" />}
-                          </span>
-                          <span className="mt-1 block truncate text-sm font-semibold">{tier?.name}</span>
-                          <span className="mt-1 block text-xs text-muted-foreground">{complete ? "Ready" : "Needs details"}</span>
-                        </button>
-                      );
-                    })}
                   </div>
                   <div className="overflow-hidden rounded-2xl border-2 border-primary/30 bg-card shadow-sm">
                     <div className="flex items-start justify-between gap-4 bg-primary/5 px-5 py-4 sm:px-6">
@@ -850,7 +871,30 @@ const Checkout = () => {
             {currentStep === 2 && registration && <section className="space-y-5"><div><h2 className="text-xl font-bold">Pay for all {participantLabel.toLowerCase()}s</h2><p className="mt-1 text-sm text-muted-foreground">One payment covers all paid entries in this order.</p></div><div className="rounded-2xl border bg-card p-5"><p className="text-sm text-muted-foreground">{registration.registrations.length} {registration.registrations.length === 1 ? "entry" : "entries"}</p><p className="mt-2 text-sm font-bold tracking-wide">{registration.registrations.map((child) => child.registrationReference).join(" · ")}</p>{registration.platformFeeBearer === "PARTICIPANT" && (registration.platformFeePaise ?? 0) > 0 && <div className="mt-4 space-y-1 text-sm text-muted-foreground"><div className="flex items-center justify-between"><span>Registration Fee</span><span>{formatPaise(registration.baseAmountPaise ?? 0)}</span></div><div className="flex items-center justify-between"><span>SportPass Fee</span><span>{formatPaise(registration.platformFeePaise ?? 0)}</span></div></div>}<p className="mt-5 text-sm text-muted-foreground">Total amount to pay</p><p className="text-3xl font-extrabold text-primary">₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings && <div className="space-y-4 rounded-2xl border bg-primary/5 p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">UPI ID</p><p className="font-bold">{registration.paymentSettings.upiId}</p><p className="text-xs text-muted-foreground">Payee: {registration.paymentSettings.payeeName}</p></div><Button variant="outline" size="sm" onClick={copyUpi}><Copy className="mr-2 h-4 w-4" /> Copy</Button></div><p className="text-sm text-muted-foreground">{registration.paymentSettings.instructions}</p><div className="flex flex-col items-center gap-3 rounded-lg bg-white p-3"><img src={registration.paymentSettings.qrDataUrl} alt="Generated UPI payment QR" className="h-56 w-56" /><p className="text-xs text-muted-foreground">Scan to pay ₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings.qrImageUrl && <div><p className="mb-2 text-xs font-medium text-muted-foreground">Organizer-provided QR</p><img src={registration.paymentSettings.qrImageUrl} alt="Organizer UPI QR" className="mx-auto max-h-56 rounded-lg" /></div>}<div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm dark:border-blue-900/50 dark:bg-blue-950/20"><p className="font-semibold text-blue-900 dark:text-blue-100">Can't scan? Pay from your UPI app directly</p><p className="mt-1 text-blue-800/80 dark:text-blue-100/80">Download the QR image below, then open your UPI app (GPay, PhonePe, Paytm, etc.), choose <span className="font-semibold">Scan QR</span> or <span className="font-semibold">Upload QR</span>, and select the downloaded image to pay ₹{totalRupees.toLocaleString("en-IN")} automatically.</p><Button type="button" variant="outline" size="sm" className="mt-3 gap-2 border-blue-300 bg-white text-blue-900 hover:bg-blue-50 dark:border-blue-800 dark:bg-transparent dark:text-blue-100" onClick={() => void downloadQrAsPng(registration.paymentSettings!.qrDataUrl, `sportpass-payment-qr-${registration.registrations[0]?.registrationReference ?? "order"}.png`).then(() => setQrDownloaded(true)).catch(() => toast.error("Could not download QR image"))}><Download className="h-4 w-4" /> Download QR image</Button>{qrDownloaded && <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400"><CheckCircle2 className="h-4 w-4 shrink-0" /> QR saved — open your UPI app, tap Scan QR or Upload QR, and pick this image to pay.</p>}</div></div>}<div className="space-y-2"><Label>UTR / transaction reference (optional)</Label><Input value={utrReference} onChange={(e) => setUtrReference(e.target.value)} placeholder="Enter it after paying in your UPI app" /><p className="text-xs text-muted-foreground">One reference will be submitted for the complete {participantLabel.toLowerCase()} group.</p></div><Button onClick={submitUtr} disabled={loading} size="lg" className="w-full">{loading ? "Saving…" : "Submit reference / continue"}</Button><p className="flex items-center justify-center gap-1 text-xs text-muted-foreground"><Shield className="h-3 w-3" /> Do not enter card details on SportPass.</p></section>}
           </main>
 
-          <aside className="lg:col-span-1"><div className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm lg:sticky lg:top-24"><div><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Order summary</p><p className="mt-1 text-lg font-bold">{event.title}</p><p className="text-sm text-muted-foreground">{event.location}</p></div><div className="space-y-3 border-t pt-4">{selectedTiers.map((tier) => { const quantity = cart.find((line) => line.ticketId === tier.id)?.quantity ?? 0; return <div key={tier.id} className="flex items-center justify-between gap-3 text-sm"><span><span className="font-medium">{tier.name}</span><span className="ml-2 text-muted-foreground">× {quantity}</span></span><span className="font-semibold">₹{(tier.price * quantity).toLocaleString("en-IN")}</span></div>; })}{participantBearsFee && sportPassFeePaise > 0 && <><div className="flex items-center justify-between text-sm text-muted-foreground"><span>Registration Fee</span><span>{formatPaise(totalPaise)}</span></div><div className="flex items-center justify-between text-sm text-muted-foreground"><span>SportPass Fee</span><span>{formatPaise(sportPassFeePaise)}</span></div></>}<div className="flex items-center justify-between border-t pt-3"><span className="font-bold">Total</span><span className="text-xl font-extrabold text-primary">{formatPaise(participantTotalPreviewPaise)}</span></div></div>{currentStep === 1 && <div className="border-t pt-4"><div className="mb-3 flex items-center justify-between text-sm"><span className="font-semibold">{participantLabel} progress</span><span className="text-muted-foreground">{completedRiders}/{totalParticipants}</span></div><div className="space-y-2">{riders.map((rider, index) => { const tier = event.tiers.find((candidate) => candidate.id === rider.ticketId); return <button key={rider.key} type="button" onClick={() => setActiveRiderIndex(index)} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted"><span className={index === activeRiderIndex ? "font-semibold text-primary" : "text-muted-foreground"}>{participantLabel} {index + 1} · {tier?.name}</span>{riderReady(rider) ? <CheckCircle2 className="h-4 w-4 text-accent" /> : <span className="text-xs text-muted-foreground">Pending</span>}</button>; })}</div></div>}<div className="border-t pt-4 text-xs text-muted-foreground"><p className="font-semibold text-foreground">Secure registration</p><p className="mt-1">Each entry receives one event ticket and check-in QR.</p></div></div></aside>
+          <aside className="min-w-0 lg:col-span-1">
+            <div className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Order summary</p>
+                <p className="mt-1 text-lg font-bold">{event.title}</p>
+                <div className="mt-3 flex items-center justify-between"><span className="text-sm text-muted-foreground">{totalTickets} tickets · Total</span><span className="text-xl font-extrabold text-primary">{formatPaise(participantTotalPreviewPaise)}</span></div>
+              </div>
+              <details className="border-t pt-3">
+                <summary className="cursor-pointer text-sm font-medium">Ticket and pricing details</summary>
+                <div className="mt-3 space-y-3">
+                  {selectedTiers.map((tier) => {
+                    const quantity = cart.find((line) => line.ticketId === tier.id)?.quantity ?? 0;
+                    return <div key={tier.id} className="flex items-start justify-between gap-3 text-sm"><span>{tier.name} × {quantity}</span><span className="shrink-0 font-semibold">{formatPaise(tier.price * quantity * 100)}</span></div>;
+                  })}
+                  {participantBearsFee && sportPassFeePaise > 0 && <>
+                    <div className="flex justify-between text-sm text-muted-foreground"><span>Registration Fee</span><span>{formatPaise(totalPaise)}</span></div>
+                    <div className="flex justify-between text-sm text-muted-foreground"><span>SportPass Fee</span><span>{formatPaise(sportPassFeePaise)}</span></div>
+                  </>}
+                </div>
+              </details>
+              {currentStep === 1 && usesParticipantWizard && <div className="hidden border-t pt-4 lg:block">{participantNavigator()}</div>}
+              <p className="border-t pt-4 text-xs text-muted-foreground">Each entry receives one event ticket and check-in QR.</p>
+            </div>
+          </aside>
         </div>
       </div>
     </Layout>

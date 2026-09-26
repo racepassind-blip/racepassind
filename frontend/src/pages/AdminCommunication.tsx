@@ -17,7 +17,7 @@ interface CommunicationSettings {
   enabled: boolean;
   sender_name: string;
   gmail_address: string;
-  gmail_app_password_configured: boolean;
+  gmail_api_configured: boolean;
 }
 
 const AdminCommunication = () => {
@@ -33,10 +33,8 @@ const AdminCommunication = () => {
   const loadSettings = async () => {
     setLoading(true);
     setError(null);
-    console.log("Loading communication settings from /admin/communication...");
     try {
       const response = await apiRequest<CommunicationSettings>("/admin/communication");
-      console.log("Settings loaded:", response);
       setSettings(response);
       setTestRecipient(response.gmail_address || "");
     } catch (loadError) {
@@ -51,11 +49,6 @@ const AdminCommunication = () => {
     void loadSettings();
   }, []);
 
-  // Force refresh handler for debugging
-  useEffect(() => {
-    console.log("AdminCommunication mounted, loading settings...");
-  }, []);
-
   const handleSave = async () => {
     if (!settings) return;
     setSaving(true);
@@ -68,18 +61,12 @@ const AdminCommunication = () => {
       if (settings.gmail_address !== null && settings.gmail_address !== undefined) {
         payload.gmail_address = settings.gmail_address;
       }
-      // Only send password if it's actually set (not undefined)
-      if (settings.gmail_app_password !== undefined && settings.gmail_app_password !== "") {
-        payload.gmail_app_password = settings.gmail_app_password;
-      }
       payload.enabled = settings.enabled;
 
-      console.log("Saving settings with payload:", payload);
       const updated = await apiRequest<CommunicationSettings>("/admin/communication", {
         method: "PUT",
         body: JSON.stringify(payload),
       });
-      console.log("Settings saved:", updated);
       setSettings(updated);
       toast.success("Communication settings saved");
     } catch (saveError) {
@@ -103,8 +90,7 @@ const AdminCommunication = () => {
       const response = await apiRequest<{ success: boolean; message: string }>("/admin/communication/test-email", {
         method: "POST",
         body: JSON.stringify({ recipient_email: testRecipient }),
-        // SMTP can take a few seconds to establish TLS; let the backend
-        // return its bounded error instead of aborting the browser request.
+        // Allow time for OAuth token refresh and the Gmail API request.
         timeoutMs: 20_000,
       });
       if (response.success) {
@@ -123,7 +109,6 @@ const AdminCommunication = () => {
   };
 
   const updateSetting = (key: keyof CommunicationSettings, value: any) => {
-    console.log(`Updating ${key} to:`, value);
     setSettings((prev) => (prev ? { ...prev, [key]: value } : null));
     setTestStatus(null);
     setTestMessage("");
@@ -219,54 +204,28 @@ const AdminCommunication = () => {
                     <p className="text-xs text-muted-foreground">Your Gmail address (not password).</p>
                   </div>
 
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="gmail-app-password">Gmail App Password</Label>
-                    <Input
-                      id="gmail-app-password"
-                      type="password"
-                      value={settings.gmail_app_password || ""}
-                      onChange={(e) => updateSetting("gmail_app_password", e.target.value)}
-                      placeholder="Enter app password"
-                      disabled={!settings.enabled}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Use a Google App Password, not your regular Gmail password.
-                      {settings.gmail_app_password_configured ? (
-                        <span className="ml-2 text-emerald-600">Configured</span>
-                      ) : (
-                        ""
-                      )}
-                    </p>
-                  </div>
                 </div>
-
                 <div className="rounded-lg bg-muted/30 p-4 text-sm">
-                  <p className="font-medium mb-2">Configuration details:</p>
-                  <ul className="space-y-1 text-muted-foreground">
-                    <li>• SMTP Host: smtp.gmail.com</li>
-                    <li>• SMTP Port: 587 (TLS)</li>
-                    <li>• Authentication: OAuth2 (App Password)</li>
-                  </ul>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Note: Only Gmail is currently supported. Other email providers are not supported at this time.
-                  </p>
+                  <p className="font-medium">Gmail API connection</p>
+                  <p className="mt-2 text-muted-foreground">Emails are sent securely over HTTPS. Authorize the sending Google account once and configure its OAuth credentials in the backend hosting settings.</p>
+                  <p className="mt-2 text-xs text-muted-foreground">Required: GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, and GMAIL_OAUTH_REFRESH_TOKEN. Use the same Gmail address as the authorized account, or a verified send-as alias. App Passwords are no longer used.</p>
                 </div>
               </CardContent>
               <CardFooter className="flex flex-col gap-3 border-t bg-muted/30 px-6 py-4 sm:flex-row sm:justify-between">
                 <div className="flex items-center gap-2 text-sm">
-                  {settings.gmail_app_password_configured ? (
+                  {settings.gmail_api_configured ? (
                     <>
                       <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                      <span className="text-emerald-600">Credentials configured</span>
+                      <span className="text-emerald-600">OAuth credentials present — send a test to verify</span>
                     </>
                   ) : (
                     <>
                       <WifiOff className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">Credentials not configured</span>
+                      <span className="text-muted-foreground">Gmail API setup required</span>
                     </>
                   )}
                 </div>
-                <Button onClick={handleSave} disabled={saving || !settings.enabled} className="gap-2">
+                <Button onClick={handleSave} disabled={saving} className="gap-2">
                   <Save className="h-4 w-4" />
                   {saving ? "Saving…" : "Save Settings"}
                 </Button>

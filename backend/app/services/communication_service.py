@@ -1,15 +1,13 @@
 """Communication settings management service.
 
 Provides centralized configuration for communication channels (email, WhatsApp, SMS, etc.).
-Currently supports Gmail for email sending via SMTP.
+Currently supports Gmail for email sending via the Gmail API.
 """
 
 from __future__ import annotations
 
 import base64
 import hashlib
-import smtplib
-import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
@@ -19,17 +17,13 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.services.gmail_api_service import GmailDeliveryError, gmail_api_configured, send_gmail_message
 from app.config import get_settings
 from app.services.audit_service import record_audit
 from models import CommunicationConfig
 
 # Email channel identifier
 EMAIL_CHANNEL = "EMAIL"
-
-# Gmail SMTP configuration (fixed - admin doesn't configure these)
-GMAIL_SMTP_HOST = "smtp.gmail.com"
-GMAIL_SMTP_PORT = 587
-GMAIL_SMTP_USE_TLS = True
 
 # Sensitive keys in configuration
 _SENSITIVE_KEYS = frozenset({"gmail_app_password"})
@@ -119,6 +113,7 @@ def get_communication_settings(db: Session) -> dict[str, Any]:
             "sender_name": "",
             "gmail_address": "",
             "gmail_app_password_configured": False,
+            "gmail_api_configured": gmail_api_configured(),
         }
 
     config_data = config.configuration or {}
@@ -130,6 +125,7 @@ def get_communication_settings(db: Session) -> dict[str, Any]:
             db.commit()
             config_data = config.configuration or {}
     return {
+        "gmail_api_configured": gmail_api_configured(),
         "channel": config.channel,
         "enabled": config.enabled,
         "sender_name": config_data.get("sender_name", ""),
@@ -218,25 +214,8 @@ def send_test_email(
 
     sender_name = config_data.get("sender_name", "")
     gmail_address = config_data.get("gmail_address", "")
-    gmail_app_password = config_data.get("gmail_app_password", "")
-
-    # Validate we have all required credentials
-    if not sender_name or not gmail_address or not gmail_app_password:
-        return False, "Gmail credentials are not configured"
-
-    # Decrypt the password
-    decrypted_password = _decrypt_value(gmail_app_password)
-
-    if not decrypted_password:
-        return False, "Stored Gmail credential cannot be decrypted; set COMMUNICATION_ENCRYPTION_KEY and save the App Password again"
-
-    _upgrade_legacy_gmail_password(config, gmail_app_password, decrypted_password)
-    db.commit()
-
-    # Normalize: strip spaces and non-breaking spaces that Gmail may include
-    decrypted_password = decrypted_password.replace("\xa0", "").replace(" ", "").strip()
-
-    settings = get_settings()
+    if not sender_name or not gmail_address:
+        return False, "Sender name and Gmail address are required"
 
     try:
         # Create message with proper encoding
@@ -244,7 +223,7 @@ def send_test_email(
         # Use encoded words for non-ASCII sender names
         msg["From"] = f"=?utf-8?B?{base64.b64encode(sender_name.encode('utf-8')).decode()}?= <{gmail_address}>"
         msg["To"] = recipient_email
-        msg["Subject"] = "=?utf-8?B?{base64.b64encode('SportPass Email Test'.encode('utf-8')).decode()}?="
+        msg["Subject"] = "SportPass Email Test"
 
         body = """Your SportPass email configuration is working successfully.
 
@@ -253,30 +232,9 @@ This is a test email to verify your email settings are correct.
 If you're reading this, your email configuration is working!"""
         msg.attach(MIMEText(body, "plain", "utf-8"))
 
-        # Send via Gmail SMTP
-        context = ssl.create_default_context()
-        # For development, allow self-signed certificates
-        if settings.environment != "production":
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-
-        # Never let an unavailable SMTP endpoint hold a request open
-        # indefinitely. The frontend has a finite request timeout, so return
-        # a useful connection error instead of making the browser abort.
-        with smtplib.SMTP(GMAIL_SMTP_HOST, GMAIL_SMTP_PORT, timeout=10) as server:
-            server.starttls(context=context)
-            server.login(gmail_address, decrypted_password)
-            server.send_message(msg)
-
+        send_gmail_message(msg)
         return True, "Test email sent successfully"
-
-    except smtplib.SMTPAuthenticationError:
-        return False, "Gmail authentication failed"
-    except smtplib.SMTPConnectError:
-        return False, "Unable to connect"
-    except smtplib.SMTPException as exc:
-        if "Authentication" in str(exc):
-            return False, "Gmail authentication failed"
-        return False, f"Gmail error: {str(exc)}"
-    except Exception as exc:
-        return False, f"Unable to connect: {str(exc)}"
+    except GmailDeliveryError as exc:
+        return False, str(exc)
+    except Exception:
+        return False, "Could not prepare or send the test email"

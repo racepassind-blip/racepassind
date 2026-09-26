@@ -55,6 +55,9 @@ class Settings:
     google_client_id: str | None = field(default=None, repr=False)
     google_client_secret: str | None = field(default=None, repr=False)
     google_redirect_uri: str | None = None
+    gmail_oauth_client_id: str | None = field(default=None, repr=False)
+    gmail_oauth_client_secret: str | None = field(default=None, repr=False)
+    gmail_oauth_refresh_token: str | None = field(default=None, repr=False)
     ticket_signing_secret: str | None = field(default=None, repr=False)
     storage_mode: str = "s3"
     storage_endpoint: str | None = field(default=None, repr=False)
@@ -87,6 +90,9 @@ class Settings:
             google_client_id=os.getenv("GOOGLE_CLIENT_ID"),
             google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
             google_redirect_uri=os.getenv("GOOGLE_REDIRECT_URI"),
+            gmail_oauth_client_id=os.getenv("GMAIL_OAUTH_CLIENT_ID"),
+            gmail_oauth_client_secret=os.getenv("GMAIL_OAUTH_CLIENT_SECRET"),
+            gmail_oauth_refresh_token=os.getenv("GMAIL_OAUTH_REFRESH_TOKEN"),
             ticket_signing_secret=os.getenv("TICKET_SIGNING_SECRET"),
             storage_mode=os.getenv("STORAGE_MODE", "s3").strip().lower(),
             storage_endpoint=os.getenv("STORAGE_ENDPOINT"),
