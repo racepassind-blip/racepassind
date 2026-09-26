@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Check, RefreshCw, ShieldCheck, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Check, ChevronLeft, ChevronRight, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
@@ -20,27 +20,38 @@ interface OrganizerApplication {
   createdAt: string | null;
 }
 
+interface OrganizerApplicationPage {
+  items: OrganizerApplication[];
+  total: number;
+}
+
 const AdminOrganizerApplications = () => {
   const [applications, setApplications] = useState<OrganizerApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
 
-  const loadApplications = async () => {
+  const loadApplications = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setApplications(await apiRequest<OrganizerApplication[]>("/admin/organizer-applications?status=pending"));
+      const response = await apiRequest<OrganizerApplicationPage>(`/admin/organizer-applications?status=pending&page=${page}&page_size=${pageSize}`);
+      setApplications(response.items);
+      setTotal(response.total);
+      if (response.items.length === 0 && page > 1) setPage((current) => current - 1);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load organizer applications.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [page]);
 
   useEffect(() => {
     void loadApplications();
-  }, []);
+  }, [loadApplications]);
 
   const approve = async (application: OrganizerApplication) => {
     if (!window.confirm(`Approve ${application.applicantName} as an organizer for ${application.organizationName}?`)) return;
@@ -106,6 +117,7 @@ const AdminOrganizerApplications = () => {
                 </CardContent>
               </Card>
             ))}
+            {total > pageSize && <div className="flex items-center justify-between gap-3 pt-2"><p className="text-sm text-muted-foreground">Page {page} of {Math.ceil(total / pageSize)} · {total} pending applications</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage((current) => current + 1)}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>}
           </div>
         )}
       </div>

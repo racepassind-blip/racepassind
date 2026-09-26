@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from "react";
-import { BarChart3, CalendarDays, ClipboardList, ExternalLink, Gauge, GitBranch, LayoutDashboard, LogOut, Lock, Medal, MessageSquare, Package, ReceiptText, ScanLine, Settings2, Ticket, CreditCard, Timer, Trophy } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { BarChart3, CalendarDays, ClipboardList, CreditCard, ExternalLink, Gauge, GitBranch, LayoutDashboard, LogOut, Lock, Medal, MessageSquare, Package, ReceiptText, ScanLine, Settings2, Ticket, Timer, Trophy } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -9,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useOrganizerEventDashboard } from "@/hooks/useEvents";
 import { getSportConfig, eventSupportsTournament, isFreeEvent } from "@/data/sportConfig";
 import { cn } from "@/lib/utils";
+import { apiRequest } from "@/lib/api";
 
 type OrganizerDashboardLayoutProps = {
   children: ReactNode;
@@ -27,6 +29,14 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { data: eventDashboard } = useOrganizerEventDashboard(eventId);
+  const { data: creditAccounts = [] } = useQuery({
+    queryKey: ["organizer-credit-accounts"],
+    queryFn: async () => (await apiRequest<{ accounts: Array<{ organizationId: string; balancePaise: number }> }>("/organizer/credits")).accounts,
+    enabled: user?.role === "organizer" || user?.role === "admin",
+    staleTime: 30_000,
+  });
+  const availableCredits = creditAccounts.reduce((sum, account) => sum + account.balancePaise, 0) / 100;
+  const creditLabel = `${availableCredits.toLocaleString("en-IN", { maximumFractionDigits: 2 })} Credits`;
   const eventQuery = eventId ? `?event_id=${eventId}&status=all` : "";
   const currentSportConfig = getSportConfig(eventDashboard?.event.sport);
   const supportsTournament = eventSupportsTournament(eventDashboard?.event.sport, eventDashboard?.event.categories);
@@ -42,7 +52,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const supportsRaceResults = eventId ? currentSportConfig.result_type === "race_time" : false;
 
   const availableItems: NavItem[] = [
-    ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: "Events", icon: CalendarDays, to: "/organizer" }, { label: "Plans & pricing", icon: CreditCard, to: "/organizer/pricing" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }]),
+    ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: "Events", icon: CalendarDays, to: "/organizer" }, { label: "SportPass Credits", icon: CreditCard, to: "/organizer/credits" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }]),
     ...(eventId && supportsTournamentUnlocked ? [
       { label: "Tournament setup", icon: Settings2, to: `/organizer/events/${eventId}/tournament` },
       { label: "Matches", icon: Trophy, to: `/organizer/events/${eventId}/tournament/matches` },
@@ -154,15 +164,16 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
         )}
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-card/95 px-4 backdrop-blur sm:px-6 lg:px-8">
-            <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">{eventId ? "Event management" : "Organizer workspace"}</p><p className="mt-0.5 text-sm text-muted-foreground">Plan, publish, and run your races</p></div>
+            <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">{eventId ? "Event management" : "Organizer workspace"}</p><p className="mt-0.5 text-sm text-muted-foreground">Plan, publish, and run your events</p></div>
             <div className="flex items-center gap-2 sm:gap-3">
               <Button asChild variant="ghost" size="sm" className="hidden gap-2 text-muted-foreground sm:flex"><Link to="/"><ExternalLink className="h-4 w-4" /> Public site</Link></Button>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild><Button variant="ghost" className="gap-2 px-2"><Avatar className="h-8 w-8"><AvatarFallback className="bg-primary text-xs text-primary-foreground">{initials}</AvatarFallback></Avatar><span className="hidden max-w-40 truncate text-sm font-medium md:inline">{user?.name ?? "Organizer"}</span></Button></DropdownMenuTrigger>
+                <DropdownMenuTrigger asChild><Button variant="ghost" className="h-auto gap-2 px-2 py-1"><Avatar className="h-8 w-8"><AvatarFallback className="bg-primary text-xs text-primary-foreground">{initials}</AvatarFallback></Avatar><span className="max-w-44 text-left"><span className="hidden truncate text-sm font-medium md:block">{user?.name ?? "Organizer"}</span><span className="block truncate text-xs font-semibold text-primary">{creditLabel}</span></span></Button></DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <div className="px-2 py-1.5"><p className="text-sm font-medium">{user?.name ?? "Organizer"}</p><p className="text-xs text-muted-foreground">{user?.email ?? ""}</p></div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => navigate("/organizer")}><CalendarDays className="mr-2 h-4 w-4" />All events</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate("/organizer/credits")}><CreditCard className="mr-2 h-4 w-4" />{creditLabel}</DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => void handleLogout()} className="text-destructive"><LogOut className="mr-2 h-4 w-4" />Log out</DropdownMenuItem>
                 </DropdownMenuContent>

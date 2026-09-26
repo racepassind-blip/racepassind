@@ -93,7 +93,7 @@ function Hero() {
           <Button
             asChild
             size="lg"
-            className="bg-[#ff9933] font-bold text-[#101b35] hover:bg-[#e8883a]"
+            className="bg-primary font-bold text-primary-foreground hover:bg-primary/90"
           >
             <Link to="/organizers">Organize with SportPass</Link>
           </Button>
@@ -318,7 +318,7 @@ function TheAnswer() {
           <Button
             asChild
             size="lg"
-            className="bg-[#ff9933] font-bold text-[#101b35] hover:bg-[#e8883a]"
+            className="bg-primary font-bold text-primary-foreground hover:bg-primary/90"
           >
             <Link to="/organizers">Organize with SportPass</Link>
           </Button>
@@ -551,7 +551,7 @@ function FinalCTA() {
           <Button
             asChild
             size="lg"
-            className="bg-[#ff9933] font-bold text-[#101b35] hover:bg-[#e8883a]"
+            className="bg-primary font-bold text-primary-foreground hover:bg-primary/90"
           >
             <Link to="/organizers">Organize with SportPass</Link>
           </Button>

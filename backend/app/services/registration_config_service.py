@@ -294,6 +294,10 @@ def normalize_addon_config(config: dict[str, Any] | None) -> dict[str, list[dict
             raise ValueError("Add-on ids must be unique and start with addon_")
         seen.add(addon_id)
         name = _clean_text(raw.get("name"), "Add-on name")
+        raw_description = raw.get("description")
+        description = ""
+        if raw_description not in (None, ""):
+            description = _clean_text(raw_description, f"Description for {name}", max_length=500)
         try:
             price_paise = int(raw.get("price_paise", 0))
         except (TypeError, ValueError) as exc:
@@ -307,6 +311,7 @@ def normalize_addon_config(config: dict[str, Any] | None) -> dict[str, list[dict
         addon: dict[str, Any] = {
             "id": addon_id,
             "name": name,
+            "description": description,
             "price_paise": price_paise,
             "type": addon_type,
             "required": required,

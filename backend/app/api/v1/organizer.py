@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 from uuid import UUID
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_authorized_event, get_authorized_organization, get_current_user, require_csrf, require_roles
@@ -15,6 +16,7 @@ from app.infrastructure.storage.factory import get_storage_service
 from app.schemas.checkins import CheckpointCreateIn, CheckpointUpdateIn
 from app.schemas.registrations import CategoryTransferIn, ManualRegistrationCreateIn, PaymentDecisionIn
 from app.services.auth_service import utc_now
+from app.services.credit_service import CreditValidationError, get_balance, get_credit_payment_settings, request_topup
 from app.services.checkpoint_service import (
     create_event_checkpoint,
     delete_event_checkpoint,
@@ -23,8 +25,6 @@ from app.services.checkpoint_service import (
     list_event_checkpoints,
     update_event_checkpoint,
 )
-from app.services.pricing_service import get_organizer_pricing
-from app.services.platform_fee_service import list_organizer_platform_fees
 from app.services.rate_limit_service import RateLimitExceeded, enforce_payment_decision_limit
 from app.services.registration_service import (
     CsvExportTooLargeError,
@@ -40,9 +40,21 @@ from app.services.media_service import resolve_media_url, upload_media
 from app.services.storage_service import StorageError
 from app.services.audit_service import record_audit
 from db import get_db
-from models import Organization, OrganizationMember, User
+from models import CreditTopupRequest, CreditTransaction, Organization, OrganizationMember, Registration, User
 
 router = APIRouter()
+
+class CreditTopupIn(BaseModel):
+    organization_id: UUID
+    amount_paise: int = Field(gt=0)
+    utr_reference: str = Field(min_length=3, max_length=160)
+    screenshot: str | None = Field(default=None, max_length=2000)
+    payment_method: Literal["UPI"] = "UPI"
+
+def _credit_org_ids(db: Session, user: User) -> list[UUID]:
+    if user.role == "admin":
+        return list(db.scalars(select(Organization.id).where(Organization.status == "active")).all())
+    return list(db.scalars(select(Organization.id).join(OrganizationMember, OrganizationMember.organization_id == Organization.id).where(OrganizationMember.user_id == user.id, OrganizationMember.member_role == "organizer", Organization.status == "active")).all())
 
 
 class OrganizationProfileIn(BaseModel):
@@ -581,40 +593,6 @@ def transfer_registration_category_endpoint(
     return result
 
 
-@router.get("/pricing")
-def organizer_pricing(
-    user: User = Depends(require_roles("organizer", "admin")),
-    db: Session = Depends(get_db),
-) -> dict:
-    return get_organizer_pricing(db, user)
-
-
-@router.get("/platform-fees")
-def organizer_platform_fees(
-    user: User = Depends(require_roles("organizer", "admin")),
-    db: Session = Depends(get_db),
-) -> dict:
-    """Organizer-scoped SportPass platform-fee accruals and bills.
-
-    Admins see every organization's records; organizers only see the
-    organizations they are a member of.
-    """
-    if user.role == "admin":
-        organization_ids = list(db.scalars(select(Organization.id).where(Organization.status == "active")).all())
-    else:
-        organization_ids = list(
-            db.scalars(
-                select(Organization.id)
-                .join(OrganizationMember, OrganizationMember.organization_id == Organization.id)
-                .where(
-                    OrganizationMember.user_id == user.id,
-                    OrganizationMember.member_role == "organizer",
-                    Organization.status == "active",
-                )
-            ).all()
-        )
-    return list_organizer_platform_fees(db, organization_ids)
-
 
 @router.post("/organizations/{organization_id}/logo")
 def upload_organization_logo(
@@ -783,3 +761,56 @@ def broadcast_event_email(
         html_body=html_body,
     )
     return summary
+
+
+@router.get("/credits")
+def organizer_credits(amount_paise: int | None = Query(default=None, ge=0), user: User = Depends(require_roles("organizer", "admin")), db: Session = Depends(get_db)) -> dict:
+    organization_ids = _credit_org_ids(db, user)
+    organization_name = None
+    if organization_ids:
+        organization = db.get(Organization, organization_ids[0])
+        organization_name = organization.name if organization else None
+    return {"accounts": [{"organizationId": str(org_id), "balancePaise": get_balance(db, org_id)} for org_id in organization_ids], "paymentSettings": get_credit_payment_settings(db, amount_paise=amount_paise, organizer_name=organization_name)}
+
+
+@router.get("/credits/transactions")
+def organizer_credit_transactions(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    organization_ids = _credit_org_ids(db, user)
+    filters = [CreditTransaction.organization_id.in_(organization_ids)]
+    total = int(db.scalar(select(func.count()).select_from(CreditTransaction).where(*filters)) or 0)
+    rows = db.scalars(select(CreditTransaction).where(*filters).order_by(CreditTransaction.created_at.desc(), CreditTransaction.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
+    registration_refs = {str(registration.id): registration.registration_reference or str(registration.id) for registration in db.scalars(select(Registration).where(Registration.id.in_([row.registration_id for row in rows if row.registration_id]))).all()}
+    return {"items": [{"id": str(row.id), "organizationId": str(row.organization_id), "type": row.type, "amountPaise": row.balance_after_paise - row.balance_before_paise, "balanceBeforePaise": row.balance_before_paise, "balanceAfterPaise": row.balance_after_paise, "eventId": str(row.event_id) if row.event_id else None, "registrationId": str(row.registration_id) if row.registration_id else None, "registrationReference": registration_refs.get(str(row.registration_id)) if row.registration_id else None, "description": f"{row.description} · Registration: {registration_refs.get(str(row.registration_id))}" if row.registration_id else row.description, "reason": row.reason, "createdAt": row.created_at} for row in rows], "page": page, "pageSize": page_size, "total": total}
+
+
+@router.get("/credits/topups")
+def organizer_credit_topups(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    organization_ids = _credit_org_ids(db, user)
+    filters = [CreditTopupRequest.organization_id.in_(organization_ids)]
+    total = int(db.scalar(select(func.count()).select_from(CreditTopupRequest).where(*filters)) or 0)
+    pending = int(db.scalar(select(func.count()).select_from(CreditTopupRequest).where(*filters, CreditTopupRequest.status == "PENDING")) or 0)
+    rows = db.scalars(select(CreditTopupRequest).where(*filters).order_by(CreditTopupRequest.requested_at.desc(), CreditTopupRequest.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
+    return {"items": [{"id": str(row.id), "organizationId": str(row.organization_id), "amountPaise": row.amount_paise, "creditsPaise": row.credits_paise, "utrReference": row.utr_reference, "status": row.status, "requestedAt": row.requested_at, "rejectionReason": row.rejection_reason} for row in rows], "page": page, "pageSize": page_size, "total": total, "pending": pending}
+
+
+@router.post("/credits/topups")
+def organizer_request_credit_topup(payload: CreditTopupIn, user: User = Depends(require_roles("organizer", "admin")), db: Session = Depends(get_db)) -> dict:
+    if payload.organization_id not in _credit_org_ids(db, user):
+        raise HTTPException(status_code=403, detail="Organization access denied")
+    try:
+        row = request_topup(db, organization_id=payload.organization_id, amount_paise=payload.amount_paise, utr_reference=payload.utr_reference, screenshot=payload.screenshot, payment_method=payload.payment_method)
+        db.commit()
+        return {"id": str(row.id), "status": row.status, "amountPaise": row.amount_paise, "creditsPaise": row.credits_paise}
+    except CreditValidationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

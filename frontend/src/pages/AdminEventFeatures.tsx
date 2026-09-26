@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { CalendarDays, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
@@ -22,6 +22,12 @@ interface AdminEvent {
   featuresUnlocked: boolean;
 }
 
+interface AdminEventPage {
+  items: AdminEvent[];
+  total: number;
+  summary: { participants: number; organizations: number; featuresUnlocked: number };
+}
+
 function formatDate(value: string | null) {
   if (!value) return "—";
   const date = new Date(value);
@@ -38,19 +44,26 @@ const AdminEventFeatures = () => {
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState({ organizations: 0, featuresUnlocked: 0 });
+  const pageSize = 25;
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      setEvents(await apiRequest<AdminEvent[]>("/admin/events?archived=false"));
+      const response = await apiRequest<AdminEventPage>(`/admin/events?archived=false&page=${page}&page_size=${pageSize}`);
+      setEvents(response.items);
+      setTotal(response.total);
+      setSummary(response.summary);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not load events.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [page]);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [load]);
 
   const toggleOverride = async (event: AdminEvent, next: boolean) => {
     setPendingId(event.id);
@@ -61,6 +74,7 @@ const AdminEventFeatures = () => {
         method: "POST",
         body: JSON.stringify({ features_unlocked: next }),
       });
+      setSummary((current) => ({ ...current, featuresUnlocked: current.featuresUnlocked + (next ? 1 : -1) }));
       toast.success(next ? `All features unlocked for ${event.name}.` : `Feature override removed for ${event.name}.`);
     } catch (error) {
       // Revert on failure
@@ -70,8 +84,6 @@ const AdminEventFeatures = () => {
       setPendingId(null);
     }
   };
-
-  const unlockedCount = events.filter((event) => event.featuresUnlocked).length;
 
   return (
     <AdminDashboardLayout>
@@ -88,9 +100,9 @@ const AdminEventFeatures = () => {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <Card><CardContent className="flex items-center gap-3 p-5"><CalendarDays className="h-5 w-5 text-primary" /><div><p className="text-2xl font-black">{events.length}</p><p className="text-sm text-muted-foreground">Active events</p></div></CardContent></Card>
-          <Card><CardContent className="flex items-center gap-3 p-5"><Sparkles className="h-5 w-5 text-amber-600" /><div><p className="text-2xl font-black">{unlockedCount}</p><p className="text-sm text-muted-foreground">Feature overrides active</p></div></CardContent></Card>
-          <Card><CardContent className="flex items-center gap-3 p-5"><ShieldCheck className="h-5 w-5 text-emerald-700" /><div><p className="text-2xl font-black">{new Set(events.map((event) => event.organization.id)).size}</p><p className="text-sm text-muted-foreground">Organizations</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-5"><CalendarDays className="h-5 w-5 text-primary" /><div><p className="text-2xl font-black">{total}</p><p className="text-sm text-muted-foreground">Active events</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-5"><Sparkles className="h-5 w-5 text-amber-600" /><div><p className="text-2xl font-black">{summary.featuresUnlocked}</p><p className="text-sm text-muted-foreground">Feature overrides active</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-5"><ShieldCheck className="h-5 w-5 text-emerald-700" /><div><p className="text-2xl font-black">{summary.organizations}</p><p className="text-sm text-muted-foreground">Organizations</p></div></CardContent></Card>
         </div>
 
         <Card>
@@ -129,6 +141,7 @@ const AdminEventFeatures = () => {
                 </tbody>
               </table>
             </div>
+            {total > pageSize && <div className="flex items-center justify-between gap-3 border-t px-5 py-4"><p className="text-sm text-muted-foreground">Page {page} of {Math.ceil(total / pageSize)} · {total} active events</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage((current) => current + 1)}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>}
           </CardContent>
         </Card>
       </div>

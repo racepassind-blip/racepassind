@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut, Menu, ReceiptText, ShieldCheck, Ticket, X } from "lucide-react";
+import { LayoutDashboard, LogOut, Menu, ShieldCheck, Ticket, X } from "lucide-react";
 import { useState } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -21,12 +21,11 @@ export function Navbar() {
 
   const dashboardPath = isAdmin ? "/admin" : isStaff ? "/organizer" : "/dashboard";
   const links: Array<{ to: string; label: string; comingSoon?: boolean }> = [
-    { to: "/", label: "Browse Events" },
+    { to: "/events", label: "Browse Events" },
     { to: "/organizers", label: "For Organizers" },
     { to: "/federations-associations", label: "Federations & Associations", comingSoon: true },
     ...(user && isAdmin ? [{ to: "/admin", label: "Admin workspace" }] : []),
     ...(user && isStaff ? [{ to: "/organizer", label: "Manage Events" }] : []),
-    ...(user && isStaff && !isAdmin ? [{ to: "/organizer/pricing", label: "Plans & Pricing" }] : []),
     ...(user && !isStaff ? [{ to: "/dashboard", label: "My Dashboard" }] : []),
   ];
 
@@ -88,12 +87,6 @@ export function Navbar() {
                   <LayoutDashboard className="mr-2 h-4 w-4" />
                   {isStaff ? "Manage Events" : "Dashboard"}
                 </DropdownMenuItem>
-                {isAdmin && (
-                  <DropdownMenuItem onClick={() => navigate("/admin/billing")}>
-                    <ReceiptText className="mr-2 h-4 w-4" />
-                    Organizer billing
-                  </DropdownMenuItem>
-                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => void handleLogout()} className="text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />

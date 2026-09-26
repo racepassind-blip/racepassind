@@ -30,6 +30,7 @@ export interface ParticipantFieldConfig {
 export interface AddonDefinition {
   id: string;
   name: string;
+  description?: string;
   price_paise: number;
   type: "single_select" | "quantity";
   required: boolean;
@@ -50,6 +51,7 @@ export interface EventAddonConfig {
 }
 
 export interface EventScheduleItem {
+  date?: string;
   time: string;
   label: string;
 }
@@ -68,6 +70,7 @@ export interface SportEvent {
   id: string;
   title: string;
   date: string;
+  endDate?: string | null;
   location: string;
   locationDetails?: EventLocationDetails;
   category: string;
@@ -87,7 +90,8 @@ export interface SportEvent {
   tiers: TicketTier[];
   platformFeeBearer?: "ORGANIZER" | "PARTICIPANT";
   sportPassFeePercentageBasisPoints?: number;
-  sportPassFeePerRegistrationPaise?: number;
+  sportPassFeeMinimumPaise?: number;
+  sportPassFeeMaximumPaise?: number;
   // Refund policy (only present when enabled)
   refundPolicyEnabled?: boolean;
   refundPolicyType?: "full_refund" | "partial_refund" | "organizer_approval" | "no_refund" | null;

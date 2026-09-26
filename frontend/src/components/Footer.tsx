@@ -40,7 +40,7 @@ export function Footer() {
                 <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#25D366] text-[10px] font-bold text-white">WA</span>
                 Chat with us on WhatsApp
               </a></li>
-              <li><a href="mailto:sportpassind@gmail.com" className="hover:text-foreground transition-colors">support@sportpassindia.com</a></li>
+              <li><a href="mailto:sportpassind@gmail.com" className="hover:text-foreground transition-colors">sportpassind@gmail.com</a></li>
               <li><a href="mailto:sportpassind@gmail.com" className="hover:text-foreground transition-colors">Partner with us</a></li>
             </ul>
           </div>

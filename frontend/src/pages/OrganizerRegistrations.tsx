@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Clock3, Download, Mail, ScanLine, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Clock3, Download, Mail, RefreshCw, ScanLine, Search, SlidersHorizontal, UserPlus, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiRequest } from "@/lib/api";
 import { scrollToTop } from "@/lib/scroll";
 import type { OrganizerVisibility } from "@/hooks/useEvents";
@@ -27,7 +26,7 @@ interface OrganizerEventOption {
   addonConfig?: { addons?: Array<{ id: string; name: string; type?: string; price_paise?: number }> } | null;
 }
 
-type RegistrationStatus = "awaiting_payment" | "pending_verification" | "confirmed" | "rejected" | "expired" | "checked_in";
+type RegistrationStatus = "awaiting_payment" | "pending_verification" | "AWAITING_SPORTPASS_CREDITS" | "confirmed" | "rejected" | "expired" | "checked_in";
 type Decision = "approve" | "reject";
 type FilterKey = "eventId" | "categoryId" | "ticketId" | "status" | "paymentStatus" | "checkInStatus" | "search" | "participant" | "email" | "phone" | "registrationReference";
 
@@ -108,7 +107,7 @@ function paymentBadge(status: string) {
 
 function registrationBadge(status: RegistrationStatus) {
   const variant = status === "confirmed" || status === "checked_in" ? "default" : status === "rejected" || status === "expired" ? "destructive" : "secondary";
-  return <Badge variant={variant}>{status.replaceAll("_", " ")}</Badge>;
+  return <Badge variant={variant}>{status === "AWAITING_SPORTPASS_CREDITS" ? "Awaiting SportPass Credits" : status.replaceAll("_", " ")}</Badge>;
 }
 
 function emailBadge(status: string | null) {
@@ -144,63 +143,6 @@ function formatINR(amountPaise: number) {
 function formatDate(value: string) {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-}
-
-const HIDDEN_RESPONSE_KEYS = ["full_name", "email", "phone", "team_name", "captain_name", "captain_email", "captain_phone"];
-
-function formatResponseValue(value: unknown): string {
-  if (value === true) return "Yes";
-  if (value === false) return "No";
-  return String(value);
-}
-
-function teamRosterSummary(registration: OrganizerRegistration) {
-  const responses = registration.responses ?? {};
-  const teamName = responses.team_name as string | undefined;
-  const captainName = responses.captain_name as string | undefined;
-  const members = registration.participants ?? [];
-  const isTeam = Boolean(teamName) || (registration.participantCount ?? 1) > 1;
-  if (!isTeam) return null;
-
-  const captainInfoEntries = Object.entries(responses).filter(([key]) => ["captain_name", "captain_email", "captain_phone"].includes(key));
-  return (
-    <details className="mt-2 text-xs">
-      <summary className="cursor-pointer text-primary">Team roster ({members.length || registration.participantCount || 0} members)</summary>
-      <div className="mt-2 space-y-3 rounded-md bg-muted/40 p-2">
-        <div className="space-y-1">
-          {teamName && <p><span className="font-medium">Team:</span> {teamName}</p>}
-          {captainName && <p><span className="font-medium">Captain:</span> {captainName}</p>}
-          {captainInfoEntries.filter(([key]) => key !== "captain_name").map(([key, value]) => (
-            <p key={key}><span className="font-medium">{key.replaceAll("_", " ")}:</span> {formatResponseValue(value)}</p>
-          ))}
-        </div>
-        {members.length > 0 && (
-          <div className="space-y-2">
-            {members.map((member) => {
-              const memberResponses = Object.entries(member.responses ?? {}).filter(([key]) => !HIDDEN_RESPONSE_KEYS.includes(key));
-              return (
-                <div key={member.index} className="rounded border bg-background p-2">
-                  <p className="font-semibold">Member {member.index}: {member.participant.name}</p>
-                  {memberResponses.map(([key, value]) => (
-                    <p key={key}><span className="font-medium">{key.replaceAll("_", " ")}:</span> {formatResponseValue(value)}</p>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </details>
-  );
-}
-
-function dynamicRegistrationSummary(registration: OrganizerRegistration, addonDefs: Record<string, string> = {}) {
-  const teamSummary = teamRosterSummary(registration);
-  if (teamSummary) return teamSummary;
-  const responseEntries = Object.entries(registration.responses ?? {}).filter(([key]) => !["full_name", "email", "phone"].includes(key));
-  const addonEntries = Object.entries(registration.selections ?? {});
-  if (responseEntries.length === 0 && addonEntries.length === 0) return null;
-  return <details className="mt-2 text-xs"><summary className="cursor-pointer text-primary">Participant details</summary><div className="mt-2 space-y-1 rounded-md bg-muted/40 p-2">{responseEntries.map(([key, value]) => <p key={key}><span className="font-medium">{key.replaceAll("_", " ")}:</span> {String(value)}</p>)}{addonEntries.map(([key, value]) => <p key={key}><span className="font-medium">{addonDefs[key] ?? key.replaceAll("_", " ")}:</span> {value.selected ?? value.qty ?? "—"}</p>)}{registration.computedTotal.addonTotalPaise !== undefined && <p className="font-medium">Add-ons: {formatINR(registration.computedTotal.addonTotalPaise)}</p>}</div></details>;
 }
 
 // ─── Registration detail drawer ───────────────────────────────────────────────
@@ -591,6 +533,7 @@ const OrganizerRegistrations = () => {
   const [resendId, setResendId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [detailRegistration, setDetailRegistration] = useState<OrganizerRegistration | null>(null);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(() => ["category_id", "ticket_id", "payment_status", "check_in_status", "participant", "email", "phone", "registration_reference"].some((key) => searchParams.has(key)));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -669,6 +612,16 @@ const OrganizerRegistrations = () => {
     filters.phone.trim(),
     filters.registrationReference.trim(),
   ].filter(Boolean).length;
+  const detailedFilterCount = [
+    filters.categoryId,
+    filters.ticketId,
+    filters.paymentStatus !== "all" ? filters.paymentStatus : "",
+    filters.checkInStatus !== "all" ? filters.checkInStatus : "",
+    filters.participant.trim(),
+    filters.email.trim(),
+    filters.phone.trim(),
+    filters.registrationReference.trim(),
+  ].filter(Boolean).length;
   const exportIsFiltered = activeFilterCount > 0;
 
   const syncFiltersToUrl = (nextFilters: RegistrationFilters) => {
@@ -712,7 +665,7 @@ const OrganizerRegistrations = () => {
   };
 
   const clearAllFilters = () => {
-    applyFilters({ ...EMPTY_FILTERS, eventId: eventScoped ? filters.eventId : "" });
+    applyFilters({ ...EMPTY_FILTERS, eventId: eventScoped ? filters.eventId : "", status: "all" });
   };
 
   const goNext = () => {
@@ -812,67 +765,55 @@ const OrganizerRegistrations = () => {
 
   return (
     <OrganizerDashboardLayout eventId={filters.eventId || undefined}>
-      <div className="mx-auto max-w-7xl space-y-6 px-4 py-10 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate(eventScoped ? `/organizer/events/${filters.eventId}` : "/organizer")} aria-label={eventScoped ? "Back to event dashboard" : "Back to organizer dashboard"}><ArrowLeft className="h-4 w-4" /></Button>
-            <div><h1 className="text-2xl font-extrabold tracking-tight">{eventScoped ? "Event registrations" : "Organizer registrations"}</h1><p className="text-sm text-muted-foreground">{eventScoped ? "Registrations for this event." : "All event registrations. Select an event to focus the workspace."}</p></div>
+      <div className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <section className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <Button variant="ghost" size="icon" className="mt-0.5 shrink-0" onClick={() => navigate(eventScoped ? `/organizer/events/${filters.eventId}` : "/organizer")} aria-label={eventScoped ? "Back to event dashboard" : "Back to organizer dashboard"}><ArrowLeft className="h-4 w-4" /></Button>
+              <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Registration workspace</p><h1 className="mt-1 truncate text-2xl font-black tracking-tight sm:text-3xl">{eventScoped ? selectedEvent?.name ?? "Event registrations" : "All registrations"}</h1><p className="mt-1 text-sm text-muted-foreground">Review payments, confirm participants, and keep each registration’s audit details in one place.</p></div>
+            </div>
+            <div className="flex flex-wrap gap-2 pl-12 lg:pl-0">
+              {eventScoped && <Button variant="outline" onClick={() => navigate(`/organizer/events/${filters.eventId}/check-in`)} className="gap-2"><ScanLine className="h-4 w-4" /> Check-in matrix</Button>}
+              {eventScoped && <Button onClick={() => navigate(`/organizer/events/${filters.eventId}/participants/new`)} className="gap-2"><UserPlus className="h-4 w-4" /> Add participant</Button>}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {!eventScoped && <Button variant="outline" onClick={() => navigate(`/organizer/check-in?event_id=${encodeURIComponent(filters.eventId)}`)}>Race check-in</Button>}
-            {eventScoped && <Button variant="outline" onClick={() => navigate(`/organizer/events/${filters.eventId}/check-in`)} className="gap-2"><ScanLine className="h-4 w-4" /> Check-in matrix</Button>}
-            {eventScoped && <Button onClick={() => navigate(`/organizer/events/${filters.eventId}/participants/new`)} className="gap-2"><UserPlus className="h-4 w-4" /> Add manual participant</Button>}
-            <Button onClick={() => void exportCsv()} disabled={!filters.eventId || exporting} className="gap-2"><Download className="h-4 w-4" />{exporting ? "Exporting…" : exportIsFiltered ? "Export filtered CSV" : "Export event CSV"}</Button>
-          </div>
-        </div>
+        </section>
 
         {eventsError && <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{eventsError}</div>}
-        <div className="space-y-4 rounded-xl border bg-card p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div><p className="font-semibold">Find registrations</p><p className="text-xs text-muted-foreground">Choose a category first to narrow the available tiers.</p></div>
-            {activeFilterCount > 0 && <Button variant="ghost" size="sm" onClick={clearAllFilters}>Clear all filters</Button>}
+        <div className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative w-full lg:max-w-xl"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder="Search participant, email, phone, or registration number" className="h-11 pl-9" /></div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant={moreFiltersOpen ? "secondary" : "outline"} className="gap-2" onClick={() => setMoreFiltersOpen((open) => !open)}><SlidersHorizontal className="h-4 w-4" /> More filters{detailedFilterCount > 0 ? ` (${detailedFilterCount})` : ""}</Button>
+              <Button type="button" variant="outline" size="icon" onClick={() => setRefreshNonce((value) => value + 1)} disabled={loading} aria-label="Refresh registrations" title="Refresh registrations"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></Button>
+              {activeFilterCount > 0 && <Button variant="ghost" onClick={clearAllFilters}>Clear filters</Button>}
+            </div>
           </div>
-          <div className={eventScoped ? "grid gap-3 md:grid-cols-3 lg:grid-cols-5" : "grid gap-3 md:grid-cols-3 lg:grid-cols-6"}>
-            {!eventScoped && <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Event</label><Select value={filters.eventId || "all"} onValueChange={handleEventChange} disabled={eventsLoading}>
-              <SelectTrigger><SelectValue placeholder="All events" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">All events</SelectItem>{events.map((event) => <SelectItem key={event.id} value={event.id}>{event.name}</SelectItem>)}</SelectContent>
-            </Select></div>}
-            <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Category</label><Select value={filters.categoryId || "all"} onValueChange={(value) => handleCategoryChange(value === "all" ? "" : value)} disabled={!selectedEvent}>
-              <SelectTrigger><SelectValue placeholder="All categories" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">All categories</SelectItem>{categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent>
-            </Select></div>
-            <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Tier</label><Select value={filters.ticketId || "all"} onValueChange={(value) => updateFilter("ticketId", value === "all" ? "" : value)} disabled={!selectedEvent || visibleTickets.length === 0}>
-              <SelectTrigger><SelectValue placeholder="All tiers" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All tiers</SelectItem>
-                {filters.categoryId ? visibleTickets.map((ticket) => <SelectItem key={ticket.id} value={ticket.id}>{ticket.name}</SelectItem>) : categories.map((category) => {
-                  const categoryTickets = visibleTickets.filter((ticket) => ticket.categoryId === category.id);
-                  if (categoryTickets.length === 0) return null;
-                  return <SelectGroup key={category.id}><SelectLabel>{category.name}</SelectLabel>{categoryTickets.map((ticket) => <SelectItem key={ticket.id} value={ticket.id}>{ticket.name}</SelectItem>)}</SelectGroup>;
-                })}
-              </SelectContent>
-            </Select><p className="text-[11px] text-muted-foreground">{filters.categoryId ? `${visibleTickets.length} tier${visibleTickets.length === 1 ? "" : "s"} in ${selectedCategory?.name ?? "this category"}` : "Grouped by category"}</p></div>
-            <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Registration</label><Select value={filters.status} onValueChange={(value) => updateFilter("status", value)}>
-              <SelectTrigger><SelectValue placeholder="Registration status" /></SelectTrigger>
-              <SelectContent><SelectItem value="pending">Pending review</SelectItem><SelectItem value="all">All registrations</SelectItem><SelectItem value="awaiting_payment">Awaiting payment</SelectItem><SelectItem value="pending_verification">Pending verification</SelectItem><SelectItem value="confirmed">Confirmed</SelectItem><SelectItem value="checked_in">Checked in</SelectItem><SelectItem value="rejected">Rejected</SelectItem><SelectItem value="expired">Expired</SelectItem></SelectContent>
-            </Select></div>
-            <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Payment</label><Select value={filters.paymentStatus} onValueChange={(value) => updateFilter("paymentStatus", value)}>
-              <SelectTrigger><SelectValue placeholder="Payment status" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">All payment states</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="reference_submitted">Reference submitted</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="rejected">Rejected</SelectItem><SelectItem value="expired">Expired</SelectItem></SelectContent>
-            </Select></div>
-            <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Check-in</label><Select value={filters.checkInStatus} onValueChange={(value) => updateFilter("checkInStatus", value)}>
-              <SelectTrigger><SelectValue placeholder="Check-in status" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">All check-in states</SelectItem><SelectItem value="not_checked_in">Not checked in</SelectItem><SelectItem value="checked_in">Checked in</SelectItem></SelectContent>
-            </Select></div>
+
+          {!eventScoped && <div className="max-w-md space-y-1"><label className="text-xs font-medium text-muted-foreground">Event</label><Select value={filters.eventId || "all"} onValueChange={handleEventChange} disabled={eventsLoading}><SelectTrigger><SelectValue placeholder="All events" /></SelectTrigger><SelectContent><SelectItem value="all">All events</SelectItem>{events.map((event) => <SelectItem key={event.id} value={event.id}>{event.name}</SelectItem>)}</SelectContent></Select></div>}
+
+          <div className="flex gap-1 overflow-x-auto rounded-lg bg-muted/60 p-1" role="tablist" aria-label="Registration status">
+            {[
+              { value: "pending", label: "Needs review" },
+              { value: "all", label: "All" },
+              { value: "awaiting_payment", label: "Awaiting payment" },
+              { value: "pending_verification", label: "UTR submitted" },
+              { value: "confirmed", label: "Confirmed" },
+              { value: "checked_in", label: "Checked in" },
+            ].map((status) => <button key={status.value} type="button" role="tab" aria-selected={filters.status === status.value} onClick={() => updateFilter("status", status.value)} className={`whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition-colors ${filters.status === status.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{status.label}</button>)}
           </div>
-          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm"><span className="font-medium">Category + tier:</span><span>{selectedCategory?.name ?? "All categories"} · {selectedTicket?.name ?? "All tiers"}</span><span className="text-xs text-muted-foreground">Both selections are applied together.</span></div>
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
-            <div className="relative lg:col-span-2"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder="Search name, email, phone, or reference…" className="pl-9" /></div>
-            <Input value={filters.participant} onChange={(event) => updateFilter("participant", event.target.value)} placeholder="Participant name" />
-            <Input value={filters.email} onChange={(event) => updateFilter("email", event.target.value)} placeholder="Email" type="email" />
-            <Input value={filters.phone} onChange={(event) => updateFilter("phone", event.target.value)} placeholder="Phone" />
-            <Input value={filters.registrationReference} onChange={(event) => updateFilter("registrationReference", event.target.value)} placeholder="Registration reference" />
-          </div>
+
+          {moreFiltersOpen && <div className="space-y-4 border-t pt-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Category</label><Select value={filters.categoryId || "all"} onValueChange={(value) => handleCategoryChange(value === "all" ? "" : value)} disabled={!selectedEvent}><SelectTrigger><SelectValue placeholder="All categories" /></SelectTrigger><SelectContent><SelectItem value="all">All categories</SelectItem>{categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Tier</label><Select value={filters.ticketId || "all"} onValueChange={(value) => updateFilter("ticketId", value === "all" ? "" : value)} disabled={!selectedEvent || visibleTickets.length === 0}><SelectTrigger><SelectValue placeholder="All tiers" /></SelectTrigger><SelectContent><SelectItem value="all">All tiers</SelectItem>{filters.categoryId ? visibleTickets.map((ticket) => <SelectItem key={ticket.id} value={ticket.id}>{ticket.name}</SelectItem>) : categories.map((category) => { const categoryTickets = visibleTickets.filter((ticket) => ticket.categoryId === category.id); if (categoryTickets.length === 0) return null; return <SelectGroup key={category.id}><SelectLabel>{category.name}</SelectLabel>{categoryTickets.map((ticket) => <SelectItem key={ticket.id} value={ticket.id}>{ticket.name}</SelectItem>)}</SelectGroup>; })}</SelectContent></Select></div>
+              <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Registration status</label><Select value={filters.status} onValueChange={(value) => updateFilter("status", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Needs review</SelectItem><SelectItem value="all">All registrations</SelectItem><SelectItem value="awaiting_payment">Awaiting payment</SelectItem><SelectItem value="pending_verification">UTR submitted</SelectItem><SelectItem value="AWAITING_SPORTPASS_CREDITS">Awaiting Credits</SelectItem><SelectItem value="confirmed">Confirmed</SelectItem><SelectItem value="checked_in">Checked in</SelectItem><SelectItem value="rejected">Rejected</SelectItem><SelectItem value="expired">Expired</SelectItem></SelectContent></Select></div>
+              <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Payment</label><Select value={filters.paymentStatus} onValueChange={(value) => updateFilter("paymentStatus", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All payment states</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="reference_submitted">Reference submitted</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="rejected">Rejected</SelectItem><SelectItem value="expired">Expired</SelectItem></SelectContent></Select></div>
+              <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Check-in</label><Select value={filters.checkInStatus} onValueChange={(value) => updateFilter("checkInStatus", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All check-in states</SelectItem><SelectItem value="not_checked_in">Not checked in</SelectItem><SelectItem value="checked_in">Checked in</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Input value={filters.participant} onChange={(event) => updateFilter("participant", event.target.value)} placeholder="Participant name" /><Input value={filters.email} onChange={(event) => updateFilter("email", event.target.value)} placeholder="Email address" type="email" /><Input value={filters.phone} onChange={(event) => updateFilter("phone", event.target.value)} placeholder="Phone number" /><Input value={filters.registrationReference} onChange={(event) => updateFilter("registrationReference", event.target.value)} placeholder="Registration number" /></div>
+          </div>}
+
           {activeFilterCount > 0 && <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-sm">
             <span className="text-muted-foreground">Active filters:</span>
             {filters.categoryId && <Badge variant="secondary" className="gap-1">Category: {selectedCategory?.name ?? "Selected"}<button type="button" onClick={() => handleCategoryChange("")} aria-label="Remove category filter"><X className="h-3 w-3" /></button></Badge>}
@@ -880,7 +821,7 @@ const OrganizerRegistrations = () => {
             {filters.status !== "all" && <Badge variant="secondary" className="gap-1">Status: {filters.status.replaceAll("_", " ")}<button type="button" onClick={() => updateFilter("status", "all")} aria-label="Remove status filter"><X className="h-3 w-3" /></button></Badge>}
             {filters.paymentStatus !== "all" && <Badge variant="secondary" className="gap-1">Payment: {filters.paymentStatus.replaceAll("_", " ")}<button type="button" onClick={() => updateFilter("paymentStatus", "all")} aria-label="Remove payment filter"><X className="h-3 w-3" /></button></Badge>}
             {filters.checkInStatus !== "all" && <Badge variant="secondary" className="gap-1">Check-in: {filters.checkInStatus.replaceAll("_", " ")}<button type="button" onClick={() => updateFilter("checkInStatus", "all")} aria-label="Remove check-in filter"><X className="h-3 w-3" /></button></Badge>}
-            <span className="text-xs text-muted-foreground">CSV export will use these filters.</span>
+            <span className="text-xs text-muted-foreground">Search and CSV export use these filters.</span>
           </div>}
         </div>
 
@@ -891,19 +832,19 @@ const OrganizerRegistrations = () => {
                 <h3 className="text-lg font-bold">
                   {decisionTarget.decision === "reject" 
                     ? "Reject this payment" 
-                    : "Approve this registration"}
+                    : "Approve this payment"}
                 </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {decisionTarget.decision === "reject" 
                     ? "Let the participant know what to fix or contact you about. This message will be visible to them." 
-                    : "Add a brief note to the registration record (optional)."}
+                    : "This verifies the submitted payment and continues the registration confirmation flow."}
                 </p>
-                <div className="mt-4">
+                {decisionTarget.decision === "reject" && <div className="mt-4">
                   <Textarea 
                     value={reason} 
                     onChange={(event) => setReason(event.target.value)} 
                     maxLength={1000} 
-                    placeholder={decisionTarget.decision === "reject" ? "Explain what the runner should correct or contact you about…" : "Enter a note (optional)…"}
+                    placeholder="Explain what the participant should correct or contact you about…"
                     className="min-h-[120px]"
                   />
                   <div className="mt-2 flex justify-end">
@@ -911,7 +852,7 @@ const OrganizerRegistrations = () => {
                       {reason.length}/1000 characters
                     </span>
                   </div>
-                </div>
+                </div>}
                 <div className="mt-6 flex items-center justify-end gap-2">
                   <Button 
                     variant="outline" 
@@ -940,11 +881,15 @@ const OrganizerRegistrations = () => {
           </div>
         )}
 
-        <div className="overflow-hidden rounded-xl border bg-card">
-          {loading ? <div className="p-10 text-center text-muted-foreground">Loading registrations…</div> : error ? <div className="p-10 text-center text-destructive">{error}</div> : registrations.length === 0 ? <div className="p-10 text-center text-muted-foreground">No registrations match these filters.</div> : <Table>
-            <TableHeader><TableRow><TableHead>Participant</TableHead>{!eventScoped && <TableHead>Event</TableHead>}<TableHead>Tier</TableHead><TableHead>Amount</TableHead><TableHead>Payment</TableHead><TableHead>Registration</TableHead><TableHead className="hidden">Email</TableHead><TableHead className="hidden">Check-in</TableHead><TableHead>UTR/reference</TableHead><TableHead className="text-right">Payment decision</TableHead></TableRow></TableHeader>
+        <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+          <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            <div><div className="flex items-center gap-2"><h2 className="font-bold">Registrations</h2>{!loading && <Badge variant="secondary">{registrations.length} shown</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">Click a registration to view contact information, form answers, email status, refund details, and transfer history.</p></div>
+            <Button variant="outline" onClick={() => void exportCsv()} disabled={!filters.eventId || exporting} className="w-fit gap-2"><Download className="h-4 w-4" />{exporting ? "Exporting…" : exportIsFiltered ? "Export filtered CSV" : "Export event CSV"}</Button>
+          </div>
+          {loading ? <div className="p-12 text-center text-sm text-muted-foreground"><RefreshCw className="mx-auto mb-3 h-5 w-5 animate-spin" />Loading registrations…</div> : error ? <div className="p-12 text-center"><p className="text-sm text-destructive">{error}</p><Button variant="outline" className="mt-4" onClick={() => setRefreshNonce((value) => value + 1)}>Try again</Button></div> : registrations.length === 0 ? <div className="p-12 text-center"><Search className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-4 font-semibold">No registrations found</p><p className="mt-1 text-sm text-muted-foreground">No records match the current search and filters.</p>{activeFilterCount > 0 && <Button variant="ghost" className="mt-3" onClick={clearAllFilters}>Clear filters</Button>}</div> : <div className="overflow-x-auto"><Table>
+            <TableHeader><TableRow><TableHead className="min-w-60">Participant</TableHead>{!eventScoped && <TableHead>Event</TableHead>}<TableHead>Category / tier</TableHead><TableHead>Amount</TableHead><TableHead>Payment</TableHead><TableHead>Registration</TableHead><TableHead>UTR/reference</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
             <TableBody>{registrations.map((registration) => {
-              const isReviewable = registration.status === "awaiting_payment" || registration.status === "pending_verification";
+              const isReviewable = registration.status === "awaiting_payment" || registration.status === "pending_verification" || registration.status === "AWAITING_SPORTPASS_CREDITS";
               return <TableRow
                 key={registration.id}
                 className="cursor-pointer hover:bg-muted/50 transition-colors"
@@ -954,35 +899,21 @@ const OrganizerRegistrations = () => {
                   setDetailRegistration(registration);
                 }}
               >
-                <TableCell><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-primary underline-offset-2 hover:underline">{registration.participant.name}</p>{registration.isManualEntry && <Badge variant="outline">Manual entry</Badge>}</div>{registration.participants && registration.participants.length > 1 && <p className="text-xs text-muted-foreground">Members: {registration.participants.map((member) => member.participant.name).join(" · ")}</p>}<p className="text-xs text-muted-foreground">{registration.participant.email ?? registration.participant.phone ?? "No contact"}</p><p className="font-mono text-xs text-muted-foreground">{registration.registrationReference}</p>{dynamicRegistrationSummary(registration, Object.fromEntries((selectedEvent?.addonConfig?.addons ?? []).map((a) => [a.id, a.name])))}</TableCell>
+                <TableCell><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-primary underline-offset-2 hover:underline">{registration.participant.name}</p>{registration.isManualEntry && <Badge variant="outline">Manual</Badge>}</div>{registration.participants && registration.participants.length > 1 && <p className="mt-0.5 text-xs text-muted-foreground">{registration.participants.length} participants</p>}<p className="mt-1 text-xs text-muted-foreground">{registration.participant.email ?? registration.participant.phone ?? "No contact details"}</p><p className="mt-1 font-mono text-xs font-medium text-foreground/70">{registration.registrationReference}</p></TableCell>
                 {!eventScoped && <TableCell><p className="max-w-44 truncate">{registration.event.name}</p></TableCell>}
-                <TableCell><p>{registration.ticket.name}</p><p className="text-xs text-muted-foreground">{registration.ticket.category ?? "—"}</p></TableCell>
+                <TableCell><p className="font-medium">{registration.ticket.category ?? "Uncategorised"}</p><p className="text-xs text-muted-foreground">{registration.ticket.name}</p></TableCell>
                 <TableCell className="font-semibold"><p>{formatINR(registration.amountPaise)}</p>{registration.receivedAmountPaise !== null && <p className="text-xs font-normal text-accent">Received {formatINR(registration.receivedAmountPaise)}</p>}</TableCell>
-                <TableCell><div className="space-y-1">{paymentBadge(registration.paymentStatus)}<p className="text-xs text-muted-foreground">{registration.paymentStatus.replaceAll("_", " ")}</p></div></TableCell>
+                <TableCell>{paymentBadge(registration.paymentStatus)}</TableCell>
                 <TableCell><div className="space-y-1">{registrationBadge(registration.status)}<p className="text-xs text-muted-foreground">{formatDate(registration.createdAt)}</p></div></TableCell>
-                <TableCell className="hidden"><div className="space-y-1">{emailBadge(registration.emailStatus)}{registration.participant.email && <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => void resendEmail(registration)} disabled={resendId === registration.id}><Mail className="h-3 w-3" />{resendId === registration.id ? "Sending…" : registration.emailStatus === "SENT" ? "Resend" : "Send"}</Button>}</div></TableCell>
-                <TableCell className="hidden">{registration.checkInStatus === "checked_in" ? <span className="text-xs font-medium text-accent">Checked in</span> : <span className="text-xs text-muted-foreground">Not checked in</span>}</TableCell>
-                <TableCell>{registration.utrReference ? <span className="font-mono text-sm">{registration.utrReference}</span> : <span className="text-xs text-muted-foreground">Not provided</span>}</TableCell>
+                <TableCell>{registration.utrReference ? <span className="font-mono text-sm font-medium">{registration.utrReference}</span> : <span className="text-xs text-muted-foreground">{registration.paymentStatus === "not_required" ? "Not required" : "Not submitted"}</span>}</TableCell>
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <TooltipProvider>
-                      {isReviewable && <>
-                        <Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => { setDecisionTarget({ id: registration.id, decision: "approve" }); setReason(""); }} disabled={actionId !== null}><Check className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Approve</p></TooltipContent></Tooltip>
-                        <Tooltip><TooltipTrigger><Button variant="ghost" size="sm" className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => { setDecisionTarget({ id: registration.id, decision: "reject" }); setReason(""); }} disabled={actionId !== null}><X className="h-3 w-3" /></Button></TooltipTrigger><TooltipContent><p>Reject</p></TooltipContent></Tooltip>
-                      </>}
-                      {!isReviewable && <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />—</span>}
-                    </TooltipProvider>
-                  </div>
+                  <div className="flex justify-end gap-1">{isReviewable ? <><Button variant="outline" size="sm" className="gap-1 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800" onClick={() => { setDecisionTarget({ id: registration.id, decision: "approve" }); setReason(""); }} disabled={actionId !== null}><Check className="h-3.5 w-3.5" /> Approve</Button><Button variant="ghost" size="sm" className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => { setDecisionTarget({ id: registration.id, decision: "reject" }); setReason(""); }} disabled={actionId !== null}><X className="h-3.5 w-3.5" /> Reject</Button></> : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />No action</span>}</div>
                 </TableCell>
               </TableRow>;
             })}</TableBody>
-          </Table>}
-        </div>
-
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">Showing up to 50 registrations per page. Exports use the active filters and are limited to 5,000 rows.</p>
-          <div className="flex gap-2"><Button variant="outline" size="sm" onClick={goPrevious} disabled={cursorHistory.length === 0 || loading}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" onClick={goNext} disabled={!nextCursor || loading}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div>
-        </div>
+          </Table></div>}
+          <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">Up to 50 registrations per page. CSV exports use the active filters and support up to 5,000 rows.</p><div className="flex gap-2"><Button variant="outline" size="sm" onClick={goPrevious} disabled={cursorHistory.length === 0 || loading}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" onClick={goNext} disabled={!nextCursor || loading}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>
+        </section>
       </div>
 
       <RegistrationDetailDrawer

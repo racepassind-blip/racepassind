@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, StrictInt, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -14,6 +14,7 @@ from app.api.deps import require_csrf, require_roles
 from app.services.admin_dashboard_service import get_admin_dashboard
 from app.services.admin_organizers_service import get_admin_organizers_overview
 from app.services.audit_service import record_audit
+from app.services.credit_service import CreditValidationError, add_credits, approve_topup, credit_event_discount, event_settlement_summary, get_credit_payment_settings, reject_topup, settle_event_credits, update_credit_payment_settings
 from app.services.auth_service import hash_password, normalize_email, normalize_phone, public_user, utc_now, validate_required_phone
 from app.services.communication_service import (
     get_communication_settings,
@@ -29,28 +30,40 @@ from app.services.organization_fee_service import (
 )
 from app.services.platform_fee_service import (
     PlatformFeeValidationError,
-    apply_discount as apply_platform_fee_discount,
+    get_effective_pricing,
     get_config as get_platform_fee_config,
-    list_admin_platform_fees,
-    mark_overdue as mark_platform_fee_overdue,
-    mark_paid as mark_platform_fee_paid,
-    raise_bill as raise_platform_fee_bill,
-    set_due_date as set_platform_fee_due_date,
     update_config as update_platform_fee_config,
-    waive_bill as waive_platform_fee_bill,
-)
-from app.services.pricing_service import (
-    PricingValidationError,
-    get_admin_pricing,
-    serialize_plan,
-    update_founding_program,
-    update_plan,
+    update_organizer_pricing,
 )
 from db import get_db
 from app.services.event_archive_service import restore_event_record
-from models import Event, FoundingProgram, OrganizerApplication, Organization, OrganizationMember, PricingPlan, User
+from models import CreditTopupRequest, CreditTransaction, Event, OrganizerApplication, Organization, OrganizationMember, Registration, User
 
 router = APIRouter()
+
+class CreditAdjustmentIn(BaseModel):
+    organization_id: UUID
+    amount_paise: StrictInt = Field(gt=0)
+    reason: str = Field(min_length=3, max_length=1000)
+
+class CreditRejectIn(BaseModel):
+    rejection_reason: str = Field(min_length=3, max_length=1000)
+
+class CreditPaymentSettingsIn(BaseModel):
+    method: Literal["UPI"] = "UPI"
+    upi_id: str = Field(min_length=3, max_length=255)
+    payee_name: str = Field(default="SportPass India", min_length=2, max_length=160)
+
+class OrganizerPricingIn(BaseModel):
+    mode: Literal["DEFAULT", "CUSTOM_PERCENTAGE", "FIXED_PER_PARTICIPANT"]
+    percentage_basis_points: StrictInt | None = Field(default=None, ge=0, le=10_000)
+    minimum_fee_paise: StrictInt | None = Field(default=None, ge=0)
+    maximum_fee_paise: StrictInt | None = Field(default=None, ge=0)
+    fixed_fee_paise: StrictInt | None = Field(default=None, ge=0)
+
+class CreditReasonIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=1000)
+    amount_paise: StrictInt = Field(gt=0)
 
 
 @router.get("/dashboard")
@@ -70,6 +83,7 @@ def _serialize_admin_event(event: Event) -> dict:
             "name": event.organization.name,
         },
         "eventDate": event.date,
+        "eventEndDate": event.end_date.date().isoformat() if event.end_date else None,
         "status": event.status,
         "registrationStatus": event.registration_status,
         "archivedAt": event.archived_at.isoformat() if event.archived_at else None,
@@ -82,19 +96,43 @@ def _serialize_admin_event(event: Event) -> dict:
 @router.get("/events")
 def list_admin_events(
     archived: bool | None = Query(default=True),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
     _: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
-) -> list[dict]:
+) -> dict:
+    filters = []
+    if archived is True:
+        filters.append(Event.archived_at.is_not(None))
+    elif archived is False:
+        filters.append(Event.archived_at.is_(None))
     query = (
         select(Event)
         .options(selectinload(Event.organization))
+        .where(*filters)
         .order_by(Event.archived_at.desc().nullslast(), Event.created_at.desc(), Event.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )
-    if archived is True:
-        query = query.where(Event.archived_at.is_not(None))
-    elif archived is False:
-        query = query.where(Event.archived_at.is_(None))
-    return [_serialize_admin_event(event) for event in db.scalars(query).all()]
+    total = int(db.scalar(select(func.count()).select_from(Event).where(*filters)) or 0)
+    summary = db.execute(
+        select(
+            func.coalesce(func.sum(Event.participants), 0),
+            func.count(func.distinct(Event.organization_id)),
+            func.count(Event.id).filter(Event.features_unlocked.is_(True)),
+        ).where(*filters)
+    ).one()
+    return {
+        "items": [_serialize_admin_event(event) for event in db.scalars(query).all()],
+        "page": page,
+        "pageSize": page_size,
+        "total": total,
+        "summary": {
+            "participants": int(summary[0] or 0),
+            "organizations": int(summary[1] or 0),
+            "featuresUnlocked": int(summary[2] or 0),
+        },
+    }
 
 
 @router.post("/events/{event_id}/restore")
@@ -169,23 +207,6 @@ class FeeSettingsIn(BaseModel):
     fee_type: Literal["none", "fixed_per_registration", "percentage"]
     fee_value_paise: StrictInt = Field(default=0, ge=0)
     fee_percentage_basis_points: StrictInt = Field(default=0, ge=0, le=10_000)
-
-
-class PricingPlanIn(BaseModel):
-    name: str = Field(min_length=2, max_length=80)
-    min_confirmed_registrations: StrictInt = Field(ge=0)
-    max_confirmed_registrations: StrictInt | None = Field(default=None, ge=0)
-    price_paise: StrictInt = Field(ge=0)
-    billing_unit: Literal["per_event", "per_registration"] = "per_event"
-    active: bool = True
-    sort_order: StrictInt = Field(ge=0)
-
-
-class FoundingProgramIn(BaseModel):
-    enabled: bool
-    free_races_count: StrictInt = Field(ge=0, le=100)
-    default_discount_basis_points: StrictInt = Field(ge=0, le=10_000)
-    eligible_organization_ids: list[UUID] = Field(default_factory=list)
 
 
 @router.post("/organizers", status_code=status.HTTP_201_CREATED)
@@ -263,14 +284,29 @@ def _serialize_organizer_application(application: OrganizerApplication) -> dict:
 @router.get("/organizer-applications")
 def list_organizer_applications(
     application_status: Literal["pending", "approved", "rejected"] | None = Query(default=None, alias="status"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     _: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
-) -> list[dict]:
-    query = select(OrganizerApplication).order_by(OrganizerApplication.created_at.desc())
+) -> dict:
+    filters = []
     if application_status is not None:
-        query = query.where(OrganizerApplication.status == application_status)
+        filters.append(OrganizerApplication.status == application_status)
+    total = int(db.scalar(select(func.count()).select_from(OrganizerApplication).where(*filters)) or 0)
+    query = (
+        select(OrganizerApplication)
+        .where(*filters)
+        .order_by(OrganizerApplication.created_at.desc(), OrganizerApplication.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     applications = db.scalars(query).all()
-    return [_serialize_organizer_application(application) for application in applications]
+    return {
+        "items": [_serialize_organizer_application(application) for application in applications],
+        "page": page,
+        "pageSize": page_size,
+        "total": total,
+    }
 
 
 @router.post("/organizer-applications/{application_id}/approve")
@@ -471,11 +507,17 @@ def review_paid_verification(
 
 @router.get("/organizers/overview")
 def organizers_overview(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=24, ge=1, le=100),
+    q: str | None = Query(default=None, max_length=160),
+    verification_status: str | None = Query(default=None, max_length=30),
     _: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
-) -> list[dict]:
+) -> dict:
     """Per-organizer rollup: events, participants, revenue, verification, billing."""
-    return get_admin_organizers_overview(db)
+    if verification_status and verification_status not in {"NOT_SUBMITTED", "UNDER_REVIEW", "VERIFIED", "REJECTED"}:
+        raise HTTPException(status_code=422, detail="Unsupported verification status")
+    return get_admin_organizers_overview(db, page=page, page_size=page_size, search=q, verification_status=verification_status)
 
 
 class DirectUpiAccessIn(BaseModel):
@@ -578,7 +620,24 @@ def list_organizers(
     db: Session = Depends(get_db),
 ) -> list[dict]:
     organizations = db.scalars(select(Organization).order_by(Organization.created_at.desc())).all()
-    return [serialize_organization_fee(organization) for organization in organizations]
+    result = []
+    for organization in organizations:
+        pricing = get_effective_pricing(organization)
+        result.append({
+            "id": str(organization.id),
+            "organizationId": str(organization.id),
+            "name": organization.name,
+            "organizationName": organization.name,
+            "status": organization.status,
+            "platformPricing": {
+                "mode": pricing["mode"],
+                "percentageBasisPoints": pricing["percentageBasisPoints"],
+                "minimumFeePaise": pricing["minimumFeePaise"],
+                "maximumFeePaise": pricing["maximumFeePaise"],
+                "fixedFeePaise": pricing["fixedFeePaise"],
+            },
+        })
+    return result
 
 
 @router.put("/organizers/{organization_id}/fee-settings")
@@ -605,71 +664,44 @@ def update_fee_settings(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
+@router.put("/organizers/{organization_id}/platform-pricing")
+def update_organizer_platform_pricing(organization_id: UUID, payload: OrganizerPricingIn, _: User = Depends(require_roles("admin")), __: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    try:
+        return update_organizer_pricing(db, organization_id=organization_id, mode=payload.mode, percentage_basis_points=payload.percentage_basis_points, minimum_fee_paise=payload.minimum_fee_paise, maximum_fee_paise=payload.maximum_fee_paise, fixed_fee_paise=payload.fixed_fee_paise)
+    except PlatformFeeValidationError as exc:
+        db.rollback(); raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get("/plans")
 def list_pricing_plans(
     _: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
 ) -> dict:
-    return get_admin_pricing(db)
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Legacy organizer plans have been unwired.")
 
 
 @router.put("/plans/{plan_id}")
 def update_pricing_plan(
     plan_id: UUID,
-    payload: PricingPlanIn,
-    admin: User = Depends(require_roles("admin")),
-    _: None = Depends(require_csrf),
-    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+    __: None = Depends(require_csrf),
 ) -> dict:
-    try:
-        return update_plan(
-            db,
-            plan_id=plan_id,
-            actor_user_id=admin.id,
-            name=payload.name,
-            minimum=payload.min_confirmed_registrations,
-            maximum=payload.max_confirmed_registrations,
-            price_paise=payload.price_paise,
-            billing_unit=payload.billing_unit,
-            active=payload.active,
-            sort_order=payload.sort_order,
-        )
-    except PricingValidationError as exc:
-        db.rollback()
-        code = status.HTTP_404_NOT_FOUND if str(exc) == "Plan not found" else status.HTTP_422_UNPROCESSABLE_ENTITY
-        raise HTTPException(status_code=code, detail=str(exc)) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Legacy organizer plans have been unwired.")
 
 
 @router.put("/founding-program")
 def update_founding_program_settings(
-    payload: FoundingProgramIn,
-    admin: User = Depends(require_roles("admin")),
-    _: None = Depends(require_csrf),
-    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+    __: None = Depends(require_csrf),
 ) -> dict:
-    try:
-        return update_founding_program(
-            db,
-            actor_user_id=admin.id,
-            enabled=payload.enabled,
-            free_races_count=payload.free_races_count,
-            discount_basis_points=payload.default_discount_basis_points,
-            organization_ids=payload.eligible_organization_ids,
-        )
-    except PricingValidationError as exc:
-        db.rollback()
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Legacy founding-program billing has been unwired.")
 
 
 # ---------------------------------------------------------------------------
 # Legacy plan/slab-based event billing — RETIRED.
 #
-# The old "1–25 registrations × amount" plan/slab billing model has been
-# retired in favour of the SportPass platform-fee model (5% of registration
-# revenue + ₹10 per paid registration). These endpoints are intentionally
-# disabled so nothing can be billed under the old model. The underlying
-# billing_service and OrganizerEventBilling table are left in place so
-# historical records are preserved and the change is reversible.
+# The old plan/slab billing endpoints stay as 410 responses so older clients
+# cannot create or mutate historical invoice records.
 # ---------------------------------------------------------------------------
 
 _LEGACY_BILLING_GONE = "Plan-based event billing has been retired. Use organizer platform fees instead."
@@ -703,26 +735,8 @@ def waive_billing_endpoint(billing_id: UUID) -> dict:
 class PlatformFeeConfigIn(BaseModel):
     label: str | None = Field(default=None, max_length=120)
     percentage_basis_points: StrictInt = Field(ge=0, le=10_000)
-    per_registration_paise: StrictInt = Field(ge=0)
-    default_due_days: StrictInt = Field(ge=1, le=90)
-
-
-class PlatformFeeRaiseIn(BaseModel):
-    discount_paise: StrictInt = Field(default=0, ge=0)
-    due_days: StrictInt | None = Field(default=None, ge=1, le=90)
-
-
-class PlatformFeeDiscountIn(BaseModel):
-    discount_paise: StrictInt = Field(ge=0)
-
-
-class PlatformFeeDueDateIn(BaseModel):
-    due_at: dt.datetime
-
-
-class PlatformFeePaymentIn(BaseModel):
-    payment_reference: str | None = Field(default=None, max_length=160)
-    notes: str | None = Field(default=None, max_length=2000)
+    minimum_fee_paise: StrictInt = Field(ge=0)
+    maximum_fee_paise: StrictInt = Field(ge=0)
 
 
 def _platform_fee_error(db: Session, exc: PlatformFeeValidationError) -> HTTPException:
@@ -738,7 +752,7 @@ def list_platform_fees(
     _: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
 ) -> dict:
-    return list_admin_platform_fees(db)
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Organizer billing has been unwired; prepaid credits are not yet available.")
 
 
 @router.get("/platform-fees/config")
@@ -762,8 +776,8 @@ def update_platform_fee_config_endpoint(
             actor_user_id=admin.id,
             label=payload.label,
             percentage_basis_points=payload.percentage_basis_points,
-            per_registration_paise=payload.per_registration_paise,
-            default_due_days=payload.default_due_days,
+            minimum_fee_paise=payload.minimum_fee_paise,
+            maximum_fee_paise=payload.maximum_fee_paise,
         )
     except PlatformFeeValidationError as exc:
         raise _platform_fee_error(db, exc) from exc
@@ -772,111 +786,55 @@ def update_platform_fee_config_endpoint(
 @router.post("/platform-fees/events/{event_id}/raise")
 def raise_platform_fee_endpoint(
     event_id: UUID,
-    payload: PlatformFeeRaiseIn = PlatformFeeRaiseIn(),
-    admin: User = Depends(require_roles("admin")),
-    _: None = Depends(require_csrf),
-    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+    __: None = Depends(require_csrf),
 ) -> dict:
-    try:
-        return raise_platform_fee_bill(
-            db,
-            event_id=event_id,
-            actor_user_id=admin.id,
-            discount_paise=payload.discount_paise,
-            due_days=payload.due_days,
-        )
-    except PlatformFeeValidationError as exc:
-        raise _platform_fee_error(db, exc) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Organizer billing has been unwired; use prepaid Credits.")
 
 
 @router.post("/platform-fees/{billing_id}/discount")
 def platform_fee_discount_endpoint(
     billing_id: UUID,
-    payload: PlatformFeeDiscountIn,
-    admin: User = Depends(require_roles("admin")),
-    _: None = Depends(require_csrf),
-    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+    __: None = Depends(require_csrf),
 ) -> dict:
-    try:
-        return apply_platform_fee_discount(
-            db,
-            billing_id=billing_id,
-            actor_user_id=admin.id,
-            discount_paise=payload.discount_paise,
-        )
-    except PlatformFeeValidationError as exc:
-        raise _platform_fee_error(db, exc) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Organizer billing has been unwired; use prepaid Credits.")
 
 
 @router.post("/platform-fees/{billing_id}/due-date")
 def platform_fee_due_date_endpoint(
     billing_id: UUID,
-    payload: PlatformFeeDueDateIn,
-    admin: User = Depends(require_roles("admin")),
-    _: None = Depends(require_csrf),
-    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+    __: None = Depends(require_csrf),
 ) -> dict:
-    try:
-        return set_platform_fee_due_date(
-            db,
-            billing_id=billing_id,
-            actor_user_id=admin.id,
-            due_at=payload.due_at,
-        )
-    except PlatformFeeValidationError as exc:
-        raise _platform_fee_error(db, exc) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Organizer billing has been unwired; use prepaid Credits.")
 
 
 @router.post("/platform-fees/{billing_id}/paid")
 def platform_fee_paid_endpoint(
     billing_id: UUID,
-    payload: PlatformFeePaymentIn = PlatformFeePaymentIn(),
-    admin: User = Depends(require_roles("admin")),
-    _: None = Depends(require_csrf),
-    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+    __: None = Depends(require_csrf),
 ) -> dict:
-    try:
-        return mark_platform_fee_paid(
-            db,
-            billing_id=billing_id,
-            actor_user_id=admin.id,
-            payment_reference=payload.payment_reference,
-            notes=payload.notes,
-        )
-    except PlatformFeeValidationError as exc:
-        raise _platform_fee_error(db, exc) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Organizer billing has been unwired; use prepaid Credits.")
 
 
 @router.post("/platform-fees/{billing_id}/overdue")
 def platform_fee_overdue_endpoint(
     billing_id: UUID,
-    admin: User = Depends(require_roles("admin")),
-    _: None = Depends(require_csrf),
-    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+    __: None = Depends(require_csrf),
 ) -> dict:
-    try:
-        return mark_platform_fee_overdue(db, billing_id=billing_id, actor_user_id=admin.id)
-    except PlatformFeeValidationError as exc:
-        raise _platform_fee_error(db, exc) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Organizer billing has been unwired; use prepaid Credits.")
 
 
 @router.post("/platform-fees/{billing_id}/waive")
 def platform_fee_waive_endpoint(
     billing_id: UUID,
-    payload: PlatformFeePaymentIn = PlatformFeePaymentIn(),
-    admin: User = Depends(require_roles("admin")),
-    _: None = Depends(require_csrf),
-    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+    __: None = Depends(require_csrf),
 ) -> dict:
-    try:
-        return waive_platform_fee_bill(
-            db,
-            billing_id=billing_id,
-            actor_user_id=admin.id,
-            notes=payload.notes,
-        )
-    except PlatformFeeValidationError as exc:
-        raise _platform_fee_error(db, exc) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Organizer billing has been unwired; use prepaid Credits.")
 
 
 class EmailSettingsIn(BaseModel):
@@ -1014,3 +972,171 @@ def delete_archived_event_endpoint(
         "status": "deleted",
         "deletedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
+
+
+@router.get("/credits/topups")
+def admin_credit_topups(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    topup_status: str | None = Query(default=None, alias="status", max_length=30),
+    _: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    filters = []
+    if topup_status:
+        normalized_status = topup_status.strip().upper()
+        if normalized_status not in {"PENDING", "APPROVED", "REJECTED"}:
+            raise HTTPException(status_code=422, detail="Unsupported top-up status")
+        filters.append(CreditTopupRequest.status == normalized_status)
+    total = int(db.scalar(select(func.count()).select_from(CreditTopupRequest).where(*filters)) or 0)
+    rows = db.scalars(
+        select(CreditTopupRequest)
+        .where(*filters)
+        .order_by(CreditTopupRequest.requested_at.desc(), CreditTopupRequest.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    organization_ids = {row.organization_id for row in rows}
+    org_names = {str(org.id): org.name for org in db.scalars(select(Organization).where(Organization.id.in_(organization_ids))).all()} if organization_ids else {}
+    summary = db.execute(
+        select(
+            func.count(CreditTopupRequest.id),
+            func.count(CreditTopupRequest.id).filter(CreditTopupRequest.status == "PENDING"),
+            func.coalesce(func.sum(CreditTopupRequest.credits_paise).filter(CreditTopupRequest.status == "APPROVED"), 0),
+        )
+    ).one()
+    return {
+        "items": [{"id": str(row.id), "organizationId": str(row.organization_id), "organizationName": org_names.get(str(row.organization_id), "Unknown organization"), "amountPaise": row.amount_paise, "creditsPaise": row.credits_paise, "utrReference": row.utr_reference, "status": row.status, "requestedAt": row.requested_at, "rejectionReason": row.rejection_reason} for row in rows],
+        "page": page,
+        "pageSize": page_size,
+        "total": total,
+        "summary": {"total": int(summary[0] or 0), "pending": int(summary[1] or 0), "approvedCreditsPaise": int(summary[2] or 0)},
+    }
+
+
+@router.get("/credits/ledger")
+def admin_credit_ledger(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
+    organization_id: UUID | None = Query(default=None),
+    event_id: UUID | None = Query(default=None),
+    export: bool = Query(default=False),
+    _: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    filters = []
+    if organization_id:
+        filters.append(CreditTransaction.organization_id == organization_id)
+    if event_id:
+        filters.append(CreditTransaction.event_id == event_id)
+    total = int(db.scalar(select(func.count()).select_from(CreditTransaction).where(*filters)) or 0)
+    effective_size = min(total, 5000) if export else page_size
+    offset = 0 if export else (page - 1) * page_size
+    rows = db.scalars(
+        select(CreditTransaction)
+        .where(*filters)
+        .order_by(CreditTransaction.created_at.desc(), CreditTransaction.id.desc())
+        .offset(offset)
+        .limit(effective_size)
+    ).all()
+    organization_ids = {row.organization_id for row in rows}
+    event_ids = {row.event_id for row in rows if row.event_id}
+    registration_ids = {row.registration_id for row in rows if row.registration_id}
+    org_names = {str(org.id): org.name for org in db.scalars(select(Organization).where(Organization.id.in_(organization_ids))).all()} if organization_ids else {}
+    event_names = {str(event.id): event.name for event in db.scalars(select(Event).where(Event.id.in_(event_ids))).all()} if event_ids else {}
+    registration_refs = {str(registration.id): registration.registration_reference or str(registration.id) for registration in db.scalars(select(Registration).where(Registration.id.in_(registration_ids))).all()} if registration_ids else {}
+    organizer_options = db.execute(select(Organization.id, Organization.name).join(CreditTransaction, CreditTransaction.organization_id == Organization.id).distinct().order_by(Organization.name)).all()
+    event_options = db.execute(select(Event.id, Event.name).join(CreditTransaction, CreditTransaction.event_id == Event.id).distinct().order_by(Event.name)).all()
+    return {
+        "items": [{"id": str(row.id), "organizationId": str(row.organization_id), "organizationName": org_names.get(str(row.organization_id), "Unknown organization"), "type": row.type, "amountPaise": row.balance_after_paise - row.balance_before_paise, "balanceAfterPaise": row.balance_after_paise, "eventId": str(row.event_id) if row.event_id else None, "eventName": event_names.get(str(row.event_id)) if row.event_id else None, "registrationId": str(row.registration_id) if row.registration_id else None, "registrationReference": registration_refs.get(str(row.registration_id)) if row.registration_id else None, "description": f"{row.description} · Registration: {registration_refs.get(str(row.registration_id))}" if row.registration_id else row.description, "reason": row.reason, "createdAt": row.created_at} for row in rows],
+        "page": 1 if export else page,
+        "pageSize": effective_size if export else page_size,
+        "total": total,
+        "truncated": bool(export and total > 5000),
+        "organizerOptions": [{"id": str(row.id), "name": row.name} for row in organizer_options],
+        "eventOptions": [{"id": str(row.id), "name": row.name} for row in event_options],
+    }
+
+
+@router.get("/credits/payment-settings")
+def admin_credit_payment_settings(_: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    return get_credit_payment_settings(db)
+
+
+@router.put("/credits/payment-settings")
+def save_admin_credit_payment_settings(payload: CreditPaymentSettingsIn, admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    try:
+        return update_credit_payment_settings(db, method=payload.method, upi_id=payload.upi_id, payee_name=payload.payee_name, updated_by=admin.id)
+    except (CreditValidationError, ValueError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/credits/topups/{request_id}/approve")
+def admin_approve_credit_topup(request_id: UUID, admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    try:
+        row = approve_topup(db, request_id=request_id, approved_by=admin.id)
+        db.commit()
+        return {"id": str(row.id), "status": row.status, "creditsPaise": row.credits_paise}
+    except CreditValidationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/credits/topups/{request_id}/reject")
+def admin_reject_credit_topup(request_id: UUID, payload: CreditRejectIn, _: User = Depends(require_roles("admin")), __: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    try:
+        row = reject_topup(db, request_id=request_id, rejection_reason=payload.rejection_reason)
+        db.commit()
+        return {"id": str(row.id), "status": row.status}
+    except CreditValidationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/credits/adjust")
+def admin_adjust_credits(payload: CreditAdjustmentIn, admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    try:
+        row = add_credits(db, organization_id=payload.organization_id, amount=payload.amount_paise, transaction_type="ADMIN_ADJUSTMENT", description="Admin credit adjustment", reason=payload.reason, created_by=admin.id)
+        db.commit()
+        return {"transactionId": str(row.id), "balanceAfterPaise": row.balance_after_paise}
+    except CreditValidationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/organizations/{organization_id}/credit-deduction-mode")
+def update_credit_deduction_mode(organization_id: UUID, mode: Literal["AUTOMATIC_PER_REGISTRATION", "MANUAL_EVENT_SETTLEMENT"], _: User = Depends(require_roles("admin")), __: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    organization = db.scalar(select(Organization).where(Organization.id == organization_id).with_for_update())
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    organization.credit_deduction_mode = mode
+    db.commit()
+    return {"organizationId": str(organization.id), "creditDeductionMode": mode}
+
+
+@router.post("/credits/events/{event_id}/settle")
+def settle_event_credit_debit(event_id: UUID, admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    try:
+        row = settle_event_credits(db, event_id=event_id, created_by=admin.id); db.commit()
+        return {"transactionId": str(row.id), "amountPaise": row.amount_paise, "balanceAfterPaise": row.balance_after_paise}
+    except CreditValidationError as exc:
+        db.rollback(); raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+@router.get("/credits/events/{event_id}/settlement-preview")
+def preview_event_credit_settlement(event_id: UUID, _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    try:
+        summary = event_settlement_summary(db, event_id=event_id)
+        summary.pop("organizationId", None)
+        return summary
+    except CreditValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/credits/events/{event_id}/discount")
+def discount_event_credits(event_id: UUID, payload: CreditReasonIn, admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    try:
+        row = credit_event_discount(db, event_id=event_id, amount_paise=payload.amount_paise, reason=payload.reason, created_by=admin.id); db.commit()
+        return {"transactionId": str(row.id), "amountPaise": row.amount_paise, "balanceAfterPaise": row.balance_after_paise}
+    except CreditValidationError as exc:
+        db.rollback(); raise HTTPException(status_code=422, detail=str(exc)) from exc

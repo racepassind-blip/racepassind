@@ -27,6 +27,7 @@ class EventOut(BaseModel):
     id: UUID
     title: str
     date: str
+    endDate: str | None = None
     location: str
     locationDetails: dict[str, str | float | None]
     category: str
@@ -46,8 +47,10 @@ class EventOut(BaseModel):
     tiers: list[TicketTierOut]
     # SportPass platform-fee context so the participant total can be previewed.
     platformFeeBearer: Literal["ORGANIZER", "PARTICIPANT"] = "ORGANIZER"
-    sportPassFeePercentageBasisPoints: int = 500
-    sportPassFeePerRegistrationPaise: int = 1000
+    sportPassFeePercentageBasisPoints: int = 400
+    sportPassFeeMinimumPaise: int = 2000
+    sportPassFeeMaximumPaise: int = 6000
+    sportPassFeeFixedPaise: int = 0
     # Refund policy (shown to participants only when enabled)
     refundPolicyEnabled: bool = False
     refundPolicyType: Literal["full_refund", "partial_refund", "organizer_approval", "no_refund"] | None = None

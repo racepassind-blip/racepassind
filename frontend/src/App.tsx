@@ -13,6 +13,7 @@ import PublicEventResults from "./pages/PublicEventResults";
 import ResultAdapter from "./results/ResultAdapter";
 import Checkout from "./pages/Checkout";
 import Dashboard from "./pages/Dashboard";
+import Events from "./pages/Events";
 import DashboardUpcoming from "./pages/DashboardUpcoming";
 import DashboardPast from "./pages/DashboardPast";
 import DashboardProfile from "./pages/DashboardProfile";
@@ -34,19 +35,19 @@ import OrganizerEventTournamentResults from "./pages/OrganizerEventTournamentRes
 import OrganizerEventTournamentBracket from "./pages/OrganizerEventTournamentBracket";
 import OrganizerEventAllocations from "./pages/OrganizerEventAllocations";
 import PublicEventNumberList from "./pages/PublicEventNumberList";
-import OrganizerPricing from "./pages/OrganizerPricing";
 import FederationsAssociationsComingSoon from "./pages/FederationsAssociationsComingSoon";
 import OrganizerSetup from "./pages/OrganizerSetup";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminEventRecovery from "./pages/AdminEventRecovery";
 import AdminEventFeatures from "./pages/AdminEventFeatures";
 import AdminOrganizerFees from "./pages/AdminOrganizerFees";
-import AdminPlans from "./pages/AdminPlans";
-import AdminBilling from "./pages/AdminBilling";
 import AdminOrganizerApplications from "./pages/AdminOrganizerApplications";
 import AdminOrganizers from "./pages/AdminOrganizers";
 import AdminCommunication from "./pages/AdminCommunication";
 import AdminRefunds from "./pages/AdminRefunds";
+import AdminCredits from "./pages/AdminCredits";
+import AdminOrganizerPricing from "./pages/AdminOrganizerPricing";
+import OrganizerCredits from "./pages/OrganizerCredits";
 import OrganizerRefunds from "./pages/OrganizerRefunds";
 import OrganizerEventRaceResults from "./pages/OrganizerEventRaceResults";
 import Signup from "./pages/Signup";
@@ -68,6 +69,7 @@ const App = () => (
           <ScrollToTop />
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/events" element={<Events />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/organizers" element={<OrganizerInfo />} />
@@ -91,11 +93,11 @@ const App = () => (
             <Route path="/admin/events" element={<ProtectedRoute allowedRoles={["admin"]}><AdminEventRecovery /></ProtectedRoute>} />
             <Route path="/admin/event-features" element={<ProtectedRoute allowedRoles={["admin"]}><AdminEventFeatures /></ProtectedRoute>} />
             <Route path="/admin/organizer-fees" element={<ProtectedRoute allowedRoles={["admin"]}><AdminOrganizerFees /></ProtectedRoute>} />
-            <Route path="/admin/plans" element={<ProtectedRoute allowedRoles={["admin"]}><AdminPlans /></ProtectedRoute>} />
-            <Route path="/admin/billing" element={<ProtectedRoute allowedRoles={["admin"]}><AdminBilling /></ProtectedRoute>} />
             <Route path="/admin/organizer-applications" element={<ProtectedRoute allowedRoles={["admin"]}><AdminOrganizerApplications /></ProtectedRoute>} />
             <Route path="/admin/organizers" element={<ProtectedRoute allowedRoles={["admin"]}><AdminOrganizers /></ProtectedRoute>} />
             <Route path="/admin/refunds" element={<ProtectedRoute allowedRoles={["admin"]}><AdminRefunds /></ProtectedRoute>} />
+            <Route path="/admin/credits" element={<ProtectedRoute allowedRoles={["admin"]}><AdminCredits /></ProtectedRoute>} />
+            <Route path="/admin/organizer-pricing" element={<ProtectedRoute allowedRoles={["admin"]}><AdminOrganizerPricing /></ProtectedRoute>} />
 
             {/* Admin/Organizer routes */}
             <Route path="/organizer" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerDashboard /></ProtectedRoute>} />
@@ -116,9 +118,9 @@ const App = () => (
             <Route path="/organizer/events/:eventId/race-results" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventRaceResults /></ProtectedRoute>} />
             <Route path="/event/:eventId/number-list" element={<PublicEventNumberList />} />
             <Route path="/organizer/events/:eventId" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventDashboard /></ProtectedRoute>} />
-            <Route path="/organizer/pricing" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerPricing /></ProtectedRoute>} />
             <Route path="/organizer/setup" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerSetup /></ProtectedRoute>} />
             <Route path="/organizer/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerRefunds /></ProtectedRoute>} />
+            <Route path="/organizer/credits" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerCredits /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerRefunds /></ProtectedRoute>} />
             <Route path="/terms-and-conditions" element={<PrivacyPolicy />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />

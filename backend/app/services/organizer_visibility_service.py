@@ -4,11 +4,10 @@ import datetime as dt
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
-from app.services.pricing_service import _active_plans
 from app.services.auth_service import utc_now
-from models import Event, FoundingProgram, OrganizerEventBilling, Organization, OrganizationMember, PricingPlan, Registration
+from models import Event, Organization, OrganizationMember, Registration
 
 VISIBILITY_GRACE_HOURS = 48
 _VISIBLE_REGISTRATION_STATUSES = ("awaiting_payment", "pending_verification", "confirmed", "checked_in")
@@ -35,42 +34,7 @@ def _authorized_event_ids(db: Session, user, event_id: UUID | None = None) -> li
     return list(db.scalars(query).all())
 
 
-def _entitlement_plan(db: Session, event_id: UUID, plans: list[PricingPlan]) -> PricingPlan | None:
-    billing = db.scalar(
-        select(OrganizerEventBilling)
-        .options(selectinload(OrganizerEventBilling.plan))
-        .where(OrganizerEventBilling.event_id == event_id)
-    )
-    if billing is not None and billing.billing_status in {"paid_manual", "waived"} and billing.plan is not None:
-        return billing.plan
-    return plans[0] if plans else None
-
-
-def _next_plan(plans: list[PricingPlan], plan: PricingPlan | None) -> PricingPlan | None:
-    if plan is None:
-        return plans[0] if plans else None
-    ordered = sorted(plans, key=lambda item: (item.sort_order, item.min_confirmed_registrations))
-    for index, candidate in enumerate(ordered):
-        if candidate.id == plan.id:
-            return ordered[index + 1] if index + 1 < len(ordered) else None
-    return None
-
-
-def _serialize_plan(plan: PricingPlan | None) -> dict | None:
-    if plan is None:
-        return None
-    return {
-        "code": plan.code,
-        "name": plan.name,
-        "maxConfirmedRegistrations": plan.max_confirmed_registrations,
-        "pricePaise": plan.price_paise,
-        "billingUnit": plan.billing_unit,
-    }
-
-
-def _event_visibility(db: Session, user, event_id: UUID, plans: list[PricingPlan]) -> dict:
-    plan = None if user.role == "admin" else _entitlement_plan(db, event_id, plans)
-    next_plan = _next_plan(plans, plan)
+def _event_visibility(db: Session, user, event_id: UUID) -> dict:
     rows = db.execute(
         select(
             Registration.id,
@@ -173,20 +137,9 @@ def _event_visibility(db: Session, user, event_id: UUID, plans: list[PricingPlan
 
     effective_limit = None if grace_active else limit
     locked_summary = None
-    if locked_confirmed_quantity > 0 and next_plan is not None:
-        unit = "registration" if next_plan.billing_unit == "per_registration" else "event"
-        locked_summary = {
-            "message": (
-                f"{locked_confirmed_quantity} more registrations are locked. These participants have registered and may have already "
-                f"paid you directly — upgrade to {next_plan.name} (₹{next_plan.price_paise / 100:g} / {unit}) to view their details, "
-                "confirm payments, and include them in check-in and bib allotment."
-            ),
-            "upgradePlan": _serialize_plan(next_plan),
-        }
-
     return {
-        "plan": _serialize_plan(plan),
-        "upgradePlan": _serialize_plan(next_plan),
+        "plan": None,
+        "upgradePlan": None,
         "planLimit": limit,
         "effectiveLimit": effective_limit,
         "totalConfirmedQuantity": total_confirmed,
@@ -208,15 +161,13 @@ def _event_visibility(db: Session, user, event_id: UUID, plans: list[PricingPlan
 
 
 def get_event_visibility(db: Session, user, event_id: UUID) -> dict:
-    plans = _active_plans(db)
-    return _event_visibility(db, user, event_id, plans)
+    return _event_visibility(db, user, event_id)
 
 
 def get_visibility_for_events(db: Session, user, event_ids: list[UUID]) -> dict[UUID, dict]:
     if not event_ids:
         return {}
-    plans = _active_plans(db)
-    return {event_id: _event_visibility(db, user, event_id, plans) for event_id in event_ids}
+    return {event_id: _event_visibility(db, user, event_id) for event_id in event_ids}
 
 
 def serialize_visibility(visibility: dict) -> dict:

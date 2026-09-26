@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { AlertCircle, CheckCircle2, Ticket } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Ticket } from "lucide-react";
 
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { ParticipantRegistrationCard } from "@/components/ParticipantRegistrationCard";
@@ -15,6 +15,11 @@ const ParticipantRegistrations = () => {
   const [registrationReference, setRegistrationReference] = useState("");
   const [claimCode, setClaimCode] = useState("");
   const [claimSuccess, setClaimSuccess] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 12;
+  const pageCount = Math.max(1, Math.ceil(registrations.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const visibleRegistrations = registrations.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const handleClaim = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -84,9 +89,10 @@ const ParticipantRegistrations = () => {
           )}
           {!isLoading && !isError && registrations.length > 0 && (
             <div className="grid gap-5 lg:grid-cols-2">
-              {registrations.map((registration) => <ParticipantRegistrationCard key={registration.id} registration={registration} />)}
+              {visibleRegistrations.map((registration) => <ParticipantRegistrationCard key={registration.id} registration={registration} />)}
             </div>
           )}
+          {!isLoading && !isError && registrations.length > pageSize && <div className="flex items-center justify-between gap-3 border-t pt-4"><p className="text-sm text-muted-foreground">Page {safePage} of {pageCount} · {registrations.length} registrations</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" disabled={safePage >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>}
         </section>
       </div>
     </DashboardLayout>

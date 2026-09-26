@@ -30,7 +30,7 @@ export function CategoriesSection() {
         {availableSports.map((cat) => (
           <Link
             key={cat.slug}
-            to={`/?sport=${cat.slug}`}
+            to={`/events?sport=${cat.slug}`}
             className="group relative aspect-[3/4] cursor-pointer overflow-hidden rounded-2xl border border-border/20 shadow-sm transition-shadow hover:shadow-xl"
           >
             <img
@@ -39,10 +39,10 @@ export function CategoriesSection() {
               className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
               loading="lazy"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-foreground/80 via-foreground/20 to-transparent" />
-            <div className="relative h-full flex flex-col items-center justify-end pb-6 text-foreground">
-              <cat.icon className="h-8 w-8 mb-2 drop-shadow-lg text-foreground" />
-              <span className="font-bold text-lg drop-shadow-lg text-foreground">{cat.name}</span>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 flex min-h-20 items-center justify-center gap-2 bg-black/85 px-3 py-4 text-white backdrop-blur-sm">
+              <cat.icon className="h-5 w-5 shrink-0 text-white" />
+              <span className="text-base font-bold text-white sm:text-lg">{cat.name}</span>
             </div>
           </Link>
         ))}

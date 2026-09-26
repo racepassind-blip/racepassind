@@ -152,10 +152,10 @@ export function useUnpublishRaceResults(eventId: string) {
 }
 
 /** Public results page: load only published rows. */
-export function usePublicRaceResults(eventId: string | undefined) {
+export function usePublicRaceResults(eventId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: PUBLIC_KEY(eventId ?? ""),
-    enabled: Boolean(eventId),
+    enabled: Boolean(eventId) && enabled,
     queryFn: () =>
       apiRequest<PublicRaceResultsOut>(`/events/${eventId}/race-results`),
   });

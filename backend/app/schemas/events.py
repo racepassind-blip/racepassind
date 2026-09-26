@@ -58,6 +58,7 @@ class RaceCategoryCreateIn(BaseModel):
 class EventScheduleItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    date: dt.date | None = None
     time: str = Field(min_length=1, max_length=40)
     label: str = Field(min_length=1, max_length=240)
 
@@ -70,6 +71,7 @@ class OrganizerEventCreateV1(BaseModel):
     description: str = Field(min_length=1, max_length=10000)
     sport: str = Field(min_length=2, max_length=40)
     event_date: dt.date
+    event_end_date: dt.date | None = None
     registration_open: dt.datetime | None = None
     registration_close: dt.datetime | None = None
     location_name: str = Field(min_length=2, max_length=240)
@@ -123,6 +125,16 @@ class OrganizerEventCreateV1(BaseModel):
     def validate_coordinates(self):
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError("Latitude and longitude must be provided together")
+        return self
+
+    @model_validator(mode="after")
+    def validate_event_dates_and_schedule(self):
+        end_date = self.event_end_date or self.event_date
+        if end_date < self.event_date:
+            raise ValueError("event_end_date must be on or after event_date")
+        for item in self.schedule:
+            if item.date is not None and not self.event_date <= item.date <= end_date:
+                raise ValueError("Schedule item dates must fall within the event date range")
         return self
 
 
@@ -179,6 +191,7 @@ class OrganizerEventUpdateV1(BaseModel):
     description: str = Field(min_length=1, max_length=10000)
     sport: str = Field(min_length=2, max_length=40)
     event_date: dt.date
+    event_end_date: dt.date | None = None
     location_name: str = Field(min_length=2, max_length=240)
     address: str | None = Field(default=None, max_length=500)
     city: str | None = Field(default=None, max_length=120)
@@ -226,6 +239,16 @@ class OrganizerEventUpdateV1(BaseModel):
             if not is_badminton and not normalized_distance:
                 raise ValueError("Distance is required for non-badminton events")
             category.distance = normalized_distance if not is_badminton else None
+        return self
+
+    @model_validator(mode="after")
+    def validate_event_dates_and_schedule(self):
+        end_date = self.event_end_date or self.event_date
+        if end_date < self.event_date:
+            raise ValueError("event_end_date must be on or after event_date")
+        for item in self.schedule:
+            if item.date is not None and not self.event_date <= item.date <= end_date:
+                raise ValueError("Schedule item dates must fall within the event date range")
         return self
 
     @model_validator(mode="after")

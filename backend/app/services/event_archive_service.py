@@ -9,6 +9,7 @@ from models import (
     BadmintonCategoryScoring,
     Checkin,
     Court,
+    CreditTransaction,
     DiscountCode,
     EmailLog,
     Event,
@@ -19,8 +20,6 @@ from models import (
     Match,
     MatchBout,
     OrderItem,
-    OrganizerEventBilling,
-    OrganizerPlatformFeeBilling,
     Payment,
     RaceResult,
     Registration,
@@ -58,7 +57,6 @@ def delete_archived_event(db: Session, event: Event, actor_user_id: UUID) -> Non
     - Registration participants and registrations
     - Tickets, categories (and their scoring configs)
     - Checkpoints, payment settings, discount codes, documents
-    - Event billing and platform-fee billing records
 
     Preserved data:
     - Email logs are kept for history; their event_id is set to NULL.
@@ -87,6 +85,11 @@ def delete_archived_event(db: Session, event: Event, actor_user_id: UUID) -> Non
     db.execute(delete(Payment).where(Payment.registration_id.in_(reg_ids_subq)))
     db.execute(delete(OrderItem).where(OrderItem.registration_id.in_(reg_ids_subq)))
 
+    # Credit ledger rows are immutable financial history. Detach nullable
+    # foreign keys before deleting the operational event/registration records.
+    db.execute(update(CreditTransaction).where(CreditTransaction.registration_id.in_(reg_ids_subq)).values(registration_id=None))
+    db.execute(update(CreditTransaction).where(CreditTransaction.event_id == event.id).values(event_id=None))
+
     # --- Registration children ---
     db.execute(delete(Checkin).where(Checkin.registration_id.in_(reg_ids_subq)))
     db.execute(delete(AllocationHistory).where(AllocationHistory.event_id == event.id))
@@ -109,8 +112,6 @@ def delete_archived_event(db: Session, event: Event, actor_user_id: UUID) -> Non
     db.execute(delete(EventPaymentSettings).where(EventPaymentSettings.event_id == event.id))
     db.execute(delete(DiscountCode).where(DiscountCode.event_id == event.id))
     db.execute(delete(EventDocument).where(EventDocument.event_id == event.id))
-    db.execute(delete(OrganizerEventBilling).where(OrganizerEventBilling.event_id == event.id))
-    db.execute(delete(OrganizerPlatformFeeBilling).where(OrganizerPlatformFeeBilling.event_id == event.id))
 
     # --- Email logs: preserve history, detach from the event ---
     db.execute(update(EmailLog).where(EmailLog.event_id == event.id).values(event_id=None))

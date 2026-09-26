@@ -1,31 +1,37 @@
 from __future__ import annotations
 
+import datetime as dt
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from db import get_db
-from models import Event, EventCategory, FoundingProgram, PricingPlan, Ticket
+from models import Event, EventCategory, Ticket
 from schemas import EventOut
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
 from app.services.registration_config_service import normalize_event_configs
 from app.services.media_service import resolve_media_url
 from app.services.match_service import list_public_match_results
-from app.services.platform_fee_service import get_or_create_config
+from app.services.platform_fee_service import get_effective_pricing, get_or_create_config
 
 router = APIRouter()
 
 
-def _fee_config_values(db: Session) -> tuple[int, int]:
-    """Return (percentage_basis_points, per_registration_paise) for fee previews."""
+def _fee_config_values(db: Session) -> tuple[int, int, int, int]:
     config = get_or_create_config(db)
-    return config.percentage_basis_points, config.per_registration_paise
+    return config.percentage_basis_points, 2000, 6000, 0
 
 
-def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: int = 500, fee_per_registration_paise: int = 1000) -> dict:
+def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: int = 400, fee_minimum_paise: int = 2000, fee_maximum_paise: int = 6000, fee_fixed_paise: int = 0) -> dict:
+    pricing = get_effective_pricing(event.organization)
+    if pricing["mode"] != "DEFAULT":
+        fee_percentage_basis_points = pricing["percentageBasisPoints"]
+        fee_minimum_paise = pricing["minimumFeePaise"]
+        fee_maximum_paise = pricing["maximumFeePaise"]
+        fee_fixed_paise = pricing["fixedFeePaise"] or 0
     tickets = list(event.tickets)
     if event.categories:
         ordered_tickets = []
@@ -58,6 +64,7 @@ def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: in
         "id": event.id,
         "title": event.title,
         "date": event.date,
+        "endDate": event.end_date.date().isoformat() if event.end_date else None,
         "location": event.location,
         "locationDetails": event.locationDetails,
         "category": event.category,
@@ -78,7 +85,9 @@ def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: in
         "tiers": tiers,
         "platformFeeBearer": event.platform_fee_bearer,
         "sportPassFeePercentageBasisPoints": fee_percentage_basis_points,
-        "sportPassFeePerRegistrationPaise": fee_per_registration_paise,
+        "sportPassFeeMinimumPaise": fee_minimum_paise,
+        "sportPassFeeMaximumPaise": fee_maximum_paise,
+        "sportPassFeeFixedPaise": fee_fixed_paise,
         # Refund policy (shown to participants only when enabled)
         "refundPolicyEnabled": event.refund_policy_enabled,
         "refundPolicyType": event.refund_policy_type if event.refund_policy_enabled else None,
@@ -116,8 +125,53 @@ def list_public_events(
         term = f"%{q.strip()}%"
         query = query.where(or_(Event.name.ilike(term), Event.location_name.ilike(term), Event.description.ilike(term)))
     events = db.scalars(query.order_by(Event.start_date).offset(offset).limit(limit)).unique().all()
-    fee_bps, fee_flat = _fee_config_values(db)
-    return [_public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_per_registration_paise=fee_flat) for event in events]
+    fee_bps, fee_min, fee_max, fee_fixed = _fee_config_values(db)
+    return [_public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_minimum_paise=fee_min, fee_maximum_paise=fee_max, fee_fixed_paise=fee_fixed) for event in events]
+
+
+@router.get("/events/search")
+def search_public_events(
+    q: str | None = Query(default=None, max_length=120),
+    sport: str | None = Query(default=None, max_length=40),
+    city: str | None = Query(default=None, max_length=120),
+    timing: str = Query(default="UPCOMING", max_length=20),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=12, ge=1, le=48),
+    db: Session = Depends(get_db),
+    storage=Depends(get_storage_service),
+) -> dict:
+    normalized_timing = timing.strip().upper()
+    if normalized_timing not in {"UPCOMING", "PAST", "ALL"}:
+        raise HTTPException(status_code=422, detail="Unsupported event timing filter")
+    filters = [Event.status == "published", Event.archived_at.is_(None)]
+    if sport:
+        filters.append(Event.category == sport.strip().lower())
+    if city:
+        filters.append(Event.city == city.strip())
+    if q:
+        term = f"%{q.strip()}%"
+        filters.append(or_(Event.name.ilike(term), Event.location_name.ilike(term), Event.city.ilike(term), Event.description.ilike(term), Event.category.ilike(term)))
+    now = dt.datetime.now(dt.timezone.utc)
+    event_end = func.coalesce(Event.end_date, Event.start_date)
+    if normalized_timing == "UPCOMING":
+        filters.append(event_end >= now)
+    elif normalized_timing == "PAST":
+        filters.append(event_end < now)
+    total = int(db.scalar(select(func.count()).select_from(Event).where(*filters)) or 0)
+    order = Event.start_date.desc() if normalized_timing == "PAST" else Event.start_date.asc()
+    events = db.scalars(_event_query().where(*filters).order_by(order, Event.id).offset((page - 1) * page_size).limit(page_size)).unique().all()
+    facet_filter = [Event.status == "published", Event.archived_at.is_(None)]
+    sports = [value for value in db.scalars(select(Event.category).where(*facet_filter).distinct().order_by(Event.category)).all() if value]
+    cities = [value for value in db.scalars(select(Event.city).where(*facet_filter, Event.city.is_not(None)).distinct().order_by(Event.city)).all() if value]
+    fee_bps, fee_min, fee_max, fee_fixed = _fee_config_values(db)
+    return {
+        "items": [_public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_minimum_paise=fee_min, fee_maximum_paise=fee_max, fee_fixed_paise=fee_fixed) for event in events],
+        "page": page,
+        "pageSize": page_size,
+        "total": total,
+        "sports": sports,
+        "cities": cities,
+    }
 
 
 @router.get("/events/{event_id}/results")
@@ -245,39 +299,13 @@ def get_public_event(
     ).unique().first()
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    fee_bps, fee_flat = _fee_config_values(db)
-    return _public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_per_registration_paise=fee_flat)
+    fee_bps, fee_min, fee_max, fee_fixed = _fee_config_values(db)
+    return _public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_minimum_paise=fee_min, fee_maximum_paise=fee_max, fee_fixed_paise=fee_fixed)
 
 
 @router.get("/organizer-plans")
 def list_public_organizer_plans(db: Session = Depends(get_db)) -> dict:
-    plans = db.scalars(
-        select(PricingPlan)
-        .where(PricingPlan.active.is_(True))
-        .order_by(PricingPlan.sort_order.asc(), PricingPlan.min_confirmed_registrations.asc())
-    ).all()
-    program = db.get(FoundingProgram, 1)
-    return {
-        "currency": "INR",
-        "plans": [
-            {
-                "id": str(plan.id),
-                "code": plan.code,
-                "name": plan.name,
-                "minConfirmedRegistrations": plan.min_confirmed_registrations,
-                "maxConfirmedRegistrations": plan.max_confirmed_registrations,
-                "pricePaise": plan.price_paise,
-                "billingUnit": plan.billing_unit,
-                "currency": plan.currency,
-            }
-            for plan in plans
-        ],
-        "foundingProgram": {
-            "enabled": bool(program and program.enabled),
-            "freeRacesCount": program.free_races_count if program else 1,
-            "defaultDiscountPercent": (program.default_discount_basis_points / 100) if program else 100,
-        },
-    }
+    raise HTTPException(status_code=410, detail="Legacy organizer plans have been unwired.")
 
 
 

@@ -19,6 +19,7 @@ from app.services.audit_service import record_audit
 from app.services.payment_service import normalize_payment_reference, validate_manual_upi_settings
 from app.services.registration_config_service import calculate_registration_total, normalize_event_configs
 from app.services.platform_fee_service import compute_participant_pricing
+from app.services.credit_service import CREDIT_CHARGEABLE_PAYMENT_GATEWAYS, CreditValidationError, debit_credits, CREDIT_REGISTRATION_DEBIT
 from app.services.ticket_service import serialize_ticket, ticket_token_for_registration
 from app.services.organizer_visibility_service import _authorized_event_ids, get_visibility_for_events, serialize_visibility, visibility_filter_for_events
 from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, RegistrationParticipant, Refund, Ticket, User
@@ -279,7 +280,7 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
     computed_total["addonConfig"] = addon_config
     is_free = amount_paise == 0
     # Snapshot the SportPass platform-fee pricing for this registration.
-    pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer)
+    pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer, organization=event.organization)
     platform_fee_paise = pricing["platformFeePaise"]
     participant_total_paise = pricing["participantTotalPaise"]
     computed_total["platformFeePaise"] = platform_fee_paise
@@ -430,7 +431,7 @@ def update_payment_reference(db: Session, confirmation_token: str, utr_reference
     return db.scalar(registration_query().where(Registration.id == registration.id))
 
 
-_REVIEWABLE_REGISTRATION_STATES = {"awaiting_payment", "pending_verification"}
+_REVIEWABLE_REGISTRATION_STATES = {"awaiting_payment", "pending_verification", "AWAITING_SPORTPASS_CREDITS"}
 _REVIEWABLE_PAYMENT_STATES = {"pending", "reference_submitted"}
 _LISTABLE_STATES = _REVIEWABLE_REGISTRATION_STATES | {"confirmed", "rejected", "expired", "checked_in"}
 _PAYMENT_STATUS_FILTERS = _REVIEWABLE_PAYMENT_STATES | {"approved", "not_required", "rejected", "expired"}
@@ -706,7 +707,7 @@ def list_organizer_registrations(
     items = []
     
     # Fetch all refund statuses for the registrations on this page
-    reg_ids = [str(reg.id) for reg, _ in page_rows]
+    reg_ids = [reg.id for reg, _ in page_rows]
     refunds = {}
     if reg_ids:
         refund_rows = db.execute(
@@ -1053,7 +1054,11 @@ def decide_registration_payment(db: Session, user, event_id, registration_id, *,
         return _reload_organizer_registration(db, registration.id)
 
     if any(
-        child.status not in _REVIEWABLE_REGISTRATION_STATES or payments[child.id].status not in _REVIEWABLE_PAYMENT_STATES
+        child.status not in _REVIEWABLE_REGISTRATION_STATES
+        or (
+            payments[child.id].status not in _REVIEWABLE_PAYMENT_STATES
+            and not (child.status == "AWAITING_SPORTPASS_CREDITS" and payments[child.id].status == "approved")
+        )
         for child in batch
     ):
         raise ValueError("A registration in this order is no longer awaiting payment review")
@@ -1061,6 +1066,22 @@ def decide_registration_payment(db: Session, user, event_id, registration_id, *,
         raise ValueError("A registration reservation is no longer available")
 
     event = db.get(Event, event_id)
+    if decision == "approve" and event is not None and event.organization.credit_deduction_mode != "MANUAL_EVENT_SETTLEMENT":
+        try:
+            # The savepoint makes a multi-registration order all-or-nothing:
+            # no earlier debit survives when a later registration is short.
+            with db.begin_nested():
+                for child in batch:
+                    payment = payments[child.id]
+                    # Cashfree collects the platform fee in the payment flow; only Direct UPI/manual payments consume Credits.
+                    if payment.payment_gateway not in CREDIT_CHARGEABLE_PAYMENT_GATEWAYS or not (child.platform_fee_paise or 0):
+                        continue
+                    debit_credits(db, organization_id=event.organization_id, amount=child.platform_fee_paise, transaction_type=CREDIT_REGISTRATION_DEBIT, description="SportPass fee for confirmed registration", source_type="REGISTRATION", source_id=str(child.id), event_id=child.event_id, registration_id=child.id, created_by=user.id)
+        except CreditValidationError:
+            for blocked in batch:
+                blocked.status = "AWAITING_SPORTPASS_CREDITS"
+            db.commit()
+            return _reload_organizer_registration(db, registration.id)
     for child in batch:
         payment = payments[child.id]
         ticket = tickets[child.id]
@@ -1444,7 +1465,7 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
         amount_paise = computed_total["totalPaise"]
         if amount_paise > 0 and event.payment_settings is None:
             raise ValueError("Manual UPI payment settings are not configured")
-        pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer)
+        pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer, organization=event.organization, participant_count=len(member_responses))
         computed_total["platformFeePaise"] = pricing["platformFeePaise"]
         computed_total["platformFeeBearer"] = pricing["platformFeeBearer"]
         computed_total["participantTotalPaise"] = pricing["participantTotalPaise"]
@@ -1611,7 +1632,7 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
     amount_paise = computed_total["totalPaise"]
     is_free = amount_paise == 0
     # Snapshot the SportPass platform-fee pricing for this manual registration.
-    pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer)
+    pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer, organization=event.organization, participant_count=len(member_responses))
     platform_fee_paise = pricing["platformFeePaise"]
     participant_total_paise = pricing["participantTotalPaise"]
     computed_total["platformFeePaise"] = platform_fee_paise
@@ -1656,6 +1677,12 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
     db.add(registration)
     db.flush()
     _attach_registration_members(db, registration, participants, member_responses)
+    if confirmed and not is_free and registration.platform_fee_paise > 0 and event.organization.credit_deduction_mode != "MANUAL_EVENT_SETTLEMENT":
+        try:
+            debit_credits(db, organization_id=event.organization_id, amount=registration.platform_fee_paise, transaction_type=CREDIT_REGISTRATION_DEBIT, description="SportPass fee for confirmed manual registration", source_type="REGISTRATION", source_id=str(registration.id), event_id=registration.event_id, registration_id=registration.id, created_by=user.id)
+        except CreditValidationError:
+            confirmed = False
+            registration.status = "AWAITING_SPORTPASS_CREDITS"
     if confirmed:
         _release_reservation(ticket, 1)
         ticket.quantity_sold += 1
@@ -1670,7 +1697,7 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
         total_amount=Decimal(participant_total_paise) / Decimal(100),
         total_amount_paise=participant_total_paise,
         currency="INR",
-        status="paid" if confirmed else "pending",
+        status="paid" if is_free or payload.payment_received else "pending",
         idempotency_key=idempotency_key,
     )
     db.add(order)
@@ -1686,7 +1713,7 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
         payment_gateway="manual_offline",
         method="manual_offline",
         status="not_required" if is_free else "approved" if payload.payment_received else "pending",
-        paid_at=now if confirmed else None,
+        paid_at=now if is_free or payload.payment_received else None,
         reviewed_by=user.id if payload.payment_received and not is_free else None,
         reviewed_at=now if payload.payment_received and not is_free else None,
     ))
@@ -1736,8 +1763,8 @@ def transfer_registration_category(
     • Entry-type mismatches (e.g. singles → team) are blocked.
     • Sold-out target tickets are allowed but a warning is appended to the
       audit metadata so the caller can surface it to the organiser.
-    • Pricing fields (total_amount_paise, platform_fee_paise,
-      participant_total_paise) are recomputed against the NEW ticket price.
+    • The base and participant totals follow the new ticket price while the
+      snapshotted SportPass fee and fee bearer remain unchanged.
     • The old ticket's quantity_sold is decremented; the new ticket's
       quantity_sold is incremented.
     • Bib / allocation number is cleared (reset to unassigned) because
@@ -1806,13 +1833,11 @@ def transfer_registration_category(
     sold_out = target_ticket.available <= 0
     now = utc_now()
 
-    # ── recompute pricing ────────────────────────────────────────────────────
+    # ── update the base without recalculating the registration fee snapshot ─
     new_base_paise = (target_ticket.price or 0) * (registration.quantity or 1)
-    pricing = compute_participant_pricing(
-        db,
-        base_amount_paise=new_base_paise,
-        fee_bearer=event.platform_fee_bearer or "ORGANIZER",
-    )
+    snapshotted_fee_paise = registration.platform_fee_paise or 0
+    snapshotted_bearer = registration.platform_fee_bearer or "ORGANIZER"
+    new_participant_total_paise = new_base_paise + (snapshotted_fee_paise if snapshotted_bearer == "PARTICIPANT" else 0)
     old_base_paise = registration.total_amount_paise or 0
     price_diff_paise = new_base_paise - old_base_paise
 
@@ -1830,7 +1855,7 @@ def transfer_registration_category(
         "ticketName": target_ticket.name,
         "categoryName": target_category.name if target_category else None,
         "totalAmountPaise": new_base_paise,
-        "platformFeePaise": pricing["platformFeePaise"],
+        "platformFeePaise": snapshotted_fee_paise,
     }
 
     # ── update ticket inventory ──────────────────────────────────────────────
@@ -1842,9 +1867,7 @@ def transfer_registration_category(
     registration.category_id = target_ticket.category_id
     registration.total_amount_paise = new_base_paise
     registration.unit_price_paise = target_ticket.price or 0
-    registration.platform_fee_paise = pricing["platformFeePaise"]
-    registration.platform_fee_bearer = pricing["platformFeeBearer"]
-    registration.participant_total_paise = pricing["participantTotalPaise"]
+    registration.participant_total_paise = new_participant_total_paise
 
     # clear allocation — number ranges differ per category
     registration.allocation_number = None
@@ -1857,7 +1880,7 @@ def transfer_registration_category(
         select(Payment).where(Payment.registration_id == registration.id).with_for_update()
     )
     if payment is not None:
-        payment.expected_amount_paise = pricing["participantTotalPaise"]
+        payment.expected_amount_paise = new_participant_total_paise
 
     # ── append transfer note to responses ────────────────────────────────────
     transfer_note = (

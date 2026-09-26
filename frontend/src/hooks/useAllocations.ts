@@ -204,10 +204,10 @@ export interface PublicNumberList {
 }
 
 // Public, read-only list of published number allocations. No auth required.
-export function usePublicNumberList(eventId: string) {
+export function usePublicNumberList(eventId: string, enabled = true) {
   return useQuery({
     queryKey: ["public-number-list", eventId],
-    enabled: Boolean(eventId),
+    enabled: Boolean(eventId) && enabled,
     queryFn: () =>
       apiRequest<PublicNumberList>(`/events/${eventId}/number-list`),
   });

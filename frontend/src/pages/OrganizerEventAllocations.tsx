@@ -4,7 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Search, Filter, ArrowLeft, CalendarDays, User, MapPin, Settings, CheckCircle2, AlertCircle,
-  Save, RefreshCw, Play, ListFilter, Hash, MoreHorizontal, ArrowUp, ArrowDown, Copy, ExternalLink
+  Save, RefreshCw, Play, ListFilter, Hash, MoreHorizontal, ArrowUp, ArrowDown, Copy, ExternalLink,
+  ChevronLeft, ChevronRight
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,7 @@ const OrganizerEventAllocations = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [page, setPage] = useState(1);
   const [rangeStart, setRangeStart] = useState<number>(1);
   const [rangeEnd, setRangeEnd] = useState<number>(100);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
@@ -92,6 +94,11 @@ const OrganizerEventAllocations = () => {
       return matchesSearch && matchesStatus && matchesCategory;
     });
   }, [allocations, searchTerm, filterStatus, filterCategory]);
+
+  const pageSize = 50;
+  const pageCount = Math.max(1, Math.ceil(filteredAllocations.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const visibleAllocations = filteredAllocations.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   // Summary by category
   const summaryByCategory = useMemo(() => {
@@ -382,14 +389,14 @@ const OrganizerEventAllocations = () => {
                   <Input
                     placeholder="Search by name or number..."
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
                     className="pl-9"
                   />
                 </div>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium">Status</label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <Select value={filterStatus} onValueChange={(value) => { setFilterStatus(value); setPage(1); }}>
                   <SelectTrigger>
                     <SelectValue placeholder="All statuses" />
                   </SelectTrigger>
@@ -403,7 +410,7 @@ const OrganizerEventAllocations = () => {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium">Category</label>
-                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <Select value={filterCategory} onValueChange={(value) => { setFilterCategory(value); setPage(1); }}>
                   <SelectTrigger>
                     <SelectValue placeholder="All categories" />
                   </SelectTrigger>
@@ -475,7 +482,7 @@ const OrganizerEventAllocations = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredAllocations.map((alloc) => (
+                  {visibleAllocations.map((alloc) => (
                     <TableRow key={alloc.id}>
                       <TableCell>
                         {alloc.allocation_number ? (
@@ -531,6 +538,22 @@ const OrganizerEventAllocations = () => {
                 </TableBody>
               </Table>
             </div>
+            {filteredAllocations.length > pageSize && (
+              <div className="mt-4 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-muted-foreground">
+                  Showing {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, filteredAllocations.length)} of {filteredAllocations.length}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                    <ChevronLeft className="h-4 w-4" /> Previous
+                  </Button>
+                  <span className="min-w-20 text-center text-xs font-medium text-muted-foreground">Page {safePage} of {pageCount}</span>
+                  <Button variant="outline" size="sm" disabled={safePage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
+                    Next <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -1,5 +1,5 @@
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { ArrowLeft, BarChart3, CalendarDays, CheckCircle2, ClipboardList, Copy, Download, Edit3, ExternalLink, Hash, MapPin, Package, Power, RefreshCw, ScanLine, Ticket, Timer, Trash2, TrendingUp, UserPlus, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, BarChart3, CalendarDays, ClipboardList, Copy, Edit3, ExternalLink, Hash, MapPin, MoreHorizontal, Package, Power, RefreshCw, ScanLine, Ticket, Timer, Trash2, UserPlus, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -83,16 +84,16 @@ const OrganizerEventDashboard = () => {
     }
   };
   const updateArchiveState = async () => {
-    const message = `Delete ${event.name}? It will be removed from your organizer workspace, hidden from participants, and new registrations will stop. Existing registrations, payments, tickets, audit records, and media will be preserved.`;
+    const message = `Archive ${event.name}? It will be hidden from participants and new registrations will stop. Existing registrations, payments, tickets, audit records, and media will be preserved.`;
     if (!window.confirm(message)) return;
     try {
       await apiRequest(`/organizer/events/${event.id}/archive`, { method: "POST", body: "{}" });
       await queryClient.invalidateQueries({ queryKey: ["organizer-events"] });
       await queryClient.invalidateQueries({ queryKey: ["organizer-event-dashboard", event.id] });
-      toast.success("Event deleted successfully.");
+      toast.success("Event archived successfully.");
       navigate("/organizer");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not delete event.");
+      toast.error(error instanceof Error ? error.message : "Could not archive event.");
     }
   };
   const updateRegistrationStatus = async () => {
@@ -115,53 +116,76 @@ const OrganizerEventDashboard = () => {
     }
   };
   const location = event.location.name ?? ([event.location.city, event.location.state].filter(Boolean).join(", ") || "Location pending");
-  const eventDate = formatDate(event.eventDate);
+  const eventDate = event.eventEndDate && event.eventEndDate !== event.eventDate
+    ? `${formatDate(event.eventDate)} – ${formatDate(event.eventEndDate)}`
+    : formatDate(event.eventDate);
   const eventOptions = organizerEvents.filter((option) => !option.isArchived);
   const checkInRecordsRate = registrations.confirmed > 0 ? Math.round((registrations.checkedIn / registrations.confirmed) * 100) : 0;
   const salesPercent = inventory.total > 0 ? Math.round((inventory.sold / inventory.total) * 100) : 0;
+  const pendingReviewCount = registrations.pendingVerification;
+  const isPastEvent = new Date(`${event.eventEndDate || event.eventDate}T23:59:59`).getTime() < Date.now();
 
   return (
     <OrganizerDashboardLayout eventId={event.id}>
       <div className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <section className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6 lg:p-7">
-          <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0">
-              <Button variant="ghost" className="mb-3 -ml-3 gap-2 px-3 text-muted-foreground" onClick={() => navigate("/organizer")}><ArrowLeft className="h-4 w-4" /> Back to events</Button>
-              <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-primary">Event overview</span><Badge variant={event.status === "published" ? "default" : "secondary"}>{event.status}</Badge><Badge variant={event.registrationStatus === "open" ? "outline" : "secondary"}>{event.registrationStatus === "open" ? "Registration open" : "Registration closed"}</Badge>{event.eventDate === new Date().toISOString().slice(0, 10) && <Badge variant="outline">Today</Badge>}</div>
-              <h1 className="mt-3 break-words text-3xl font-black tracking-tight sm:text-4xl">{event.name}</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{event.description || "Track registrations, ticket inventory, and race-day readiness for this event."}</p>
-            </div>
-            <div className="flex w-full flex-wrap items-end gap-2 xl:w-auto xl:max-w-[680px] xl:justify-end">
-              <div className="min-w-[220px] flex-1 sm:flex-none">
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Switch event</p>
-                <Select value={event.id} onValueChange={(value) => navigate(`/organizer/events/${value}`)}>
-                  <SelectTrigger className="w-full bg-background sm:w-[260px]" aria-label="Switch event"><SelectValue placeholder="Select event" /></SelectTrigger>
-                  <SelectContent>{eventOptions.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => void refetch()} disabled={isFetching}><RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh</Button>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => void updateRegistrationStatus()}><Power className="h-4 w-4" />{event.registrationStatus === "open" ? "Close registration" : "Open registration"}</Button>
-              {supportsTournament && <><Button asChild variant="outline" size="sm" className="gap-2"><a href={resultsUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /> Public results</a></Button><Button variant="outline" size="sm" className="gap-2" onClick={() => void copyResultsLink()}><Copy className="h-4 w-4" />{resultsCopied ? "Copied" : "Copy results link"}</Button></>}
-              <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" onClick={() => void updateArchiveState()}><Trash2 className="h-4 w-4" /> Delete event</Button>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ScanLine className="h-4 w-4" /> Check-in matrix</Button>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate(`/organizer/events/${event.id}/checkpoints`)}><ClipboardList className="h-4 w-4" /> Checkpoints</Button>
-              {!event.isArchived && <Button size="sm" className="gap-2" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event</Button>}
-            </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Button variant="ghost" className="w-fit gap-2 px-2 text-muted-foreground" onClick={() => navigate("/organizer")}><ArrowLeft className="h-4 w-4" /> All events</Button>
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <Select value={event.id} onValueChange={(value) => navigate(`/organizer/events/${value}`)}>
+              <SelectTrigger className="min-w-0 flex-1 bg-background sm:w-[280px]" aria-label="Switch event"><SelectValue placeholder="Switch event" /></SelectTrigger>
+              <SelectContent>{eventOptions.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Button variant="outline" size="icon" onClick={() => void refetch()} disabled={isFetching} aria-label="Refresh dashboard" title="Refresh dashboard"><RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /></Button>
           </div>
-          <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 border-t pt-4 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" />{eventDate}</span>
-            <span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" />{location}</span>
-            <span className="inline-flex items-center gap-2 capitalize"><Ticket className="h-4 w-4 text-primary" />{event.sport.replaceAll("_", " ")}</span>
-            <span className="inline-flex items-center gap-2"><Users className="h-4 w-4 text-primary" />{overview.confirmedParticipants.toLocaleString()} visible confirmed participants</span>
+        </div>
+
+        <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+          <div className="grid lg:grid-cols-[minmax(0,1fr)_380px]">
+            <div className="p-5 sm:p-7 lg:p-8">
+              <div className="flex flex-wrap items-center gap-2"><Badge variant={event.status === "published" ? "default" : "secondary"} className="capitalize">{event.status}</Badge><Badge variant={event.registrationStatus === "open" ? "outline" : "secondary"}>{event.registrationStatus === "open" ? "Registration open" : "Registration closed"}</Badge><Badge variant="outline">{isPastEvent ? "Completed" : "Upcoming"}</Badge>{event.eventDate === new Date().toISOString().slice(0, 10) && <Badge variant="outline">Today</Badge>}</div>
+              <h1 className="mt-4 break-words text-3xl font-black tracking-tight sm:text-4xl">{event.name}</h1>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">{event.description || "Track registrations, ticket inventory, and event-day readiness for this event."}</p>
+              <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-muted-foreground">
+                <span className="inline-flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" />{eventDate}</span>
+                <span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" />{location}</span>
+                <span className="inline-flex items-center gap-2 capitalize"><Ticket className="h-4 w-4 text-primary" />{event.sport.replaceAll("_", " ")}</span>
+              </div>
+              <div className="mt-7 flex flex-wrap gap-2">
+                <Button className="gap-2" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><ClipboardList className="h-4 w-4" /> Manage registrations</Button>
+                {!event.isArchived && <Button variant="outline" className="gap-2" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event</Button>}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild><Button variant="outline" className="gap-2"><MoreHorizontal className="h-4 w-4" /> More</Button></DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-60">
+                    <DropdownMenuItem onClick={() => void updateRegistrationStatus()}><Power className="mr-2 h-4 w-4" />{event.registrationStatus === "open" ? "Close registration" : "Open registration"}</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ScanLine className="mr-2 h-4 w-4" />Check-in matrix</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigate(`/organizer/events/${event.id}/checkpoints`)}><ClipboardList className="mr-2 h-4 w-4" />Manage checkpoints</DropdownMenuItem>
+                    {supportsTournament && <><DropdownMenuSeparator /><DropdownMenuItem asChild><a href={resultsUrl} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />Open public results</a></DropdownMenuItem><DropdownMenuItem onClick={() => void copyResultsLink()}><Copy className="mr-2 h-4 w-4" />{resultsCopied ? "Results link copied" : "Copy results link"}</DropdownMenuItem></>}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => void updateArchiveState()}><Trash2 className="mr-2 h-4 w-4" />Archive event</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+            <div className="relative min-h-52 overflow-hidden border-t bg-muted lg:min-h-full lg:border-l lg:border-t-0">
+              <img src={event.bannerUrl ?? "/placeholder.svg"} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(image) => { image.currentTarget.onerror = null; image.currentTarget.src = "/placeholder.svg"; }} />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/5 to-transparent" />
+              <div className="absolute inset-x-5 bottom-5 flex items-end justify-between gap-4 text-white"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/70">Confirmed participants</p><p className="mt-1 text-3xl font-black">{overview.confirmedParticipants.toLocaleString()}</p></div><Badge className="border-white/20 bg-black/45 text-white hover:bg-black/45">{salesPercent}% filled</Badge></div>
+            </div>
           </div>
         </section>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Total registrations</p><ClipboardList className="h-5 w-5 text-primary" /></div><p className="mt-3 text-3xl font-black">{overview.totalRegistrationRecords.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">Registration records for this event</p></CardContent></Card>
-          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Approved value</p><BarChart3 className="h-5 w-5 text-emerald-600" /></div><p className="mt-3 text-3xl font-black">{overview.approvedAmountPaise === 0 ? "₹0" : formatINR(overview.approvedAmountPaise)}</p><p className="mt-1 text-xs text-muted-foreground">Approved paid and free registrations</p></CardContent></Card>
-          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Sign-ups today</p><TrendingUp className="h-5 w-5 text-amber-600" /></div><p className="mt-3 text-3xl font-black">{overview.signupsToday.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">Participant quantity created today</p></CardContent></Card>
-          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Payment success</p><CheckCircle2 className="h-5 w-5 text-blue-600" /></div><p className="mt-3 text-3xl font-black">{overview.paymentSuccessRate}%</p><p className="mt-1 text-xs text-muted-foreground">Approved or free of completed outcomes</p></CardContent></Card>
-          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Check-in rate</p><ScanLine className="h-5 w-5 text-violet-600" /></div><p className="mt-3 text-3xl font-black">{overview.checkInRate}%</p><p className="mt-1 text-xs text-muted-foreground">{inventory.sold.toLocaleString()} tickets sold · {registrations.checkedIn.toLocaleString()} records scanned</p></CardContent></Card>
+        {pendingReviewCount > 0 && (
+          <section className="flex flex-col gap-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+            <div className="flex items-start gap-3"><AlertCircle className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-semibold">{pendingReviewCount} payment {pendingReviewCount === 1 ? "reference needs" : "references need"} review</p><p className="mt-1 text-sm text-amber-900/75 dark:text-amber-100/75">Review submitted UTR details before confirming these registrations.</p></div></div>
+            <Button variant="outline" className="w-fit shrink-0 border-amber-300 bg-white text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-transparent dark:text-amber-100" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=pending_verification`)}>Review payments</Button>
+          </section>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Registrations</p><ClipboardList className="h-5 w-5 text-primary" /></div><p className="mt-3 text-3xl font-black">{overview.totalRegistrationRecords.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">{overview.signupsToday.toLocaleString()} participant{overview.signupsToday === 1 ? "" : "s"} added today</p></CardContent></Card>
+          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Confirmed participants</p><Users className="h-5 w-5 text-blue-600" /></div><p className="mt-3 text-3xl font-black">{overview.confirmedParticipants.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">Across {registrations.confirmed.toLocaleString()} confirmed registration records</p></CardContent></Card>
+          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Approved payments</p><BarChart3 className="h-5 w-5 text-emerald-600" /></div><p className="mt-3 text-3xl font-black">{overview.approvedAmountPaise === 0 ? "₹0" : formatINR(overview.approvedAmountPaise)}</p><p className="mt-1 text-xs text-muted-foreground">{overview.paymentSuccessRate}% payment success rate</p></CardContent></Card>
+          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Check-in progress</p><ScanLine className="h-5 w-5 text-violet-600" /></div><p className="mt-3 text-3xl font-black">{overview.checkInRate}%</p><p className="mt-1 text-xs text-muted-foreground">{registrations.checkedIn.toLocaleString()} of {registrations.confirmed.toLocaleString()} confirmed records scanned</p></CardContent></Card>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
@@ -190,7 +214,18 @@ const OrganizerEventDashboard = () => {
         <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
           <Card><CardHeader className="flex-row items-center justify-between space-y-0"><div><CardTitle>Recent registrations</CardTitle><CardDescription>Latest participant activity for this event.</CardDescription></div><Button variant="outline" size="sm" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}>View all</Button></CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Participant</TableHead><TableHead>Category</TableHead><TableHead>Registered</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{recentRegistrations.map((registration) => <TableRow key={registration.id}><TableCell><p className="font-semibold">{registration.participant.name}</p><p className="text-xs text-muted-foreground">{registration.registrationReference}</p></TableCell><TableCell>{registration.ticket.category || registration.ticket.name}</TableCell><TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatDateTime(registration.createdAt)}</TableCell><TableCell>{registration.amountPaise === 0 ? "Free" : formatINR(registration.amountPaise)}</TableCell><TableCell>{registrationBadge(registration.status)}</TableCell></TableRow>)}{recentRegistrations.length === 0 && <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">No registrations yet.</TableCell></TableRow>}</TableBody></Table></div></CardContent></Card>
 
-          <Card><CardHeader><CardTitle>Quick actions</CardTitle><CardDescription>Every action below stays tied to this event.</CardDescription></CardHeader><CardContent className="grid gap-3"><Button className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/participants/new`)}><UserPlus className="h-4 w-4" /> Add offline participant</Button><Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/allocations`)}><Hash className="h-4 w-4" /> Bib Management</Button>{supportsRaceResults && <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/race-results`)}><Timer className="h-4 w-4" /> Race Results</Button>}<Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><ClipboardList className="h-4 w-4" /> View registrations</Button><Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><Download className="h-4 w-4" /> View registrations & export</Button><Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/check-in?event_id=${encodeURIComponent(event.id)}`)}><ScanLine className="h-4 w-4" /> Open check-in</Button>{!event.isArchived && <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event details</Button>}<div className="mt-2 rounded-lg bg-muted/50 p-3 text-xs leading-5 text-muted-foreground"><p className="font-semibold text-foreground">Race-day readiness</p><p className="mt-1">{overview.confirmedParticipants.toLocaleString()} confirmed participants, {overview.checkInRate}% checked in by participant quantity.</p></div></CardContent></Card>
+          <Card>
+            <CardHeader><CardTitle>Event tools</CardTitle><CardDescription>Shortcuts for setup and event-day operations.</CardDescription></CardHeader>
+            <CardContent className="grid gap-3">
+              <Button className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/participants/new`)}><UserPlus className="h-4 w-4" /> Add offline participant</Button>
+              <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/check-in?event_id=${encodeURIComponent(event.id)}`)}><ScanLine className="h-4 w-4" /> Open check-in scanner</Button>
+              <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ClipboardList className="h-4 w-4" /> View check-in matrix</Button>
+              <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/checkpoints`)}><ClipboardList className="h-4 w-4" /> Manage checkpoints</Button>
+              <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/allocations`)}><Hash className="h-4 w-4" /> Bib management</Button>
+              {supportsRaceResults && <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/race-results`)}><Timer className="h-4 w-4" /> Race results</Button>}
+              <div className="mt-2 rounded-lg bg-muted/50 p-3 text-xs leading-5 text-muted-foreground"><p className="font-semibold text-foreground">Event-day readiness</p><p className="mt-1">{overview.confirmedParticipants.toLocaleString()} confirmed participants, {overview.checkInRate}% checked in by participant quantity.</p></div>
+            </CardContent>
+          </Card>
         </div>
 
         {byAddon && byAddon.length > 0 && (

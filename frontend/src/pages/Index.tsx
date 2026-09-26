@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, HeartHandshake, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, HeartHandshake, Search, ShieldCheck, Sparkles, X } from "lucide-react";
 import { Layout } from "@/components/Layout";
 import { EventCard } from "@/components/EventCard";
 import { CategoriesSection } from "@/components/CategoriesSection";
@@ -13,13 +13,14 @@ const Index = () => {
   const [search, setSearch] = useState("");
   const { data: events = [], isLoading, isError } = useEvents();
 
-  const filtered = events.filter(
-    (event) =>
-      event.title.toLowerCase().includes(search.toLowerCase()) ||
-      event.location.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const featured = events.slice(0, 3);
+  const query = search.trim().toLowerCase();
+  const orderedEvents = [...events].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const filtered = orderedEvents.filter((event) => {
+    const searchable = [event.title, event.location, event.locationDetails?.city, event.locationDetails?.state, event.category].filter(Boolean).join(" ").toLowerCase();
+    return !query || searchable.includes(query);
+  });
+  const featured = query ? [] : orderedEvents.slice(0, 3);
+  const calendarEvents = query ? filtered : orderedEvents.slice(3);
 
   return (
     <Layout>
@@ -31,8 +32,8 @@ const Index = () => {
         />
         <div className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(10,20,45,0.97)_0%,rgba(10,20,45,0.84)_42%,rgba(10,20,45,0.30)_100%)]" />
         <div className="absolute inset-x-0 top-0 -z-10 h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" />
-        <div className="absolute -right-24 top-16 -z-10 h-72 w-72 rounded-full bg-[#ff9933]/15 blur-3xl" />
-        <div className="absolute -bottom-24 left-1/3 -z-10 h-72 w-72 rounded-full bg-[#138808]/15 blur-3xl" />
+        <div className="absolute -right-24 top-16 -z-10 h-72 w-72 rounded-full bg-[#ff9933]/12 blur-3xl" />
+        <div className="absolute -bottom-24 left-1/3 -z-10 h-72 w-72 rounded-full bg-[#138808]/12 blur-3xl" />
 
         <div className="mx-auto flex min-h-[620px] max-w-7xl flex-col justify-center px-4 pb-24 pt-24 sm:px-6 lg:px-8">
           <div className="max-w-2xl">
@@ -42,10 +43,10 @@ const Index = () => {
               <span className="h-1.5 w-1.5 rounded-full bg-[#138808]" />
             </div>
             <h1 className="text-5xl font-black leading-[1.02] tracking-tight sm:text-6xl lg:text-7xl">
-              Discover. Register. Play.
+              Find your next event.
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-8 text-white/80 sm:text-xl">
-              Find sports events across India, register in a few simple steps, and stay connected from sign-up to game day.
+              Browse races, tournaments, and community events across India. Pick a date, choose your entry, and get moving.
             </p>
 
             <div className="mt-8 flex max-w-2xl flex-col gap-3 sm:flex-row">
@@ -58,9 +59,10 @@ const Index = () => {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
+                {search && <button type="button" aria-label="Clear event search" onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-4 w-4" /></button>}
               </div>
-              <Button asChild size="lg" className="h-14 rounded-xl bg-[#ff9933] px-7 text-base font-bold text-[#101b35] shadow-lg hover:bg-[#ffad5c]">
-                <a href="#events">Explore events <ArrowRight className="ml-2 h-4 w-4" /></a>
+              <Button asChild size="lg" className="h-14 rounded-lg bg-primary px-7 text-base font-bold text-primary-foreground shadow-md hover:bg-primary/90">
+                <Link to={search.trim() ? `/events?q=${encodeURIComponent(search.trim())}` : "/events"}>Explore events <ArrowRight className="ml-2 h-4 w-4" /></Link>
               </Button>
             </div>
 
@@ -71,7 +73,7 @@ const Index = () => {
           </div>
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 border-t border-white/15 bg-[#101b35]/70 backdrop-blur-md">
+        <div className="absolute inset-x-0 bottom-0 border-t border-white/15 bg-[#101b35]/80 backdrop-blur-md">
           <div className="mx-auto grid max-w-7xl grid-cols-3 divide-x divide-white/15 px-4 py-5 text-center sm:px-6 lg:px-8">
             <div><p className="text-base font-bold sm:text-lg">Every sport</p><p className="mt-1 text-xs text-white/60 sm:text-sm">From races to tournaments</p></div>
             <div><p className="text-base font-bold sm:text-lg">India-first</p><p className="mt-1 text-xs text-white/60 sm:text-sm">Simple registration &amp; UPI payments</p></div>
@@ -84,17 +86,15 @@ const Index = () => {
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
             <p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-primary">Selected for you</p>
-            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Events worth showing up for</h2>
-            <p className="mt-2 text-muted-foreground">Discover your next challenge and the community behind it.</p>
+            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Upcoming events</h2>
+            <p className="mt-2 text-muted-foreground">A few events coming up soon.</p>
           </div>
-          <a href="#all-events" className="hidden items-center gap-1 text-sm font-bold text-primary transition-colors hover:text-primary/80 sm:flex">
+          <Link to="/events" className="hidden items-center gap-1 text-sm font-bold text-primary transition-colors hover:text-primary/80 sm:flex">
             View all <ArrowRight className="h-4 w-4" />
-          </a>
+          </Link>
         </div>
 
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {featured.map((event) => <EventCard key={event.id} event={event} />)}
-        </div>
+        {featured.length > 0 ? <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{featured.map((event) => <EventCard key={event.id} event={event} />)}</div> : <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">Search results are shown below.</div>}
       </section>
 
       <div className="border-y bg-card">
@@ -105,8 +105,8 @@ const Index = () => {
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
             <p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-primary">The sports calendar</p>
-            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Upcoming across India</h2>
-            <p className="mt-2 text-muted-foreground">From neighbourhood tournaments to major sporting events — see what's coming up next.</p>
+            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">{query ? `Results for “${search.trim()}”` : "More events across India"}</h2>
+            <p className="mt-2 text-muted-foreground">{query ? `${filtered.length} event${filtered.length === 1 ? "" : "s"} found` : "Choose something near you and make a day of it."}</p>
           </div>
           <Sparkles className="hidden h-7 w-7 text-[#ff9933] sm:block" />
         </div>
@@ -115,11 +115,11 @@ const Index = () => {
           <p className="py-16 text-center text-muted-foreground">Loading events…</p>
         ) : isError ? (
           <p className="py-16 text-center text-muted-foreground">Failed to load events.</p>
-        ) : search && filtered.length === 0 ? (
+        ) : query && filtered.length === 0 ? (
           <p className="py-16 text-center text-muted-foreground">No events found for &quot;{search}&quot;</p>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {(search ? filtered : events).map((event) => <EventCard key={event.id} event={event} />)}
+            {calendarEvents.map((event) => <EventCard key={event.id} event={event} />)}
           </div>
         )}
       </section>
@@ -127,8 +127,8 @@ const Index = () => {
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
         <div className="mb-10 text-center">
           <p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-primary">More than registration</p>
-          <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Built around how each sport actually works.</h2>
-          <p className="mt-2 text-muted-foreground">Running, cycling and badminton don't operate the same way — and SportPass doesn't force them to.</p>
+          <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Everything you need on event day.</h2>
+          <p className="mt-2 text-muted-foreground">Simple tools for participants and organizers, from registration through results.</p>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">
@@ -167,7 +167,7 @@ const Index = () => {
           <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#ffb866]">For organizers, clubs &amp; communities</p>
           <h2 className="mt-3 text-3xl font-black sm:text-4xl">Run better sports events.</h2>
           <p className="mt-4 text-white/70">Manage registrations, payments, participants and event-day operations from one place — with workflows designed around your sport.</p>
-          <Button asChild size="lg" className="mt-7 rounded-xl bg-white font-bold text-[#101b35] hover:bg-white/90">
+          <Button asChild size="lg" className="mt-7 rounded-lg bg-white font-bold text-[#101b35] hover:bg-white/90">
             <Link to="/organizers">See SportPass for Organizers <ArrowRight className="ml-2 h-4 w-4" /></Link>
           </Button>
           <p className="mt-6 text-sm text-white/60">From registration to game day.</p>

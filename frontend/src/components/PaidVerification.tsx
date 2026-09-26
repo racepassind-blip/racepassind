@@ -268,7 +268,7 @@ const PaidVerification = ({ organizationId }: PaidVerificationProps) => {
             <div className="flex items-start gap-3 rounded-lg border p-4">
               <Checkbox id="pv-terms" checked={form.acceptTerms} onCheckedChange={(checked) => update("acceptTerms", checked === true)} className="mt-0.5" />
               <Label htmlFor="pv-terms" className="text-sm font-normal leading-6 text-muted-foreground">
-                I accept the <Link to="/terms-and-conditions" target="_blank" className="font-semibold text-primary hover:underline">Organizer Terms</Link> and the current SportPass pricing (5% of the registration fee + ₹10 per paid registration).
+                I accept the <Link to="/terms-and-conditions" target="_blank" className="font-semibold text-primary hover:underline">Organizer Terms</Link> and the current SportPass pricing (4%, with a ₹20 minimum and ₹60 maximum per paid registration).
               </Label>
             </div>
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, Interval, Numeric, String, Text, UniqueConstraint, Uuid, func, text
+from sqlalchemy import JSON, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Interval, Numeric, String, Text, UniqueConstraint, Uuid, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -86,6 +86,13 @@ class Organization(Base):
     fee_type: Mapped[str] = mapped_column(String, nullable=False, server_default="none")
     fee_value_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     fee_percentage_basis_points: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # Current SportPass pricing override. Historical fee_* fields above are retained.
+    platform_pricing_mode: Mapped[str] = mapped_column(String(32), nullable=False, server_default="DEFAULT")
+    platform_fee_percentage_basis_points: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    platform_fee_min_paise: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    platform_fee_max_paise: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    platform_fee_fixed_paise: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credit_deduction_mode: Mapped[str] = mapped_column(String(40), nullable=False, server_default="AUTOMATIC_PER_REGISTRATION")
     onboarding_completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     
@@ -465,24 +472,21 @@ class OrganizerEventBilling(Base):
 
 
 class PlatformFeeConfig(Base):
-    """Singleton configuration for the SportPass organizer platform fee.
-
-    The introductory pricing is 5% of registration revenue + ₹10 per paid
-    registration. Rates are stored here so they are configurable in one place
-    rather than hard-coded across services. There is a single row (id=1).
-    """
+    """Singleton configuration for default SportPass registration pricing."""
 
     __tablename__ = "platform_fee_configs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    # A human label shown to organizers, e.g. "Introductory Pricing".
-    label: Mapped[str] = mapped_column(String, nullable=False, server_default="Introductory Pricing")
-    # Percentage component expressed in basis points (500 = 5%).
-    percentage_basis_points: Mapped[int] = mapped_column(Integer, nullable=False, server_default="500")
-    # Flat per-paid-registration component in paise (1000 = ₹10).
-    per_registration_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1000")
+    # A human label shown to organizers.
+    label: Mapped[str] = mapped_column(String, nullable=False, server_default="Standard SportPass Pricing")
+    # Percentage component expressed in basis points (400 = 4%).
+    percentage_basis_points: Mapped[int] = mapped_column(Integer, nullable=False, server_default="400")
+    # Historical flat add-on column; active pricing keeps this at zero.
+    per_registration_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    minimum_fee_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2000")
+    maximum_fee_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="6000")
     currency: Mapped[str] = mapped_column(String, nullable=False, server_default="INR")
-    # Default number of days given to pay once a bill is raised.
+    # Historical invoice due-days column retained with old records.
     default_due_days: Mapped[int] = mapped_column(Integer, nullable=False, server_default="14")
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
@@ -1163,6 +1167,76 @@ class Refund(Base):
     reviewer: Mapped["User | None"] = relationship(foreign_keys=[reviewed_by])
 
 
+class OrganizerCreditAccount(Base):
+    __tablename__ = "organizer_credit_accounts"
+    __table_args__ = (
+        UniqueConstraint("organization_id", name="uq_organizer_credit_accounts_organization_id"),
+        CheckConstraint("balance_paise >= 0", name="ck_organizer_credit_accounts_nonnegative_balance"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
+    balance_paise: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class CreditTransaction(Base):
+    __tablename__ = "credit_transactions"
+    __table_args__ = (
+        Index("ix_credit_transactions_organization_created_at", "organization_id", "created_at"),
+        UniqueConstraint("source_type", "source_id", name="uq_credit_transactions_source"),
+        CheckConstraint("amount_paise > 0", name="ck_credit_transactions_positive_amount"),
+        CheckConstraint("balance_before_paise >= 0", name="ck_credit_transactions_nonnegative_before"),
+        CheckConstraint("balance_after_paise >= 0", name="ck_credit_transactions_nonnegative_after"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(40), nullable=False)
+    amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_before_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_after_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=True, index=True)
+    registration_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("registrations.id"), nullable=True, index=True)
+    source_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class CreditTopupRequest(Base):
+    __tablename__ = "credit_topup_requests"
+    __table_args__ = (Index("ix_credit_topup_requests_organization_status", "organization_id", "status"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    credits_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    payment_method: Mapped[str] = mapped_column(String(30), nullable=False, server_default="UPI")
+    utr_reference: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    screenshot: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="PENDING")
+    requested_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    approved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class CreditPaymentSettings(Base):
+    """Singleton destination used for prepaid Credit top-ups."""
+    __tablename__ = "credit_payment_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    method: Mapped[str] = mapped_column(String(30), nullable=False, server_default="UPI")
+    upi_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    payee_name: Mapped[str] = mapped_column(String(160), nullable=False, server_default="SportPass India")
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
 # Export all models
 __all__ = [
     "User",
@@ -1201,4 +1275,8 @@ __all__ = [
     "RateLimitBucket",
     "AllocationHistory",
     "Refund",
+    "OrganizerCreditAccount",
+    "CreditTransaction",
+    "CreditTopupRequest",
+    "CreditPaymentSettings",
 ]

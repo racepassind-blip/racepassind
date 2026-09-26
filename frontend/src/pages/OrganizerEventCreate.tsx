@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { ArrowLeft, ArrowRight, CalendarIcon, Plus, Save, Trash2 } from "lucide-react";
+import { eachDayOfInterval, format, startOfDay } from "date-fns";
+import { ArrowLeft, ArrowRight, Calculator, CalendarIcon, CircleHelp, ClipboardList, Eye, Minus, Plus, Save, ShieldCheck, Shirt, Ticket, Trash2, UserRound, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
@@ -35,6 +35,7 @@ interface TicketForm {
 }
 
 interface ScheduleItem {
+  date: string;
   time: string;
   label: string;
 }
@@ -81,6 +82,48 @@ const PREDEFINED_FIELDS: Array<Pick<ParticipantFieldConfig, "id" | "label" | "ty
   { id: "category_distance", label: "Category / distance", type: "select", required: false, options: [] },
 ];
 
+const PARTICIPANT_FIELD_GROUPS = [
+  {
+    title: "Contact",
+    description: "How you identify and reach the participant.",
+    icon: UserRound,
+    ids: ["full_name", "email", "phone"],
+  },
+  {
+    title: "Profile",
+    description: "Details used for eligibility, grouping, or merchandise.",
+    icon: ClipboardList,
+    ids: ["date_of_birth", "gender", "jersey_size", "college_organization"],
+  },
+  {
+    title: "Safety",
+    description: "Useful information for event-day support.",
+    icon: ShieldCheck,
+    ids: ["emergency_contact_name", "emergency_contact_phone", "blood_group"],
+  },
+  {
+    title: "Event-specific",
+    description: "Only collect these when your event flow needs them.",
+    icon: ClipboardList,
+    ids: ["team_name", "category_distance"],
+  },
+] as const;
+
+const PARTICIPANT_FIELD_HELP: Record<string, string> = {
+  full_name: "Shown on the registration, participant list, and ticket.",
+  email: "Used for confirmations and ticket communication.",
+  phone: "Useful for payment follow-up and event-day updates.",
+  date_of_birth: "Use when categories or prizes have age rules.",
+  gender: "Use only when categories or results are grouped by gender.",
+  emergency_contact_name: "The person organizers should contact in an emergency.",
+  emergency_contact_phone: "Emergency contact number for event-day use.",
+  team_name: "Usually unnecessary when the selected category already uses team registration.",
+  jersey_size: "Collects one size for each participant. It does not add a charge.",
+  blood_group: "Optional medical information for event-day support.",
+  college_organization: "Useful for institution or corporate events.",
+  category_distance: "Usually unnecessary because the participant already selects a category and ticket.",
+};
+
 const makeFieldEditor = (field: (typeof PREDEFINED_FIELDS)[number], order: number): ParticipantFieldEditor => ({
   ...field,
   predefined: true,
@@ -88,7 +131,10 @@ const makeFieldEditor = (field: (typeof PREDEFINED_FIELDS)[number], order: numbe
   optionsText: field.options?.join(", ") ?? "",
 });
 
-const defaultFieldEditors = (): ParticipantFieldEditor[] => PREDEFINED_FIELDS.map(makeFieldEditor);
+const DEFAULT_STANDARD_FIELD_IDS = new Set(["full_name", "email", "phone"]);
+const defaultFieldEditors = (): ParticipantFieldEditor[] => PREDEFINED_FIELDS
+  .filter((field) => DEFAULT_STANDARD_FIELD_IDS.has(field.id))
+  .map(makeFieldEditor);
 const defaultAddonEditors = (): AddonEditor[] => [];
 
 interface OrganizerEventResponse {
@@ -98,6 +144,7 @@ interface OrganizerEventResponse {
   sport: string;
   description: string;
   eventDate: string;
+  eventEndDate?: string | null;
   registrationOpen: string | null;
   registrationClose: string | null;
   registrationStatus: "open" | "closed";
@@ -130,6 +177,17 @@ interface OrganizerEventResponse {
 }
 
 const MAX_IMAGE_BYTES = 2_000_000;
+
+const rupeeFormatter = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
+function formatPaise(paise: number): string {
+  return rupeeFormatter.format(Math.max(0, paise) / 100);
+}
 
 function formatFileSize(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
@@ -197,6 +255,7 @@ const OrganizerEventCreate = () => {
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [eventDate, setEventDate] = useState<Date>();
+  const [eventEndDate, setEventEndDate] = useState<Date>();
   const [registrationOpen, setRegistrationOpen] = useState<string | null>(null);
   const [registrationClose, setRegistrationClose] = useState<string | null>(null);
   const [rules, setRules] = useState<string[]>([]);
@@ -219,6 +278,7 @@ const OrganizerEventCreate = () => {
   const [platformFeeRefundable, setPlatformFeeRefundable] = useState(false);
   const [refundPolicyText, setRefundPolicyText] = useState("");
   const [categories, setCategories] = useState<CategoryForm[]>([newCategory()]);
+  const [ticketPreviewQuantities, setTicketPreviewQuantities] = useState<Record<string, number>>({});
   const [fieldEditors, setFieldEditors] = useState<ParticipantFieldEditor[]>(defaultFieldEditors);
   const [mainRegistrantFields, setMainRegistrantFields] = useState<TeamFieldEditorItem[]>(() => DEFAULT_MAIN_REGISTRANT_FIELDS.map((f) => ({ ...f })));
   const [teamParticipantFields, setTeamParticipantFields] = useState<TeamFieldEditorItem[]>(() => DEFAULT_PARTICIPANT_FIELDS.map((f) => ({ ...f })));
@@ -234,6 +294,56 @@ const OrganizerEventCreate = () => {
   );
   const hasPaidTickets = categories.some((category) => category.tickets.some((ticket) => Number(ticket.price) > 0));
   const hasTeamCategory = categories.some((category) => category.entryType === "team");
+  const hasMultiParticipantCategory = categories.some((category) => category.entryType !== "singles");
+  const visiblePredefinedFields = PREDEFINED_FIELDS.filter((field) => supportsDistance || field.id !== "category_distance");
+  const selectedParticipantFieldCount = fieldEditors.filter((field) => supportsDistance || field.id !== "category_distance").length;
+  const requiredParticipantFieldCount = fieldEditors.filter((field) => field.required && (supportsDistance || field.id !== "category_distance")).length;
+  const hasRequiredParticipantContact = fieldEditors.some((field) => (field.id === "email" || field.id === "phone") && field.required);
+  const eventDays = useMemo(() => {
+    if (!eventDate) return [];
+    const effectiveEnd = eventEndDate && eventEndDate >= eventDate ? eventEndDate : eventDate;
+    return eachDayOfInterval({ start: eventDate, end: effectiveEnd }).map((date, index) => ({
+      date,
+      key: format(date, "yyyy-MM-dd"),
+      dayNumber: index + 1,
+      label: format(date, "EEEE, d MMMM yyyy"),
+    }));
+  }, [eventDate, eventEndDate]);
+  useEffect(() => {
+    if (eventDays.length === 0) return;
+    const validDates = new Set(eventDays.map((day) => day.key));
+    const firstDate = eventDays[0].key;
+    const lastDate = eventDays[eventDays.length - 1].key;
+    setSchedule((current) => {
+      let changed = false;
+      const next = current.map((item) => {
+        const storedDate = item.date?.slice(0, 10) || firstDate;
+        if (validDates.has(storedDate)) {
+          if (storedDate === item.date) return item;
+          changed = true;
+          return { ...item, date: storedDate };
+        }
+        changed = true;
+        return { ...item, date: storedDate > lastDate ? lastDate : firstDate };
+      });
+      return changed ? next : current;
+    });
+  }, [eventDays]);
+  const exampleTicketPricePaise = useMemo(() => {
+    const prices = categories.flatMap((category) => category.tickets)
+      .map((ticket) => Number(ticket.price))
+      .filter((price) => Number.isFinite(price) && price >= 0);
+    const representativePrice = prices.find((price) => price > 0) ?? prices[0] ?? 0;
+    return Math.round(representativePrice * 100);
+  }, [categories]);
+  const checkoutPreviewTickets = categories.flatMap((category) => category.tickets.map((ticket) => ({ category, ticket })));
+  const firstPreviewTicketId = checkoutPreviewTickets[0]?.ticket.id;
+  const previewQuantity = (ticketId: string) => ticketPreviewQuantities[ticketId] ?? (ticketId === firstPreviewTicketId ? 1 : 0);
+  const selectedPreviewTickets = checkoutPreviewTickets.filter(({ ticket }) => previewQuantity(ticket.id) > 0);
+  const previewSubtotalPaise = selectedPreviewTickets.reduce((total, { ticket }) => {
+    const pricePaise = Number.isFinite(Number(ticket.price)) ? Math.max(0, Math.round(Number(ticket.price) * 100)) : 0;
+    return total + pricePaise * previewQuantity(ticket.id);
+  }, 0);
   const [isLoadingEvent, setIsLoadingEvent] = useState(Boolean(eventId));
   const [isSaving, setIsSaving] = useState(false);
   const [shareEvent, setShareEvent] = useState<CommunicationEvent | null>(null);
@@ -243,7 +353,8 @@ const OrganizerEventCreate = () => {
     { title: "Basics", description: "Event identity and location" },
     { title: "Schedule & rules", description: "What participants should know" },
     { title: "Categories & tickets", description: "Category options and pricing" },
-    { title: "Participant form", description: "Information and add-ons" },
+    { title: "Registration form", description: "Participant information" },
+    { title: "Add-ons", description: "Optional extras and pricing" },
     { title: "Payment & review", description: "Payment details and save" },
   ];
 
@@ -280,10 +391,11 @@ const OrganizerEventCreate = () => {
         setBannerUrl(event.bannerUrl);
         setWhatsappGroupUrl(event.whatsappGroupUrl ?? "");
         setEventDate(new Date(`${event.eventDate}T00:00:00`));
-        setRegistrationOpen(event.registrationOpen);
-        setRegistrationClose(event.registrationClose);
+        setEventEndDate(event.eventEndDate ? new Date(`${event.eventEndDate}T00:00:00`) : undefined);
+        setRegistrationOpen(event.registrationOpen ? event.registrationOpen.slice(0, 16) : null);
+        setRegistrationClose(event.registrationClose ? event.registrationClose.slice(0, 16) : null);
         setRules(event.rules);
-        setSchedule(event.schedule ?? []);
+        setSchedule((event.schedule ?? []).map((item) => ({ ...item, date: item.date?.slice(0, 10) || event.eventDate })));
         const loadedFields = (event.fieldConfig?.fields ?? defaultFieldEditors()).map((field, index) => ({
           ...field,
           order: index + 1,
@@ -307,6 +419,7 @@ const OrganizerEventCreate = () => {
         }
         setAddonEditors((event.addonConfig?.addons ?? []).map((addon, index) => ({
           ...addon,
+          description: addon.description ?? "",
           order: index + 1,
           priceRupees: String(addon.price_paise / 100),
           optionsText: addon.options?.join(", ") ?? "",
@@ -403,7 +516,7 @@ const OrganizerEventCreate = () => {
     if (categories.length > 1) setCategories((current) => current.filter((category) => category.id !== id));
   };
 
-  const updateTicket = (categoryId: string, ticketId: string, field: "name" | "price" | "quantity", value: string) => {
+  const updateTicket = (categoryId: string, ticketId: string, field: "name" | "description" | "price" | "quantity", value: string) => {
     setCategories((current) => current.map((category) => category.id !== categoryId ? category : {
       ...category,
       tickets: category.tickets.map((ticket) => ticket.id === ticketId ? { ...ticket, [field]: value } : ticket),
@@ -421,11 +534,23 @@ const OrganizerEventCreate = () => {
     }));
   };
 
+  const changeTicketPreviewQuantity = (ticketId: string, delta: number, available: number) => {
+    const safeAvailable = Number.isFinite(available) ? Math.max(0, Math.floor(available)) : 0;
+    const maximum = Math.min(safeAvailable, 10);
+    setTicketPreviewQuantities((current) => {
+      const currentQuantity = current[ticketId] ?? (ticketId === firstPreviewTicketId ? 1 : 0);
+      return { ...current, [ticketId]: Math.max(0, Math.min(maximum, currentQuantity + delta)) };
+    });
+  };
+
   const updateScheduleItem = (index: number, field: keyof ScheduleItem, value: string) => {
     setSchedule((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
   };
 
-  const addScheduleItem = () => setSchedule((current) => [...current, { time: "", label: "" }]);
+  const addScheduleItem = (date: string) => {
+    if (schedule.length >= 50) return toast.error("You can add up to 50 schedule items.");
+    setSchedule((current) => [...current, { date, time: "", label: "" }]);
+  };
   const removeScheduleItem = (index: number) => setSchedule((current) => current.filter((_, itemIndex) => itemIndex !== index));
 
   const updateField = (id: string, patch: Partial<ParticipantFieldEditor>) => {
@@ -439,6 +564,23 @@ const OrganizerEventCreate = () => {
       }
       return [...current, makeFieldEditor(field, current.length + 1)];
     });
+  };
+
+  const addRecommendedParticipantFields = (kind: "essential" | "safety") => {
+    const ids = kind === "essential"
+      ? new Set(["full_name", "email", "phone"])
+      : new Set(["emergency_contact_name", "emergency_contact_phone", "blood_group"]);
+    setFieldEditors((current) => {
+      const next = [...current];
+      PREDEFINED_FIELDS.filter((field) => ids.has(field.id)).forEach((definition) => {
+        const existingIndex = next.findIndex((field) => field.id === definition.id);
+        if (existingIndex === -1) {
+          next.push(makeFieldEditor(definition, next.length + 1));
+        }
+      });
+      return next.map((field) => field.id === "email" ? { ...field, required: true } : field);
+    });
+    toast.success(kind === "essential" ? "Essential contact fields added." : "Event-day safety fields added.");
   };
 
   const addCustomField = () => {
@@ -456,12 +598,50 @@ const OrganizerEventCreate = () => {
     setAddonEditors((current) => current.map((addon) => addon.id === id ? { ...addon, ...patch } : addon));
   };
 
-  const addAddon = () => {
-    const index = addonEditors.length + 1;
-    setAddonEditors((current) => [...current, { id: `addon_${index}`, name: "", price_paise: 0, priceRupees: "0", type: "single_select", required: false, order: index, optionsText: "" }]);
+  const addAddon = (preset: "blank" | "breakfast" | "shirt" = "blank") => {
+    setAddonEditors((current) => {
+      const order = current.length + 1;
+      const base: AddonEditor = {
+        id: `addon_${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`,
+        name: "",
+        description: "",
+        price_paise: 0,
+        priceRupees: "0",
+        type: "single_select",
+        required: false,
+        order,
+        optionsText: "",
+      };
+      if (preset === "breakfast") {
+        return [...current, { ...base, name: "Extra breakfast", description: "Order additional breakfast packs for this registration entry.", type: "quantity", max_qty: 10 }];
+      }
+      if (preset === "shirt") {
+        return [...current, { ...base, name: "Event T-shirt", description: "Choose one T-shirt size for this registration entry.", optionsText: "XS, S, M, L, XL, XXL" }];
+      }
+      return [...current, base];
+    });
   };
 
   const removeAddon = (id: string) => setAddonEditors((current) => current.filter((addon) => addon.id !== id));
+
+  const requireJerseySizePerParticipant = () => {
+    if (hasTeamCategory) {
+      setTeamParticipantFields((current) => {
+        const existing = current.find((field) => field.id === "jersey_size");
+        if (existing) return current.map((field) => field.id === "jersey_size" ? { ...field, required: true } : field);
+        const template = DEFAULT_PARTICIPANT_FIELDS.find((field) => field.id === "jersey_size");
+        return template ? [...current, { ...template, required: true, order: current.length + 1 }] : current;
+      });
+    } else {
+      setFieldEditors((current) => {
+        const existing = current.find((field) => field.id === "jersey_size");
+        if (existing) return current.map((field) => field.id === "jersey_size" ? { ...field, required: true } : field);
+        const template = PREDEFINED_FIELDS.find((field) => field.id === "jersey_size");
+        return template ? [...current, { ...makeFieldEditor(template, current.length + 1), required: true }] : current;
+      });
+    }
+    toast.success("Jersey size will be required for every participant.");
+  };
 
   const mapTeamSection = (fields: TeamFieldEditorItem[]): ParticipantFieldConfig[] =>
     fields
@@ -503,6 +683,7 @@ const OrganizerEventCreate = () => {
     addons: addonEditors.filter((addon) => addon.name.trim()).map((addon, index) => ({
       id: addon.id,
       name: addon.name.trim(),
+      description: addon.description?.trim() ?? "",
       price_paise: Math.round(Number(addon.priceRupees || 0) * 100),
       type: addon.type,
       required: addon.required,
@@ -525,10 +706,20 @@ const OrganizerEventCreate = () => {
         toast.error(`Missing: ${missingFields.join(", ")}.`);
         return false;
       }
+      if (eventDate && eventEndDate && eventEndDate < eventDate) {
+        toast.error("Event end date must be on or after the start date.");
+        return false;
+      }
     }
-    if (step === 1 && schedule.some((item) => (item.time.trim() && !item.label.trim()) || (!item.time.trim() && item.label.trim()))) {
-      toast.error("Complete or remove every schedule item.");
-      return false;
+    if (step === 1) {
+      if (registrationOpen && registrationClose && new Date(registrationClose) <= new Date(registrationOpen)) {
+        toast.error("Registration close must be after registration open.");
+        return false;
+      }
+      if (schedule.some((item) => (item.time.trim() && !item.label.trim()) || (!item.time.trim() && item.label.trim()))) {
+        toast.error("Complete or remove every schedule item.");
+        return false;
+      }
     }
     if (step === 2) {
       if (categories.some((category) => !category.name.trim() || (supportsDistance && !category.distanceValue.trim()) || category.tickets.some((ticket) => !ticket.name.trim() || ticket.price.trim() === "" || ticket.quantity.trim() === ""))) {
@@ -563,7 +754,6 @@ const OrganizerEventCreate = () => {
     }
     if (step === 3) {
       const fieldConfig = participantConfigPayload();
-      const addonConfig = addonConfigPayload();
       if (hasTeamCategory) {
         const allTeamFields = [...(fieldConfig.main_registrant_fields ?? []), ...(fieldConfig.participant_fields ?? [])];
         if ((fieldConfig.main_registrant_fields ?? []).some((field) => !field.predefined && !field.label.trim())) {
@@ -572,14 +762,6 @@ const OrganizerEventCreate = () => {
         }
         if (allTeamFields.some((field) => (field.type === "select" || field.type === "dropdown") && (!field.options || field.options.length === 0))) {
           toast.error("Add at least one option to every dropdown field.");
-          return false;
-        }
-        if (addonConfig.addons.some((addon) => !addon.id.startsWith("addon_") || !Number.isFinite(addon.price_paise) || addon.price_paise < 0)) {
-          toast.error("Complete every add-on with a valid name and price.");
-          return false;
-        }
-        if (addonConfig.addons.some((addon) => addon.type === "single_select" && (!addon.options || addon.options.length === 0))) {
-          toast.error("Add at least one option to every single-select add-on (e.g. Yes, or S / M / L).");
           return false;
         }
         return true;
@@ -592,16 +774,23 @@ const OrganizerEventCreate = () => {
         toast.error("Add at least one option to every select field.");
         return false;
       }
+    }
+    if (step === 4) {
+      const addonConfig = addonConfigPayload();
+      if (addonEditors.some((addon) => !addon.name.trim() || addon.priceRupees.trim() === "")) {
+        toast.error("Give every add-on a name and price. Use ₹0 only when it is included for free.");
+        return false;
+      }
       if (addonConfig.addons.some((addon) => !addon.id.startsWith("addon_") || !Number.isFinite(addon.price_paise) || addon.price_paise < 0)) {
         toast.error("Complete every add-on with a valid name and price.");
         return false;
       }
       if (addonConfig.addons.some((addon) => addon.type === "single_select" && (!addon.options || addon.options.length === 0))) {
-        toast.error("Add at least one option to every single-select add-on (e.g. Yes, or S / M / L).");
+        toast.error("Add at least one option to every one-choice add-on, such as S / M / L.");
         return false;
       }
     }
-    if (step === 4 && hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI" && (!upiId.trim() || !payeeName.trim())) {
+    if (step === 5 && hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI" && (!upiId.trim() || !payeeName.trim())) {
       toast.error("Add UPI ID and payee name for paid ticket tiers.");
       return false;
     }
@@ -658,9 +847,17 @@ const OrganizerEventCreate = () => {
     }
 
     const normalizedRules = rules.map((rule) => rule.trim()).filter(Boolean);
+    const validEventDays = new Set(eventDays.map((day) => day.key));
+    const firstEventDay = eventDays[0]?.key ?? format(eventDate, "yyyy-MM-dd");
+    const lastEventDay = eventDays[eventDays.length - 1]?.key ?? firstEventDay;
     const normalizedSchedule = schedule
-      .map((item) => ({ time: item.time.trim(), label: item.label.trim() }))
-      .filter((item) => item.time && item.label);
+      .map((item) => {
+        const storedDate = item.date?.slice(0, 10) || firstEventDay;
+        const date = validEventDays.has(storedDate) ? storedDate : storedDate > lastEventDay ? lastEventDay : firstEventDay;
+        return { date, time: item.time.trim(), label: item.label.trim() };
+      })
+      .filter((item) => item.time && item.label)
+      .sort((left, right) => left.date.localeCompare(right.date) || left.time.localeCompare(right.time));
 
     const fieldConfig = participantConfigPayload();
     const addonConfig = addonConfigPayload();
@@ -686,7 +883,8 @@ const OrganizerEventCreate = () => {
         name: eventName,
         description,
         sport,
-        event_date: eventDate.toISOString().slice(0, 10),
+        event_date: format(eventDate, "yyyy-MM-dd"),
+        event_end_date: eventEndDate && eventEndDate > eventDate ? format(eventEndDate, "yyyy-MM-dd") : null,
         registration_open: registrationOpen,
         registration_close: registrationClose,
         location_name: location,
@@ -752,7 +950,8 @@ const OrganizerEventCreate = () => {
       const communicationEvent: CommunicationEvent = {
         id: savedEventId,
         name: eventName.trim(),
-        eventDate: eventDate.toISOString().slice(0, 10),
+        eventDate: format(eventDate, "yyyy-MM-dd"),
+        eventEndDate: eventEndDate ? format(eventEndDate, "yyyy-MM-dd") : null,
         sport,
         registrationStatus: "open",
         location: { name: location.trim(), address: address || null, city: city || null, state: state || null, country: "India" },
@@ -806,12 +1005,18 @@ const OrganizerEventCreate = () => {
     <OrganizerDashboardLayout eventId={eventId} showNavigation={Boolean(eventId)}>
       <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
         {isLoadingEvent ? <p className="py-20 text-center text-muted-foreground">Loading event…</p> : <>
-        <div className="mb-8 flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/organizer")}><ArrowLeft className="h-4 w-4" /></Button>
-          <div><h1 className="text-2xl font-extrabold tracking-tight">{eventId ? "Edit Event" : "Create Event"}</h1><p className="mt-1 text-sm text-muted-foreground">{eventId ? "Update your event details, tickets, and payment information." : "Set up your event, tickets, and manual UPI payment details."}</p></div>
+        <div className="mb-6 flex items-start gap-3">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/organizer")} aria-label="Back to organizer dashboard"><ArrowLeft className="h-4 w-4" /></Button>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Step {currentStep + 1} of {wizardSteps.length}</p>
+            <h1 className="mt-1 text-2xl font-extrabold tracking-tight">{eventId ? "Edit event" : "Create an event"}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{wizardSteps[currentStep].description}. Your changes are checked before you move to the next step.</p>
+          </div>
         </div>
 
-        <div className="mb-8 grid gap-2 sm:grid-cols-5">{wizardSteps.map((step, index) => <button key={step.title} type="button" onClick={() => index < currentStep && setCurrentStep(index)} className={cn("rounded-lg border p-3 text-left transition-colors", index === currentStep ? "border-primary bg-primary/5" : index < currentStep ? "border-primary/30 hover:bg-muted" : "border-border bg-muted/30")}><div className="flex items-center gap-2"><span className={cn("flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold", index <= currentStep ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{index + 1}</span><span className="text-sm font-semibold">{step.title}</span></div><p className="mt-1 hidden text-xs text-muted-foreground sm:block">{step.description}</p></button>)}</div>
+        <div className="mb-8 overflow-x-auto pb-1">
+          <div className="grid min-w-[820px] grid-cols-6 gap-2">{wizardSteps.map((step, index) => <button key={step.title} type="button" onClick={() => index < currentStep && setCurrentStep(index)} disabled={index > currentStep} className={cn("rounded-xl border p-3 text-left transition-colors disabled:cursor-default", index === currentStep ? "border-primary bg-primary/5 shadow-sm" : index < currentStep ? "border-primary/30 bg-card hover:bg-muted" : "border-border bg-muted/30")}><div className="flex items-center gap-2"><span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold", index <= currentStep ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{index + 1}</span><span className="text-sm font-semibold">{step.title}</span></div><p className="mt-1 hidden text-xs text-muted-foreground sm:block">{step.description}</p></button>)}</div>
+        </div>
 
         <div className="space-y-8">
           {currentStep === 0 && <section className="space-y-5 rounded-xl border bg-card p-6">
@@ -828,13 +1033,37 @@ const OrganizerEventCreate = () => {
               {import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() && <div className="space-y-2 sm:col-span-2"><Label>Pin location on Google Maps</Label><LocationPicker latitude={latitude} longitude={longitude} onChange={(coordinates) => { setLatitude(coordinates?.latitude ?? null); setLongitude(coordinates?.longitude ?? null); }} /></div>}
               <div className="space-y-2 sm:col-span-2"><Label>WhatsApp community link (optional)</Label><Input type="url" value={whatsappGroupUrl} onChange={(e) => setWhatsappGroupUrl(e.target.value)} placeholder="https://chat.whatsapp.com/your-invite-link" /><p className="text-xs text-muted-foreground">Confirmed participants can join this event group after their ticket is generated.</p></div>
               <div className="space-y-2 sm:col-span-2"><Label htmlFor="event-banner">Event banner (optional)</Label><Input id="event-banner" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = validateImageFile(event.target.files?.[0], "Event banner"); setBannerFile(file); if (!file) event.currentTarget.value = ""; }} /><p className="text-xs text-muted-foreground">PNG, JPEG, or WebP. Maximum size: {formatFileSize(MAX_IMAGE_BYTES)}.</p>{bannerFile && <p className="text-xs text-muted-foreground">Selected: {bannerFile.name} ({formatFileSize(bannerFile.size)})</p>}{bannerUrl && <img src={bannerUrl} alt="Current event banner" className="h-32 w-full rounded-lg border object-cover" />}</div>
-              <div className="space-y-2"><Label>Event date *</Label><Popover><PopoverTrigger asChild><Button variant="outline" className={cn("w-full justify-start text-left font-normal", !eventDate && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{eventDate ? format(eventDate, "PPP") : "Pick a date"}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={eventDate} onSelect={setEventDate} disabled={(date) => date < new Date()} initialFocus /></PopoverContent></Popover></div>
+              <div className="space-y-3 sm:col-span-2">
+                <div><h3 className="font-semibold">Event dates *</h3><p className="text-sm text-muted-foreground">For a one-day event, choose only the start date. Add an end date when the event runs across multiple days.</p></div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2"><Label>Start date *</Label><Popover><PopoverTrigger asChild><Button variant="outline" className={cn("w-full justify-start text-left font-normal", !eventDate && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{eventDate ? format(eventDate, "PPP") : "Choose start date"}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={eventDate} onSelect={(date) => { setEventDate(date); if (date && eventEndDate && eventEndDate < date) setEventEndDate(undefined); }} disabled={(date) => date < startOfDay(new Date())} initialFocus /></PopoverContent></Popover></div>
+                  <div className="space-y-2"><Label>End date (optional)</Label><Popover><PopoverTrigger asChild><Button variant="outline" disabled={!eventDate} className={cn("w-full justify-start text-left font-normal", !eventEndDate && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{eventEndDate ? format(eventEndDate, "PPP") : "Same day"}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={eventEndDate} onSelect={(date) => setEventEndDate(date && eventDate && date > eventDate ? date : undefined)} disabled={(date) => !eventDate || date <= eventDate} initialFocus /></PopoverContent></Popover>{eventEndDate && <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setEventEndDate(undefined)}>Make this a one-day event</Button>}</div>
+                </div>
+                {eventDays.length > 1 && <p className="rounded-lg bg-primary/5 px-3 py-2 text-sm font-medium text-primary">{eventDays.length}-day event · {format(eventDays[0].date, "d MMM")} to {format(eventDays[eventDays.length - 1].date, "d MMM yyyy")}</p>}
+              </div>
             </div>
           </section>}
 
           {currentStep === 1 && <section className="space-y-5 rounded-xl border bg-card p-6">
-            <div className="flex items-center justify-between gap-4"><div><h2 className="text-lg font-bold">Event Schedule</h2><p className="text-sm text-muted-foreground">Add the timings and activities participants should see on the event page.</p></div><Button type="button" variant="outline" size="sm" onClick={addScheduleItem}><Plus className="mr-1 h-4 w-4" /> Add item</Button></div>
-            {schedule.length === 0 ? <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No schedule items added yet. You can publish the schedule later.</p> : <div className="space-y-3">{schedule.map((item, index) => <div key={index} className="grid gap-3 sm:grid-cols-[9rem_1fr_auto]"><div className="space-y-1"><Label className="text-xs">Time</Label><Input type="time" value={item.time} onChange={(event) => updateScheduleItem(index, "time", event.target.value)} /></div><div className="space-y-1"><Label className="text-xs">Activity</Label><Input value={item.label} onChange={(event) => updateScheduleItem(index, "label", event.target.value)} placeholder="Registration and kit pickup" /></div><Button type="button" variant="ghost" size="icon" className="self-end text-destructive" onClick={() => removeScheduleItem(index)} aria-label="Remove schedule item"><Trash2 className="h-4 w-4" /></Button></div>)}</div>}
+            <div><h2 className="text-lg font-bold">Registration window</h2><p className="text-sm text-muted-foreground">Leave either field empty if registrations should open immediately or remain open until you close them.</p></div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2"><Label>Registration opens (optional)</Label><Input type="datetime-local" value={registrationOpen ?? ""} onChange={(event) => setRegistrationOpen(event.target.value || null)} /></div>
+              <div className="space-y-2"><Label>Registration closes (optional)</Label><Input type="datetime-local" value={registrationClose ?? ""} onChange={(event) => setRegistrationClose(event.target.value || null)} /></div>
+            </div>
+          </section>}
+
+          {currentStep === 1 && <section className="space-y-5 rounded-xl border bg-card p-6">
+            <div><h2 className="text-lg font-bold">Day-by-day schedule</h2><p className="text-sm text-muted-foreground">Add activities under the day when they happen. Participants will see the same day-wise layout on the event page. If you shorten the event date range, activities are moved to the nearest remaining day.</p></div>
+            {!eventDate ? <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">Choose the event dates in Step 1 before adding the schedule.</p> : <div className="space-y-4">{eventDays.map((day) => {
+              const dayItems = schedule.map((item, index) => ({ item, index })).filter(({ item }) => item.date === day.key);
+              return <div key={day.key} className="overflow-hidden rounded-xl border">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
+                  <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Day {day.dayNumber}</p><p className="font-semibold">{day.label}</p></div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => addScheduleItem(day.key)} disabled={schedule.length >= 50}><Plus className="mr-1 h-4 w-4" /> Add activity</Button>
+                </div>
+                {dayItems.length === 0 ? <p className="p-4 text-sm text-muted-foreground">No activities added for this day.</p> : <div className="space-y-3 p-4">{dayItems.map(({ item, index }) => <div key={`${day.key}-${index}`} className={cn("grid gap-3", eventDays.length > 1 ? "sm:grid-cols-[8rem_10rem_1fr_auto]" : "sm:grid-cols-[9rem_1fr_auto]")}><div className="space-y-1"><Label className="text-xs">Time</Label><Input type="time" value={item.time} onChange={(event) => updateScheduleItem(index, "time", event.target.value)} /></div>{eventDays.length > 1 && <div className="space-y-1"><Label className="text-xs">Event day</Label><Select value={item.date} onValueChange={(value) => updateScheduleItem(index, "date", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{eventDays.map((option) => <SelectItem key={option.key} value={option.key}>Day {option.dayNumber}</SelectItem>)}</SelectContent></Select></div>}<div className="space-y-1"><Label className="text-xs">Activity</Label><Input value={item.label} onChange={(event) => updateScheduleItem(index, "label", event.target.value)} placeholder="Registration and kit pickup" /></div><Button type="button" variant="ghost" size="icon" className="self-end text-destructive" onClick={() => removeScheduleItem(index)} aria-label="Remove schedule item"><Trash2 className="h-4 w-4" /></Button></div>)}</div>}
+              </div>;
+            })}</div>}
           </section>}
 
           {currentStep === 1 && <section className="space-y-5 rounded-xl border bg-card p-6">
@@ -852,17 +1081,165 @@ const OrganizerEventCreate = () => {
             />
           </section>}
 
-          {currentStep === 3 && !hasTeamCategory && <section className="space-y-5 rounded-xl border bg-card p-6">
-            <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold">Participant Information</h2><p className="text-sm text-muted-foreground">Choose the information participants must provide. Full name is always required, and email or phone must be required.</p></div><Button type="button" variant="outline" size="sm" onClick={addCustomField} disabled={fieldEditors.filter((field) => !field.predefined).length >= 5}><Plus className="mr-1 h-4 w-4" /> Custom field</Button></div>
-            <div className="space-y-2">{PREDEFINED_FIELDS.filter((definition) => !(!supportsDistance && definition.id === "category_distance")).map((definition) => { const field = fieldEditors.find((item) => item.id === definition.id); return <div key={definition.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3"><input type="checkbox" checked={Boolean(field)} disabled={definition.id === "full_name"} onChange={() => togglePredefinedField(definition)} className="h-4 w-4" /><div className="min-w-48 flex-1"><p className="font-medium">{definition.label}</p><p className="text-xs text-muted-foreground">{definition.type === "select" ? (definition.id === "category_distance" ? `Options from categories: ${categoryDistances.join(", ") || "add distances below"}` : definition.options?.join(", ")) : definition.type}</p></div>{field && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={field.required} disabled={definition.id === "full_name"} onChange={(event) => updateField(definition.id, { required: event.target.checked })} /> Required</label>}</div>; })}</div>
-            {fieldEditors.filter((field) => !field.predefined).map((field) => <div key={field.id} className="grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-[1fr_10rem_auto]"><div className="space-y-1"><Label>Custom field label *</Label><Input value={field.label} onChange={(event) => updateField(field.id, { label: event.target.value })} placeholder="College name" /></div><div className="space-y-1"><Label>Type</Label><Select value={field.type} onValueChange={(value) => updateField(field.id, { type: value as ParticipantFieldType })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="text">Text</SelectItem><SelectItem value="number">Number</SelectItem><SelectItem value="dropdown">Dropdown</SelectItem><SelectItem value="yes_no">Yes / No</SelectItem></SelectContent></Select></div><Button type="button" variant="ghost" size="icon" className="self-end text-destructive" onClick={() => removeField(field.id)} aria-label="Remove custom field"><Trash2 className="h-4 w-4" /></Button>{field.type === "dropdown" && <div className="space-y-1 sm:col-span-2"><Label>Options (comma separated) *</Label><Input value={field.optionsText} onChange={(event) => updateField(field.id, { optionsText: event.target.value })} placeholder="Student, Professional" /></div>}<label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={field.required} onChange={(event) => updateField(field.id, { required: event.target.checked })} /> Required</label></div>)}
-            <div className="rounded-xl border bg-background p-4 shadow-sm"><div className="mb-4 flex items-start justify-between gap-3"><div><p className="font-semibold">Participant form preview</p><p className="text-xs text-muted-foreground">This is how participants will see this step during registration.</p></div><span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">Preview</span></div><div className="space-y-5"><div className="grid gap-4 sm:grid-cols-2">{participantConfigPayload().fields.map((field) => { const isSelect = field.type === "select" || field.type === "dropdown" || field.type === "yes_no"; const options = field.type === "yes_no" ? ["Yes", "No"] : field.options ?? []; return <div key={field.id} className={`space-y-2 ${field.id === "full_name" || field.id.startsWith("custom_") ? "sm:col-span-2" : ""}`}><Label>{field.label}{field.required ? " *" : ""}</Label>{isSelect ? <Select disabled><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select> : <Input disabled type={field.type === "email" ? "email" : field.type === "date" ? "date" : field.type === "number" ? "number" : "text"} placeholder={field.type === "phone" ? "+91 98765 43210" : field.type === "yes_no" ? "Yes or No" : undefined} />}</div>; })}</div>{addonConfigPayload().addons.length > 0 && <div className="space-y-3 border-t pt-4"><p className="font-semibold">Add-ons</p>{addonConfigPayload().addons.map((addon) => <div key={addon.id} className="space-y-2"><Label>{addon.name}{addon.required ? " *" : ""} {addon.price_paise > 0 && <span className="text-muted-foreground">(+₹{(addon.price_paise / 100).toFixed(2)}{addon.type === "quantity" ? " each" : ""})</span>}</Label>{addon.type === "quantity" ? <Input disabled type="number" min={addon.required ? 1 : 0} max={addon.max_qty ?? undefined} placeholder="0" /> : <Select disabled><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{(addon.options ?? []).map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>}</div>)}<div className="flex justify-between border-t pt-3 font-bold"><span>Total</span><span>Ticket price + selected add-ons</span></div></div>}</div></div>
+          {currentStep === 3 && !hasTeamCategory && <section className="space-y-6 rounded-xl border bg-card p-5 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold">What should participants fill in?</h2>
+                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Keep the form short. Select only the information you will use for communication, eligibility, safety, or event operations.</p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={addCustomField} disabled={fieldEditors.filter((field) => !field.predefined).length >= 5}><Plus className="mr-1 h-4 w-4" /> Add your own question</Button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 p-4">
+              <div><p className="font-semibold">{selectedParticipantFieldCount} fields selected</p><p className="text-xs text-muted-foreground">{requiredParticipantFieldCount} required · optional fields may be skipped</p></div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => addRecommendedParticipantFields("essential")}>Add essential contact fields</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => addRecommendedParticipantFields("safety")}>Add safety fields</Button>
+              </div>
+            </div>
+
+            {!hasRequiredParticipantContact && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><strong>Choose a contact method.</strong> Email or phone must be selected and marked required so you can reach the participant.</div>}
+
+            <div className="space-y-5">{PARTICIPANT_FIELD_GROUPS.map((group) => {
+              const GroupIcon = group.icon;
+              const definitions = visiblePredefinedFields.filter((definition) => group.ids.some((id) => id === definition.id));
+              if (definitions.length === 0) return null;
+              return <div key={group.title} className="space-y-2">
+                <div className="flex items-start gap-2"><GroupIcon className="mt-0.5 h-4 w-4 text-primary" /><div><h3 className="text-sm font-semibold">{group.title}</h3><p className="text-xs text-muted-foreground">{group.description}</p></div></div>
+                <div className="space-y-2">{definitions.map((definition) => {
+                  const field = fieldEditors.find((item) => item.id === definition.id);
+                  const isSelected = Boolean(field);
+                  return <div key={definition.id} className={cn("rounded-lg border p-3 transition-colors", isSelected ? "border-primary/30 bg-primary/[0.025]" : "bg-background")}>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
+                        <input type="checkbox" checked={isSelected} disabled={definition.id === "full_name"} onChange={() => togglePredefinedField(definition)} className="mt-1 h-4 w-4 shrink-0" />
+                        <span><span className="font-medium">{definition.label}</span>{definition.id === "full_name" && <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Always collected</span>}<span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{definition.id === "category_distance" ? `Options come from your categories: ${categoryDistances.join(", ") || "add category distances first"}.` : PARTICIPANT_FIELD_HELP[definition.id]}</span></span>
+                      </label>
+                      {field && (definition.id === "full_name" ? <span className="text-xs font-medium text-muted-foreground">Required</span> : <label className="flex cursor-pointer items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-xs font-medium"><input type="checkbox" checked={field.required} onChange={(event) => updateField(definition.id, { required: event.target.checked })} /> Must answer</label>)}
+                    </div>
+                  </div>;
+                })}</div>
+              </div>;
+            })}</div>
+
+            {fieldEditors.some((field) => !field.predefined) && <div className="space-y-3 border-t pt-5">
+              <div><h3 className="font-semibold">Your questions</h3><p className="text-xs text-muted-foreground">Up to five custom questions. Ask only for information needed to run this event.</p></div>
+              {fieldEditors.filter((field) => !field.predefined).map((field) => <div key={field.id} className="grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-[1fr_12rem_auto]">
+                <div className="space-y-1"><Label>Question *</Label><Input value={field.label} onChange={(event) => updateField(field.id, { label: event.target.value })} placeholder="Example: Which club do you represent?" /></div>
+                <div className="space-y-1"><Label>Answer format</Label><Select value={field.type} onValueChange={(value) => updateField(field.id, { type: value as ParticipantFieldType })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="text">Short text</SelectItem><SelectItem value="number">Number</SelectItem><SelectItem value="dropdown">Choose from a list</SelectItem><SelectItem value="yes_no">Yes or No</SelectItem></SelectContent></Select></div>
+                <Button type="button" variant="ghost" size="icon" className="self-end text-destructive" onClick={() => removeField(field.id)} aria-label="Remove custom field"><Trash2 className="h-4 w-4" /></Button>
+                {field.type === "dropdown" && <div className="space-y-1 sm:col-span-2"><Label>Choices *</Label><Input value={field.optionsText} onChange={(event) => updateField(field.id, { optionsText: event.target.value })} placeholder="Student, Professional, Other" /><p className="text-xs text-muted-foreground">Separate each choice with a comma.</p></div>}
+                <label className="flex cursor-pointer items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={field.required} onChange={(event) => updateField(field.id, { required: event.target.checked })} /> Participant must answer this question</label>
+              </div>)}
+            </div>}
+
+            <div className="rounded-xl border bg-background p-4 shadow-sm">
+              <div className="mb-4 flex items-start justify-between gap-3"><div><p className="font-semibold">Participant preview</p><p className="text-xs text-muted-foreground">This is the form participants will see after choosing a ticket.</p></div><span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{participantConfigPayload().fields.length} fields</span></div>
+              <div className="grid gap-4 sm:grid-cols-2">{participantConfigPayload().fields.map((field) => { const isSelect = field.type === "select" || field.type === "dropdown" || field.type === "yes_no"; const options = field.type === "yes_no" ? ["Yes", "No"] : field.options ?? []; return <div key={field.id} className={`space-y-2 ${field.id === "full_name" || field.id.startsWith("custom_") ? "sm:col-span-2" : ""}`}><Label>{field.label}{field.required ? " *" : ""}</Label>{isSelect ? <Select disabled><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select> : <Input disabled type={field.type === "email" ? "email" : field.type === "date" ? "date" : field.type === "number" ? "number" : "text"} placeholder={field.type === "phone" ? "+91 98765 43210" : undefined} />}</div>; })}</div>
+            </div>
           </section>}
 
-          {currentStep === 3 && <section className="space-y-5 rounded-xl border bg-card p-6">
-            <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold">Add-ons</h2><p className="text-sm text-muted-foreground">Offer optional or required extras. Prices are added to the selected ticket only when the participant chooses them.</p></div><Button type="button" variant="outline" size="sm" onClick={addAddon}><Plus className="mr-1 h-4 w-4" /> Add-on</Button></div>
-            {addonEditors.length === 0 ? <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No add-ons configured. Participants will pay only the ticket price.</p> : <div className="space-y-4">{addonEditors.map((addon) => <div key={addon.id} className="space-y-3 rounded-lg border p-4"><div className="flex items-center justify-between"><p className="font-semibold">{addon.name || "New add-on"}</p><Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => removeAddon(addon.id)} aria-label="Remove add-on"><Trash2 className="h-4 w-4" /></Button></div><div className="grid gap-3 sm:grid-cols-4"><div className="space-y-1 sm:col-span-2"><Label>Name *</Label><Input value={addon.name} onChange={(event) => updateAddon(addon.id, { name: event.target.value })} placeholder="Breakfast pack" /></div><div className="space-y-1"><Label>Price (₹)</Label><Input type="number" min="0" step="0.01" value={addon.priceRupees} onChange={(event) => updateAddon(addon.id, { priceRupees: event.target.value })} /></div><div className="space-y-1"><Label>Type</Label><Select value={addon.type} onValueChange={(value) => updateAddon(addon.id, { type: value as AddonDefinition["type"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="single_select">Single select</SelectItem><SelectItem value="quantity">Quantity</SelectItem></SelectContent></Select></div></div><div className="flex flex-wrap items-center gap-4"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={addon.required} onChange={(event) => updateAddon(addon.id, { required: event.target.checked })} /> Required</label>{addon.type === "quantity" && <div className="flex items-center gap-2 text-sm"><Label>Max quantity</Label><Input className="w-24" type="number" min="1" max="100" value={addon.max_qty ?? ""} onChange={(event) => updateAddon(addon.id, { max_qty: event.target.value ? Number(event.target.value) : null })} placeholder="No max" /></div>}</div>{addon.type === "single_select" && <div className="space-y-1"><Label>Options (comma separated) *</Label><Input value={addon.optionsText} onChange={(event) => updateAddon(addon.id, { optionsText: event.target.value })} placeholder="S, M, L, XL" /><p className="text-xs text-muted-foreground">e.g. Yes — or sizes like S, M, L, XL</p></div>}</div>)}</div>}
-            {addonEditors.length > 0 && <div className="rounded-lg border border-dashed p-4"><p className="mb-3 text-sm font-semibold">Add-on preview</p>{addonConfigPayload().addons.map((addon) => <div key={addon.id} className="flex items-center justify-between border-b py-2 last:border-0"><span>{addon.name}{addon.required ? " *" : ""}</span><span className="font-medium">{addon.type === "quantity" ? `₹${(addon.price_paise / 100).toFixed(2)} each` : addon.options?.join(" / ")}</span></div>)}<div className="mt-3 flex justify-between font-bold"><span>Estimated total</span><span>Ticket price + selected add-ons</span></div></div>}
+          {currentStep === 4 && <section className="space-y-6 rounded-xl border bg-card p-5 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold">Extras participants can choose</h2>
+                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Add-ons are optional. Each one belongs to a single registration entry and is added to that entry's ticket subtotal.</p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => addAddon()}><Plus className="mr-1 h-4 w-4" /> Blank add-on</Button>
+            </div>
+
+            <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-sm text-blue-950">
+              <div className="flex items-start gap-3">
+                <CircleHelp className="mt-0.5 h-5 w-5 shrink-0" />
+                <div>
+                  <p className="font-semibold">What counts as one add-on?</p>
+                  <p className="mt-1 text-blue-900/80">One registration entry means one single entry, one doubles pair, or one team. An add-on is not automatically multiplied by the number of people in that entry.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border p-4">
+                <div className="flex items-center gap-2 font-semibold"><UtensilsCrossed className="h-4 w-4 text-primary" /> Breakfast included</div>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">If every participant gets breakfast with the ticket, write it in the ticket's “What this ticket includes” field. No add-on is needed.</p>
+              </div>
+              <div className="rounded-xl border p-4">
+                <div className="flex items-center gap-2 font-semibold"><Calculator className="h-4 w-4 text-primary" /> Sell extra breakfasts</div>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">Use Quantity. Two ₹100 packs add ₹200 to the registration subtotal.</p>
+                <Button type="button" variant="link" className="mt-2 h-auto p-0 text-xs" onClick={() => addAddon("breakfast")}>Add breakfast quantity</Button>
+              </div>
+              <div className="rounded-xl border p-4">
+                <div className="flex items-center gap-2 font-semibold"><Shirt className="h-4 w-4 text-primary" /> Collect sizes correctly</div>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">Use Jersey size in participant details when every person needs a size. A paid size add-on charges once per entry.</p>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={requireJerseySizePerParticipant}>Require participant sizes</Button>
+                  <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => addAddon("shirt")}>Sell one T-shirt</Button>
+                </div>
+              </div>
+            </div>
+
+            {hasMultiParticipantCategory && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950"><strong>Your event has doubles or team entries.</strong> One-choice add-ons collect only one shared choice for the pair or team. Use the per-participant Jersey size field when every member needs their own size.</p>}
+
+            {addonEditors.length === 0 ? (
+              <div className="rounded-xl border border-dashed p-6 text-center">
+                <p className="font-medium">No paid extras are configured</p>
+                <p className="mt-1 text-sm text-muted-foreground">Participants will pay the ticket price and any applicable SportPass fee.</p>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => addAddon("breakfast")}><UtensilsCrossed className="mr-2 h-4 w-4" /> Extra breakfast</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => addAddon("shirt")}><Shirt className="mr-2 h-4 w-4" /> One T-shirt</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">{addonEditors.map((addon, addonIndex) => {
+                const pricePaise = Number.isFinite(Number(addon.priceRupees)) ? Math.max(0, Math.round(Number(addon.priceRupees) * 100)) : 0;
+                const exampleQuantity = addon.max_qty === 1 ? 1 : 2;
+                const exampleAddonPaise = addon.type === "quantity" ? pricePaise * exampleQuantity : pricePaise;
+                const exampleBasePaise = exampleTicketPricePaise || 50000;
+                const optionNames = addon.optionsText.split(",").map((item) => item.trim()).filter(Boolean);
+                const hasNoOption = pricePaise > 0 && optionNames.some((option) => ["no", "none", "no thanks"].includes(option.toLowerCase()));
+                return <div key={addon.id} className="space-y-4 rounded-xl border p-4 sm:p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{addonIndex + 1}</span><p className="truncate font-semibold">{addon.name || "New add-on"}</p></div>
+                    <Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => removeAddon(addon.id)} aria-label="Remove add-on"><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1"><Label>Name *</Label><Input value={addon.name} onChange={(event) => updateAddon(addon.id, { name: event.target.value })} placeholder="Extra breakfast" /></div>
+                    <div className="space-y-1"><Label>{addon.type === "quantity" ? "Price per item (₹) *" : "Price added once (₹) *"}</Label><Input type="number" min="0" step="0.01" value={addon.priceRupees} onChange={(event) => updateAddon(addon.id, { priceRupees: event.target.value })} /><p className="text-xs text-muted-foreground">Use 0 only when the choice is free.</p></div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <div className="flex items-center justify-between gap-3"><Label>Note for participants (optional)</Label><span className="text-xs text-muted-foreground">{addon.description?.length ?? 0}/500</span></div>
+                      <Textarea value={addon.description ?? ""} onChange={(event) => updateAddon(addon.id, { description: event.target.value })} maxLength={500} className="min-h-[82px]" placeholder="Example: Served after the finish. Vegetarian meal included. Collect using your bib." />
+                      <p className="text-xs leading-5 text-muted-foreground">Shown below the add-on name at checkout. Explain what is included, collection details, restrictions, or sizing guidance.</p>
+                    </div>
+                    <div className="space-y-1 sm:col-span-2"><Label>How should participants choose?</Label><Select value={addon.type} onValueChange={(value) => updateAddon(addon.id, { type: value as AddonDefinition["type"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="single_select">One choice · price added once</SelectItem><SelectItem value="quantity">Quantity · price multiplied by units</SelectItem></SelectContent></Select><p className="text-xs text-muted-foreground">{addon.type === "quantity" ? "Best for extra meals, merchandise, parking passes, or any item where participants may order more than one." : "Best when the participant chooses one option and every option has the same price."}</p></div>
+                  </div>
+
+                  {addon.type === "quantity" ? <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1"><Label>Maximum quantity (optional)</Label><Input type="number" min="1" max="100" value={addon.max_qty ?? ""} onChange={(event) => updateAddon(addon.id, { max_qty: event.target.value ? Number(event.target.value) : null })} placeholder="No maximum" /></div>
+                    <label className="flex items-center gap-2 self-end rounded-lg border p-3 text-sm"><input type="checkbox" checked={addon.required} onChange={(event) => updateAddon(addon.id, { required: event.target.checked })} /><span><strong>Require at least one</strong><span className="block text-xs text-muted-foreground">The participant cannot continue with quantity 0.</span></span></label>
+                  </div> : <div className="space-y-3">
+                    <div className="space-y-1"><Label>Choices (comma separated) *</Label><Input value={addon.optionsText} onChange={(event) => updateAddon(addon.id, { optionsText: event.target.value })} placeholder="XS, S, M, L, XL" /><p className="text-xs text-muted-foreground">Every listed choice adds the same price once. Do not add “No” as a paid choice.</p></div>
+                    {hasNoOption && <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">“No” would still add {formatPaise(pricePaise)} because every choice has the same price. Remove that option and leave this add-on optional.</p>}
+                    <label className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" checked={addon.required} onChange={(event) => updateAddon(addon.id, { required: event.target.checked })} /><span><strong>Participant must choose an option</strong><span className="block text-xs text-muted-foreground">Required means they must choose; it does not mean the item is included.</span></span></label>
+                  </div>}
+
+                  <div className="flex items-start gap-3 rounded-lg bg-muted/50 p-3 text-sm">
+                    <Calculator className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <div><p className="font-medium">Calculation example</p><p className="mt-0.5 text-xs text-muted-foreground">{formatPaise(exampleBasePaise)} ticket + {addon.type === "quantity" ? `${exampleQuantity} × ${formatPaise(pricePaise)}` : `${formatPaise(pricePaise)} once`} = <strong className="text-foreground">{formatPaise(exampleBasePaise + exampleAddonPaise)}</strong> registration subtotal.</p></div>
+                  </div>
+                  {addon.type === "single_select" && <p className="text-xs text-muted-foreground">Need multiple shirts in different sizes? Create one Quantity add-on per size, for example “T-shirt — S” and “T-shirt — M”.</p>}
+                </div>;
+              })}</div>
+            )}
+
+            {addonEditors.length > 0 && <div className="overflow-hidden rounded-2xl border bg-background shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/30 p-4 sm:p-5"><div><p className="flex items-center gap-2 font-bold"><Eye className="h-4 w-4 text-primary" /> Participant checkout preview</p><p className="mt-1 text-sm text-muted-foreground">This is how your add-ons and notes will appear after participant details.</p></div><span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">Preview only</span></div>
+              <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">{addonConfigPayload().addons.map((addon) => <div key={addon.id} className="space-y-3 rounded-xl border bg-card p-4">
+                <div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{addon.name}{addon.required ? " *" : ""}</p>{addon.description && <p className="mt-1 text-xs leading-5 text-muted-foreground">{addon.description}</p>}</div><span className="shrink-0 text-sm font-bold text-primary">{formatPaise(addon.price_paise)}{addon.type === "quantity" ? " each" : ""}</span></div>
+                {addon.type === "quantity" ? <div><Label className="text-xs">Quantity{addon.max_qty ? ` · max ${addon.max_qty}` : ""}</Label><Input disabled value="0" className="mt-1" /></div> : <div><Label className="text-xs">Choose one</Label><Select disabled><SelectTrigger className="mt-1"><SelectValue placeholder={addon.options?.join(" / ") || "Add choices"} /></SelectTrigger><SelectContent /></Select></div>}
+              </div>)}</div>
+              <p className="border-t bg-muted/20 px-4 py-3 text-xs leading-5 text-muted-foreground sm:px-5">Checkout adds selected extras to the ticket subtotal. Any applicable SportPass fee is calculated separately.</p>
+            </div>}
           </section>}
 
           {currentStep === 2 && <section className="space-y-5 rounded-xl border bg-card p-6">
@@ -870,12 +1247,51 @@ const OrganizerEventCreate = () => {
             {categories.map((category, categoryIndex) => <div key={category.id} className="space-y-4 rounded-lg border p-4">
               <div className="flex items-center justify-between"><p className="font-semibold">Category #{categoryIndex + 1}</p>{categories.length > 1 && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4" /></Button>}</div>
               <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Category name *</Label><Input value={category.name} onChange={(e) => updateCategory(category.id, "name", e.target.value)} placeholder="Open category" /></div>{supportsDistance && <div className="space-y-2"><Label>Distance *</Label><div className="flex gap-2"><Input type="number" min="0" step="any" value={category.distanceValue} onChange={(e) => updateCategory(category.id, "distanceValue", e.target.value)} placeholder="e.g. 21.1" className="flex-1" /><Select value={category.distanceUnit} onValueChange={(v) => updateCategory(category.id, "distanceUnit", v)}><SelectTrigger className="w-24"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="KM"><span className="font-medium">KM</span><span className="ml-2 text-xs text-muted-foreground">Kilometers</span></SelectItem><SelectItem value="M"><span className="font-medium">M</span><span className="ml-2 text-xs text-muted-foreground">Meters</span></SelectItem></SelectContent></Select></div>{category.distanceUnit === "KM" && <p className="text-xs text-muted-foreground">KM = Kilometers (e.g. 5 KM, 21.1 KM, 42.2 KM)</p>}{category.distanceUnit === "M" && <p className="text-xs text-muted-foreground">M = Meters (e.g. 400 M, 800 M)</p>}</div>}<div className="space-y-2"><Label>Entry format *</Label><Select value={category.entryType} onValueChange={(value) => updateEntryType(category.id, value as CategoryForm["entryType"])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="singles">Singles · 1 participant</SelectItem><SelectItem value="doubles">Doubles · 2 participants</SelectItem><SelectItem value="team">Team</SelectItem></SelectContent></Select></div>{category.entryType === "team" && <div className="space-y-2 sm:col-span-2"><Label>Team size *</Label><div className="flex items-center gap-3"><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Min participants</p><Input type="number" min={2} max={50} value={category.teamSizeMin ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMin", Number(e.target.value))} placeholder="3" /></div><span className="mt-5 text-sm text-muted-foreground">—</span><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Max participants</p><Input type="number" min={2} max={50} value={category.teamSizeMax ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMax", Number(e.target.value))} placeholder="10" /></div></div><p className="text-xs text-muted-foreground">Ticket price and inventory count per complete team.</p></div>}</div>
-              {category.tickets.map((ticket, ticketIndex) => <div key={ticket.id} className="space-y-3 rounded-md bg-muted/40 p-4"><div className="flex items-center justify-between"><p className="text-sm font-medium">Ticket #{ticketIndex + 1}</p>{category.tickets.length > 1 && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeTicket(category.id, ticket.id)}><Trash2 className="h-3.5 w-3.5" /></Button>}</div><div className="grid gap-3 sm:grid-cols-3"><div className="space-y-1"><Label className="text-xs">Name *</Label><Input value={ticket.name} onChange={(e) => updateTicket(category.id, ticket.id, "name", e.target.value)} placeholder="Early Bird" /></div><div className="space-y-1"><Label className="text-xs">Price (₹; 0 = free) *</Label><Input type="number" min="0" step="0.01" value={ticket.price} onChange={(e) => updateTicket(category.id, ticket.id, "price", e.target.value)} placeholder="0 for free" /></div><div className="space-y-1"><Label className="text-xs">Places *</Label><Input type="number" min="1" value={ticket.quantity} onChange={(e) => updateTicket(category.id, ticket.id, "quantity", e.target.value)} placeholder="100" /></div></div></div>)}
+              {category.tickets.map((ticket, ticketIndex) => <div key={ticket.id} className="space-y-3 rounded-md bg-muted/40 p-4">
+                <div className="flex items-center justify-between"><p className="text-sm font-medium">Ticket #{ticketIndex + 1}</p>{category.tickets.length > 1 && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeTicket(category.id, ticket.id)}><Trash2 className="h-3.5 w-3.5" /></Button>}</div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="space-y-1"><Label className="text-xs">Name *</Label><Input value={ticket.name} onChange={(e) => updateTicket(category.id, ticket.id, "name", e.target.value)} placeholder="Early Bird" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Price (₹; 0 = free) *</Label><Input type="number" min="0" step="0.01" value={ticket.price} onChange={(e) => updateTicket(category.id, ticket.id, "price", e.target.value)} placeholder="0 for free" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Places *</Label><Input type="number" min="1" value={ticket.quantity} onChange={(e) => updateTicket(category.id, ticket.id, "quantity", e.target.value)} placeholder="100" /></div>
+                  <div className="space-y-1 sm:col-span-3"><Label className="text-xs">What this ticket includes (optional)</Label><Input value={ticket.description} onChange={(e) => updateTicket(category.id, ticket.id, "description", e.target.value)} placeholder="Example: Registration, timing chip, breakfast and finisher medal" /><p className="text-xs text-muted-foreground">Use this for items every participant automatically receives. Do not create a paid add-on for an included item.</p></div>
+                </div>
+              </div>)}
               <Button variant="outline" size="sm" onClick={() => addTicket(category.id)}><Plus className="mr-1 h-4 w-4" /> Ticket tier</Button>
             </div>)}
+
+            <div className="space-y-4 border-t pt-6">
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="flex items-center gap-2 font-bold"><Eye className="h-4 w-4 text-primary" /> Participant checkout preview</h3><p className="mt-1 text-sm text-muted-foreground">This updates as you edit categories and tickets. Use + and − to test the participant subtotal.</p></div><span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">Preview only</span></div>
+              <div className="overflow-hidden rounded-2xl border bg-background shadow-sm">
+                <div className="border-b bg-muted/30 px-4 py-4 sm:px-5"><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Choose your entry</p><p className="mt-1 font-bold">{eventName || "Your event name"}</p><p className="text-sm text-muted-foreground">Select a ticket and quantity to continue.</p></div>
+                <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_280px]">
+                  <div className="space-y-5 p-4 sm:p-5">{categories.map((category, categoryIndex) => <div key={`preview-${category.id}`} className="space-y-3">
+                    <div><p className="font-bold">{category.name || `Category ${categoryIndex + 1}`}</p><p className="text-xs text-muted-foreground">{supportsDistance && category.distanceValue.trim() ? `${category.distanceValue} ${category.distanceUnit} · ` : ""}{category.entryType === "singles" ? "1 participant per entry" : category.entryType === "doubles" ? "2 participants per entry" : `${category.teamSizeMin || 2}–${category.teamSizeMax || "?"} participants per team`}</p></div>
+                    <div className="space-y-2">{category.tickets.map((ticket) => {
+                      const quantity = previewQuantity(ticket.id);
+                      const available = Number(ticket.quantity);
+                      const pricePaise = Number.isFinite(Number(ticket.price)) ? Math.max(0, Math.round(Number(ticket.price) * 100)) : 0;
+                      return <div key={`preview-${ticket.id}`} className={cn("rounded-xl border p-4 transition-colors", quantity > 0 ? "border-primary/40 bg-primary/[0.035]" : "bg-card")}>
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{ticket.name || "Ticket name"}</p>{ticket.price.trim() === "0" && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">Free</span>}</div><p className="mt-1 text-sm text-muted-foreground">{ticket.description.trim() || "Add what this ticket includes so participants know what they receive."}</p><p className="mt-2 text-xs text-muted-foreground">{Number.isFinite(available) && available > 0 ? `${available.toLocaleString("en-IN")} places available` : "Availability not set"}</p></div>
+                          <div className="flex shrink-0 items-center justify-between gap-4 sm:flex-col sm:items-end sm:gap-2"><p className="text-lg font-extrabold text-primary">{ticket.price.trim() === "" ? "Price not set" : formatPaise(pricePaise)}</p><div className="flex items-center rounded-lg border bg-background"><Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => changeTicketPreviewQuantity(ticket.id, -1, available)} disabled={quantity <= 0} aria-label={`Remove one ${ticket.name || "ticket"}`}><Minus className="h-3.5 w-3.5" /></Button><span className="w-8 text-center text-sm font-bold">{quantity}</span><Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => changeTicketPreviewQuantity(ticket.id, 1, available)} disabled={!Number.isFinite(available) || available < 1 || quantity >= Math.min(available, 10)} aria-label={`Add one ${ticket.name || "ticket"}`}><Plus className="h-3.5 w-3.5" /></Button></div></div>
+                        </div>
+                      </div>;
+                    })}</div>
+                  </div>)}</div>
+                  <aside className="border-t bg-muted/20 p-4 lg:border-l lg:border-t-0 sm:p-5">
+                    <div className="lg:sticky lg:top-24"><div className="flex items-center gap-2"><Ticket className="h-4 w-4 text-primary" /><p className="font-bold">Order summary</p></div>
+                      {selectedPreviewTickets.length === 0 ? <p className="mt-4 text-sm text-muted-foreground">No tickets selected.</p> : <div className="mt-4 space-y-3">{selectedPreviewTickets.map(({ category, ticket }) => { const quantity = previewQuantity(ticket.id); const pricePaise = Number.isFinite(Number(ticket.price)) ? Math.max(0, Math.round(Number(ticket.price) * 100)) : 0; return <div key={`summary-${ticket.id}`} className="flex items-start justify-between gap-3 text-sm"><div><p className="font-medium">{category.name || "Category"} · {ticket.name || "Ticket"}</p><p className="text-xs text-muted-foreground">{quantity} {quantity === 1 ? "entry" : "entries"}</p></div><span className="font-semibold">{formatPaise(pricePaise * quantity)}</span></div>; })}</div>}
+                      <div className="mt-4 flex items-center justify-between border-t pt-4"><span className="font-bold">Registration subtotal</span><span className="text-xl font-extrabold text-primary">{formatPaise(previewSubtotalPaise)}</span></div>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{platformFeeBearer === "PARTICIPANT" ? "The applicable SportPass fee is calculated separately at checkout." : "Participants pay this subtotal before any optional add-ons."}</p>
+                      <Button type="button" className="mt-4 w-full" disabled>Continue to participant details</Button>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </div>
           </section>}
 
-          {currentStep === 4 && <section className="space-y-5 rounded-xl border bg-card p-6">
+          {currentStep === 5 && <section className="space-y-5 rounded-xl border bg-card p-6">
             <div><h2 className="text-lg font-bold">Payment details</h2><p className="text-sm text-muted-foreground">{hasPaidTickets ? "Paid ticket tiers use manual UPI. Participants submit a UTR and you approve payment." : "All ticket tiers are free. Participants can register without payment or UPI details."}</p></div>
             <div className="space-y-3">
               <Label>Payment Collection Method {hasPaidTickets ? "*" : "(optional)"}</Label>
@@ -915,14 +1331,14 @@ const OrganizerEventCreate = () => {
               <div className="space-y-3 border-t pt-6">
                 <div>
                   <Label>Who pays the SportPass fee?</Label>
-                  <p className="text-sm text-muted-foreground">The SportPass fee is 5% of the registration fee + ₹10 per paid registration.</p>
+                  <p className="text-sm text-muted-foreground">Standard SportPass pricing is 4% of the registration amount, with a ₹20 minimum and ₹60 maximum. Pricing changes apply only to future registrations.</p>
                 </div>
                 <div className="space-y-2">
                   <label className={`flex items-start gap-3 rounded-lg border p-3 ${feeBearerLocked ? "opacity-70" : "cursor-pointer"}`}>
                     <input type="radio" name="platformFeeBearer" value="ORGANIZER" checked={platformFeeBearer === "ORGANIZER"} onChange={() => setPlatformFeeBearer("ORGANIZER")} disabled={feeBearerLocked} className="mt-1 h-4 w-4 text-primary focus:ring-primary" />
                     <div>
                       <div className="font-medium">Organizer absorbs the fee</div>
-                      <div className="text-xs text-muted-foreground">Participants pay only the registration price. You owe the SportPass fee separately.</div>
+                      <div className="text-xs text-muted-foreground">Participants pay only the registration price. Your organization covers the SportPass fee through its Credit settings.</div>
                     </div>
                   </label>
                   <label className={`flex items-start gap-3 rounded-lg border p-3 ${feeBearerLocked ? "opacity-70" : "cursor-pointer"}`}>
@@ -940,8 +1356,8 @@ const OrganizerEventCreate = () => {
             )}
           </section>}
 
-          {/* Refund Policy section — Step 4, always shown so organizer can opt in */}
-          {currentStep === 4 && <section className="space-y-5 rounded-xl border bg-card p-6">
+          {/* Refund Policy section — final step, always shown so organizer can opt in */}
+          {currentStep === 5 && <section className="space-y-5 rounded-xl border bg-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-lg font-bold">Refund Policy</h2>
@@ -1046,7 +1462,17 @@ const OrganizerEventCreate = () => {
             </div>}
           </section>}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-6">
+          {currentStep === 5 && <section className="space-y-4 rounded-xl border bg-card p-6">
+            <div><h2 className="text-lg font-bold">Review before publishing</h2><p className="text-sm text-muted-foreground">A quick check of the details participants will rely on.</p></div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg bg-muted/50 p-4"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Event</p><p className="mt-1 font-semibold">{eventName || "Event name missing"}</p><p className="mt-1 text-sm text-muted-foreground">{eventDate ? `${format(eventDate, "PPP")}${eventEndDate ? ` – ${format(eventEndDate, "PPP")}` : ""}` : "Date missing"} · {location || "Venue missing"}</p></div>
+              <div className="rounded-lg bg-muted/50 p-4"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Registration setup</p><p className="mt-1 font-semibold">{categories.length} {categories.length === 1 ? "category" : "categories"} · {categories.reduce((count, category) => count + category.tickets.length, 0)} ticket {categories.reduce((count, category) => count + category.tickets.length, 0) === 1 ? "tier" : "tiers"}</p><p className="mt-1 text-sm text-muted-foreground">{addonEditors.length} {addonEditors.length === 1 ? "add-on" : "add-ons"} · {hasTeamCategory ? "Team fields enabled" : `${participantConfigPayload().fields.length} participant fields`}</p></div>
+              <div className="rounded-lg bg-muted/50 p-4"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Payment</p><p className="mt-1 font-semibold">{hasPaidTickets ? (paymentCollectionMethod === "DIRECT_UPI" ? "Direct UPI" : "Online payment gateway") : "Free registration"}</p><p className="mt-1 text-sm text-muted-foreground">{hasPaidTickets ? (platformFeeBearer === "PARTICIPANT" ? "Participant pays the SportPass fee" : "Organizer covers the SportPass fee") : "No payment is collected"}</p></div>
+              <div className="rounded-lg bg-muted/50 p-4"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Refunds</p><p className="mt-1 font-semibold">{refundPolicyEnabled ? "Policy enabled" : "No public refund option"}</p><p className="mt-1 text-sm text-muted-foreground">{refundPolicyEnabled ? refundPolicyType.replaceAll("_", " ") : "You can configure this before publishing."}</p></div>
+            </div>
+          </section>}
+
+          <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t bg-background/95 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/85">
             <Button variant="outline" size="lg" onClick={() => setCurrentStep((step) => Math.max(0, step - 1))} disabled={currentStep === 0 || isSaving}>Back</Button>
             {currentStep < wizardSteps.length - 1 ? <Button size="lg" onClick={goToNextStep}>Next: {wizardSteps[currentStep + 1].title}<ArrowRight className="ml-2 h-4 w-4" /></Button> : <div className="flex flex-wrap justify-end gap-3"><Button variant="outline" size="lg" onClick={() => saveEvent(false)} disabled={isSaving}><Save className="mr-2 h-4 w-4" /> Save draft</Button><Button size="lg" onClick={() => saveEvent(true)} disabled={isSaving}><Save className="mr-2 h-4 w-4" /> {isSaving ? "Saving..." : "Publish event"}</Button></div>}
           </div>

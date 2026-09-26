@@ -64,7 +64,7 @@ class SecurityHardeningTests(unittest.TestCase):
                 json={"email": "person@example.test", "password": "not-a-real-password"},
             )
             self.assertEqual(login.status_code, 403)
-            self.assertEqual(login.json()["detail"], "Your session has expired. Please refresh the page and try again.")
+            self.assertIn("csrf_missing", login.json()["detail"])
 
             organizer_event = client.post("/api/v1/organizer/events", json={})
             self.assertEqual(organizer_event.status_code, 401)

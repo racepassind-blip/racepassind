@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.services.auth_service import utc_now
 from app.services.email_service import EMAIL_HARD_LIMIT, EMAIL_WARNING_LIMIT, get_email_limit_status
-from models import EmailLog, Event, OrganizerApplication, OrganizerEventBilling, Organization, Registration
+from models import EmailLog, Event, OrganizerApplication, Organization, Registration
 
 _CONFIRMED_REGISTRATION_STATUSES = ("confirmed", "checked_in")
 _CONFIRMED_PAYMENT_STATUSES = ("approved", "not_required")
@@ -193,19 +193,6 @@ def get_admin_dashboard(db: Session) -> dict:
             .limit(5)
         ).all()
     )
-    billing_due = db.scalar(
-        select(func.coalesce(func.sum(OrganizerEventBilling.final_amount_paise), 0)).where(
-            OrganizerEventBilling.billing_status.in_(("payment_due", "overdue"))
-        )
-    )
-    billing_collected = db.scalar(
-        select(func.coalesce(func.sum(OrganizerEventBilling.final_amount_paise), 0)).where(
-            OrganizerEventBilling.billing_status == "paid_manual",
-            OrganizerEventBilling.paid_at >= month_start,
-            OrganizerEventBilling.paid_at < next_month_start,
-        )
-    )
-
     return {
         "generatedAt": now.isoformat(),
         "period": {
@@ -228,8 +215,6 @@ def get_admin_dashboard(db: Session) -> dict:
             "racesPublishedThisMonth": _published_races(db, month_start, next_month_start),
             "registrationsThisMonth": registrations,
             "participantSalesThisMonthPaise": participant_sales,
-            "organizerBillingDuePaise": _number(billing_due),
-            "organizerBillingCollectedThisMonthPaise": _number(billing_collected),
         },
         "pendingApplications": [_application(item) for item in pending_applications],
         "incompleteOrganizations": [

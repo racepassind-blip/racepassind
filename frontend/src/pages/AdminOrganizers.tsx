@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { BadgeCheck, Building2, CircleDollarSign, Clock, RefreshCw, Search, ShieldCheck, Users, XCircle, Banknote } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { BadgeCheck, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Clock, RefreshCw, Search, ShieldCheck, Users, XCircle, Banknote } from "lucide-react";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
 
 import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
 import { Badge } from "@/components/ui/badge";
@@ -28,9 +29,6 @@ interface OrganizerOverview {
   totalParticipants: number;
   approvedRevenuePaise: number;
   paidVerificationStatus: VerificationStatus;
-  billingDuePaise: number;
-  billingCollectedPaise: number;
-  overdueBillingCount: number;
   allowDirectUpi: boolean;
 }
 
@@ -95,6 +93,10 @@ const AdminOrganizers = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [verifFilter, setVerifFilter] = useState<"all" | VerificationStatus>("all");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totals, setTotals] = useState({ organizers: 0, participants: 0, revenue: 0, pendingVerification: 0 });
+  const pageSize = 24;
 
   // Verification review dialog
   const [reviewOrg, setReviewOrg] = useState<OrganizerOverview | null>(null);
@@ -110,42 +112,28 @@ const AdminOrganizers = () => {
   const [upiToggleBusy, setUpiToggleBusy] = useState(false);
   const [upiWarningEvents, setUpiWarningEvents] = useState<Array<{ id: string; name: string }>>([]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setRows(await apiRequest<OrganizerOverview[]>("/admin/organizers/overview"));
+      const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+      if (search.trim()) params.set("q", search.trim());
+      if (verifFilter !== "all") params.set("verification_status", verifFilter);
+      const response = await apiRequest<{ items: OrganizerOverview[]; total: number; summary: { organizers: number; pendingVerification: number; participants: number; approvedRevenuePaise: number } }>(`/admin/organizers/overview?${params}`);
+      setRows(response.items);
+      setTotal(response.total);
+      setTotals({ organizers: response.summary.organizers, participants: response.summary.participants, revenue: response.summary.approvedRevenuePaise, pendingVerification: response.summary.pendingVerification });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load organizers.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, search, verifFilter]);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 250); return () => window.clearTimeout(timer); }, [load]);
 
-  const totals = useMemo(() => {
-    return rows.reduce(
-      (acc, row) => {
-        acc.organizers += 1;
-        acc.participants += row.totalParticipants;
-        acc.revenue += row.approvedRevenuePaise;
-        acc.due += row.billingDuePaise;
-        if (row.paidVerificationStatus === "UNDER_REVIEW") acc.pendingVerification += 1;
-        return acc;
-      },
-      { organizers: 0, participants: 0, revenue: 0, due: 0, pendingVerification: 0 },
-    );
-  }, [rows]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((row) => {
-      const matchesVerif = verifFilter === "all" || row.paidVerificationStatus === verifFilter;
-      const matchesSearch = !q || [row.organizationName, row.responsiblePerson, row.email, row.city, row.state].filter(Boolean).some((v) => v!.toLowerCase().includes(q));
-      return matchesVerif && matchesSearch;
-    });
-  }, [rows, search, verifFilter]);
+  const filtered = rows;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // ── Verification review ──────────────────────────────────────────────────
   const openReview = async (org: OrganizerOverview) => {
@@ -233,7 +221,7 @@ const AdminOrganizers = () => {
           <div>
             <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Organizer management</p>
             <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Organizers</h1>
-            <p className="mt-2 max-w-2xl text-muted-foreground">Every organizer with their events, participants, verification status, and billing at a glance.</p>
+            <p className="mt-2 max-w-2xl text-muted-foreground">Open any organizer to manage events, pricing, Credits, verification, and payment access.</p>
           </div>
           <Button variant="outline" onClick={() => void load()} disabled={loading} className="w-fit gap-2"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh</Button>
         </div>
@@ -246,18 +234,17 @@ const AdminOrganizers = () => {
               <StatCard icon={Building2} tone="primary" label="Organizers" value={totals.organizers.toLocaleString("en-IN")} sub={`${totals.pendingVerification} awaiting verification`} />
               <StatCard icon={Users} tone="blue" label="Total participants" value={totals.participants.toLocaleString("en-IN")} sub="Confirmed across all events" />
               <StatCard icon={CircleDollarSign} tone="green" label="Approved sales" value={formatINR(totals.revenue)} sub="Participant registration value" />
-              <StatCard icon={CircleDollarSign} tone="orange" label="Billing due" value={formatINR(totals.due)} sub="Outstanding platform fees" />
             </section>
 
             <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
               <div className="flex flex-col gap-3 border-b p-5 lg:flex-row lg:items-center lg:justify-between">
                 <div className="relative w-full lg:max-w-sm">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <input aria-label="Search organizers" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, person, email, or location" className="h-10 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                  <input aria-label="Search organizers" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search by name, person, email, or location" className="h-10 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
                 </div>
                 <div className="flex gap-1 overflow-x-auto rounded-lg bg-muted/60 p-1" role="tablist" aria-label="Filter by verification">
                   {VERIF_FILTERS.map((filter) => (
-                    <button key={filter.value} type="button" role="tab" aria-selected={verifFilter === filter.value} onClick={() => setVerifFilter(filter.value)} className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${verifFilter === filter.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{filter.label}</button>
+                    <button key={filter.value} type="button" role="tab" aria-selected={verifFilter === filter.value} onClick={() => { setVerifFilter(filter.value); setPage(1); }} className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${verifFilter === filter.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{filter.label}</button>
                   ))}
                 </div>
               </div>
@@ -267,60 +254,18 @@ const AdminOrganizers = () => {
               ) : filtered.length === 0 ? (
                 <div className="p-12 text-center"><Building2 className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-4 font-semibold">No organizers found</p><p className="mt-1 text-sm text-muted-foreground">Try a different search or filter.</p></div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1200px] text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                        <th className="px-4 py-3 font-semibold">Organizer</th>
-                        <th className="px-4 py-3 font-semibold">Events</th>
-                        <th className="px-4 py-3 font-semibold">Participants</th>
-                        <th className="px-4 py-3 font-semibold">Approved sales</th>
-                        <th className="px-4 py-3 font-semibold">Verification</th>
-                        <th className="px-4 py-3 font-semibold">Payment access</th>
-                        <th className="px-4 py-3 font-semibold">Billing due</th>
-                        <th className="px-4 py-3 font-semibold">Collected</th>
-                        <th className="px-4 py-3 font-semibold text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((row) => {
-                        const meta = VERIF_META[row.paidVerificationStatus];
-                        return (
-                          <tr key={row.organizationId} className="border-b last:border-0 hover:bg-muted/30">
-                            <td className="px-4 py-3">
-                              <div className="font-semibold">{row.organizationName}</div>
-                              <div className="text-xs text-muted-foreground">{row.responsiblePerson ?? "—"}{row.email ? ` · ${row.email}` : ""}</div>
-                              <div className="text-xs text-muted-foreground">{[row.city, row.state].filter(Boolean).join(", ") || "Location not set"}</div>
-                            </td>
-                            <td className="px-4 py-3"><span className="font-semibold">{row.eventsPublished}</span> <span className="text-muted-foreground">/ {row.eventsTotal}</span><div className="text-xs text-muted-foreground">published / total</div></td>
-                            <td className="px-4 py-3 font-semibold">{row.totalParticipants.toLocaleString("en-IN")}</td>
-                            <td className="px-4 py-3 font-semibold">{formatINR(row.approvedRevenuePaise)}</td>
-                            <td className="px-4 py-3"><Badge variant="outline" className={`gap-1 ${meta.className}`}>{row.paidVerificationStatus === "VERIFIED" ? <BadgeCheck className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "UNDER_REVIEW" ? <Clock className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "REJECTED" ? <XCircle className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}{meta.label}</Badge></td>
-                            <td className="px-4 py-3">
-                              <Badge variant="outline" className={`gap-1 text-xs ${row.allowDirectUpi ? "border-emerald-300 text-emerald-700" : "border-muted-foreground/30 text-muted-foreground"}`}>
-                                <Banknote className="h-3 w-3" />
-                                {row.allowDirectUpi ? "Direct UPI: Allowed" : "Direct UPI: Restricted"}
-                              </Badge>
-                            </td>
-                            <td className="px-4 py-3"><span className={row.billingDuePaise > 0 ? "font-semibold text-amber-700" : "text-muted-foreground"}>{formatINR(row.billingDuePaise)}</span>{row.overdueBillingCount > 0 && <div className="text-xs font-semibold text-destructive">{row.overdueBillingCount} overdue</div>}</td>
-                            <td className="px-4 py-3 text-muted-foreground">{formatINR(row.billingCollectedPaise)}</td>
-                            <td className="px-4 py-3 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <Button size="sm" variant="outline" onClick={() => void openManage(row)}>Manage</Button>
-                                {row.paidVerificationStatus !== "NOT_SUBMITTED" && (
-                                  <Button size="sm" variant={row.paidVerificationStatus === "UNDER_REVIEW" ? "default" : "outline"} onClick={() => void openReview(row)}>
-                                    {row.paidVerificationStatus === "UNDER_REVIEW" ? "Review" : "Verify"}
-                                  </Button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="grid gap-4 p-5 lg:grid-cols-2">
+                  {filtered.map((row) => {
+                    const meta = VERIF_META[row.paidVerificationStatus];
+                    return <button key={row.organizationId} type="button" onClick={() => void openManage(row)} className="group rounded-2xl border bg-background p-5 text-left transition hover:border-primary/40 hover:shadow-md">
+                      <div className="flex items-start justify-between gap-4"><div className="min-w-0"><h3 className="truncate text-lg font-bold">{row.organizationName}</h3><p className="truncate text-sm text-muted-foreground">{row.responsiblePerson ?? "Responsible person not set"}{row.email ? ` · ${row.email}` : ""}</p><p className="text-xs text-muted-foreground">{[row.city, row.state].filter(Boolean).join(", ") || "Location not set"}</p></div><span className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition group-hover:border-primary group-hover:text-primary">Manage</span></div>
+                      <div className="mt-5 grid grid-cols-3 gap-2"><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Events</p><p className="font-bold">{row.eventsPublished} / {row.eventsTotal}</p></div><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Participants</p><p className="font-bold">{row.totalParticipants.toLocaleString("en-IN")}</p></div><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Sales</p><p className="font-bold">{formatINR(row.approvedRevenuePaise)}</p></div></div>
+                      <div className="mt-4 flex flex-wrap gap-2"><Badge variant="outline" className={`gap-1 ${meta.className}`}>{row.paidVerificationStatus === "VERIFIED" ? <BadgeCheck className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "UNDER_REVIEW" ? <Clock className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "REJECTED" ? <XCircle className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}{meta.label}</Badge><Badge variant="outline" className={row.allowDirectUpi ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}><Banknote className="mr-1 h-3 w-3" />UPI {row.allowDirectUpi ? "allowed" : "restricted"}</Badge></div>
+                    </button>;
+                  })}
                 </div>
               )}
+              {total > pageSize && <div className="flex items-center justify-between gap-3 border-t px-5 py-4"><p className="text-sm text-muted-foreground">Page {page} of {totalPages} · {total.toLocaleString("en-IN")} organizers</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>}
             </section>
           </>
         )}
@@ -380,13 +325,20 @@ const AdminOrganizers = () => {
 
       {/* ── Direct UPI manage dialog ─────────────────────────────────────── */}
       <Dialog open={manageOrg !== null} onOpenChange={(open) => { if (!open) closeManage(); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Manage — {manageOrg?.organizationName}</DialogTitle>
-            <DialogDescription>Control payment access permissions for this organizer.</DialogDescription>
+            <DialogDescription>Events, pricing, Credits, verification, and payment controls in one place.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-5">
+            <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-xl border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">Events</p><p className="text-xl font-bold">{manageOrg?.eventsTotal ?? 0}</p></div>
+              <div className="rounded-xl border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">Published</p><p className="text-xl font-bold">{manageOrg?.eventsPublished ?? 0}</p></div>
+              <div className="rounded-xl border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">Participants</p><p className="text-xl font-bold">{manageOrg?.totalParticipants ?? 0}</p></div>
+              <div className="rounded-xl border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">UPI status</p><p className="text-sm font-bold">{manageOrg?.allowDirectUpi ? "Allowed" : "Restricted"}</p></div>
+            </section>
+            <section className="rounded-xl border p-4"><p className="font-semibold">Organizer controls</p><p className="mt-1 text-xs text-muted-foreground">Open the detailed workspace for pricing and Credit history.</p><div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm"><Link to="/admin/organizer-pricing">Configure pricing</Link></Button><Button asChild size="sm" variant="outline"><Link to="/admin/credits">Open Credits ledger</Link></Button><Button size="sm" variant="outline" onClick={() => void openReview(manageOrg!)}>Verification details</Button></div></section>
             {/* Payment Access section */}
             <section className="rounded-xl border p-4 space-y-3">
               <div className="flex items-center justify-between gap-3">

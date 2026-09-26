@@ -207,8 +207,8 @@ def list_events(
         .where(Event.status == "published", Event.archived_at.is_(None))
         .order_by(Event.start_date)
     ).unique().all()
-    fee_bps, fee_flat = _fee_config_values(db)
-    return [_public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_per_registration_paise=fee_flat) for event in events]
+    fee_bps, fee_min, fee_max, fee_fixed = _fee_config_values(db)
+    return [_public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_minimum_paise=fee_min, fee_maximum_paise=fee_max, fee_fixed_paise=fee_fixed) for event in events]
 
 
 @app.get("/events/{event_id}", response_model=EventOut)
@@ -232,5 +232,5 @@ def get_event(
     )
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    fee_bps, fee_flat = _fee_config_values(db)
-    return _public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_per_registration_paise=fee_flat)
+    fee_bps, fee_min, fee_max, fee_fixed = _fee_config_values(db)
+    return _public_event(event, storage, fee_percentage_basis_points=fee_bps, fee_minimum_paise=fee_min, fee_maximum_paise=fee_max, fee_fixed_paise=fee_fixed)

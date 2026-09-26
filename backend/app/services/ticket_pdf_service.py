@@ -45,10 +45,18 @@ def _format_datetime(value: dt.datetime | None) -> str | None:
 def _event_schedule(event: Event) -> str:
     start = _format_datetime(event.start_date)
     end = _format_datetime(event.end_date)
+    start_is_date_only = bool(event.start_date and event.start_date.time() == dt.time.min)
+    end_is_date_only = bool(event.end_date and event.end_date.time() == dt.time.min)
     if start and end:
+        if start_is_date_only and end_is_date_only:
+            if event.start_date and event.end_date and event.start_date.date() == event.end_date.date():
+                return event.start_date.strftime("%d %b %Y")
+            return f"{event.start_date.strftime('%d %b %Y')} – {event.end_date.strftime('%d %b %Y')}"
         if event.start_date and event.end_date and event.start_date.date() == event.end_date.date():
             return f"{event.start_date.strftime('%d %b %Y')} · {event.start_date.strftime('%I:%M %p')} – {event.end_date.strftime('%I:%M %p')}"
         return f"{start} – {end}"
+    if event.start_date and start_is_date_only:
+        return event.start_date.strftime("%d %b %Y")
     return start or end or event.date or "Date to be announced"
 
 

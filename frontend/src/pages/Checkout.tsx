@@ -184,13 +184,14 @@ const Checkout = () => {
 
   // SportPass fee preview (one entry = one paid registration).
   const feeConfig = {
-    percentageBasisPoints: event?.sportPassFeePercentageBasisPoints ?? 500,
-    perRegistrationPaise: event?.sportPassFeePerRegistrationPaise ?? 1000,
+    percentageBasisPoints: event?.sportPassFeePercentageBasisPoints ?? 400,
+    minimumFeePaise: event?.sportPassFeeMinimumPaise ?? 2000,
+    maximumFeePaise: event?.sportPassFeeMaximumPaise ?? 6000,
   };
   const participantBearsFee = event?.platformFeeBearer === "PARTICIPANT";
   const sportPassFeePaise = useMemo(
     () => entryBasePaise.reduce((sum, base) => sum + computeSportPassFeePaise(base, feeConfig), 0),
-    [entryBasePaise, feeConfig.percentageBasisPoints, feeConfig.perRegistrationPaise],
+    [entryBasePaise, feeConfig.percentageBasisPoints, feeConfig.minimumFeePaise, feeConfig.maximumFeePaise],
   );
   const participantTotalPreviewPaise = totalPaise + (participantBearsFee ? sportPassFeePaise : 0);
 
@@ -215,7 +216,7 @@ const Checkout = () => {
   // Auto-fill captain fields from team info for the first member
   const updateResponse = (riderKey: string, field: ParticipantFieldConfig, value: ResponseValue) => {
     setRiders((previous) => {
-      let updatedRiders = previous.map((rider) => {
+      const updatedRiders = previous.map((rider) => {
         if (rider.key !== riderKey) return rider;
         const responses = { ...rider.responses };
         if (value === "") delete responses[field.id];
@@ -765,6 +766,7 @@ const Checkout = () => {
                                   {addon.required ? " *" : ""}
                                   {addon.price_paise > 0 && <span className="text-muted-foreground">(+₹{(addon.price_paise / 100).toFixed(2)}{addon.type === "quantity" ? " each" : ""})</span>}
                                 </Label>
+                                {addon.description && <p className="text-xs leading-5 text-muted-foreground">{addon.description}</p>}
                                 {addon.type === "quantity" ? (
                                   <Input
                                     type="number"

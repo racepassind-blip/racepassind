@@ -3,15 +3,17 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { getSportConfig } from "@/data/sportConfig";
 import { computeSportPassFeePaise, formatPaise } from "@/lib/platform-fee";
-import { useEvent } from "@/hooks/useEvents";
+import { useEvent, usePublicEventResults } from "@/hooks/useEvents";
+import { usePublicNumberList } from "@/hooks/useAllocations";
+import { usePublicRaceResults } from "@/hooks/useRaceTimeResults";
 import { createWhatsAppUrl, WHATSAPP_MESSAGES } from "@/lib/whatsapp";
 import {
   Calendar,
   MapPin,
   ArrowLeft,
+  ArrowRight,
   Trophy,
   Clock,
   User,
@@ -21,6 +23,7 @@ import {
   ShieldCheck,
   Info,
   FileText,
+  Check,
 } from "lucide-react";
 
 function WhatsAppIcon({ className }: { className?: string }) {
@@ -37,11 +40,39 @@ function WhatsAppIcon({ className }: { className?: string }) {
   );
 }
 
+function parseEventDate(value: string): Date {
+  return new Date(`${value}T00:00:00`);
+}
+
+function eventDayNumber(start: string, current: string): number {
+  const toUtcDay = (value: string) => {
+    const [year, month, day] = value.split("-").map(Number);
+    return Date.UTC(year, month - 1, day);
+  };
+  return Math.floor((toUtcDay(current) - toUtcDay(start)) / 86_400_000) + 1;
+}
+
+function formatEventDateRange(start: string, end?: string | null, includeWeekday = false): string {
+  const options: Intl.DateTimeFormatOptions = {
+    ...(includeWeekday ? { weekday: "long" as const } : {}),
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  };
+  const startLabel = parseEventDate(start).toLocaleDateString("en-IN", options);
+  if (!end || end === start) return startLabel;
+  return `${startLabel} – ${parseEventDate(end).toLocaleDateString("en-IN", options)}`;
+}
+
 const EventDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { data: event, isLoading, isError } = useEvent(id);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const eventSportConfig = getSportConfig(event?.category);
+  const publicNumbers = usePublicNumberList(id ?? "", Boolean(event) && eventSportConfig.numberEnabled);
+  const publicMatchResults = usePublicEventResults(id, Boolean(event) && eventSportConfig.result_type === "match_score");
+  const publicRaceResults = usePublicRaceResults(id, Boolean(event) && eventSportConfig.result_type === "race_time");
 
   if (isLoading) {
     return (
@@ -86,8 +117,9 @@ const EventDetail = () => {
   // SportPass fee preview. When the participant bears the fee, it is added per
   // paid registration (one ticket unit = one registration). Free entries (₹0) never accrue a fee.
   const feeConfig = {
-    percentageBasisPoints: event.sportPassFeePercentageBasisPoints ?? 500,
-    perRegistrationPaise: event.sportPassFeePerRegistrationPaise ?? 1000,
+    percentageBasisPoints: event.sportPassFeePercentageBasisPoints ?? 400,
+    minimumFeePaise: event.sportPassFeeMinimumPaise ?? 2000,
+    maximumFeePaise: event.sportPassFeeMaximumPaise ?? 6000,
   };
   const participantBearsFee = event.platformFeeBearer === "PARTICIPANT";
   const sportPassFeePaise = event.tiers.reduce((sum, tier) => {
@@ -106,9 +138,10 @@ const EventDetail = () => {
     event.locationDetails?.country,
   ].filter((part, index, parts): part is string => Boolean(part) && parts.indexOf(part) === index);
   const fullLocation = locationParts.join(", ") || event.location;
+  const scheduleDays = [...new Set((event.schedule ?? []).map((item) => item.date || event.date))].sort();
 
   const details = [
-    { icon: Calendar, label: "Date", value: new Date(event.date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }) },
+    { icon: Calendar, label: event.endDate ? "Dates" : "Date", value: formatEventDateRange(event.date, event.endDate, true) },
     { icon: MapPin, label: "Location", value: fullLocation },
     { icon: User, label: "Organizer", value: event.organizer },
     { icon: Tag, label: "Category", value: event.category },
@@ -119,90 +152,81 @@ const EventDetail = () => {
   ];
 
   // Check if bib numbers are enabled for this sport
-  const eventSportConfig = getSportConfig(event.category);
   const hasNumberAllocation = eventSportConfig.numberEnabled;
   const numberLabel = eventSportConfig.numberLabel || "Bib Number";
   const sportMessage = eventSportConfig.message;
+  const hasPublishedNumbers = hasNumberAllocation && (publicNumbers.data?.entries.length ?? 0) > 0;
+  const hasPublishedResults = eventSportConfig.result_type === "race_time"
+    ? publicRaceResults.data?.resultSetStatus === "published"
+    : eventSportConfig.result_type === "match_score" && Boolean(publicMatchResults.data?.matches.some((match) => match.status === "completed"));
 
   return (
     <Layout>
-      {/* Banner */}
-      <div className="relative h-[320px] overflow-hidden md:h-[420px]">
+      <section className="relative h-[340px] overflow-hidden md:h-[460px]">
         <img
           src={event.image}
           alt={event.title}
           className="absolute inset-0 h-full w-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/10" />
-        <div className="relative mx-auto flex h-full max-w-7xl flex-col justify-end px-4 pb-8 sm:px-6 lg:px-8">
-          <div className="w-fit max-w-full rounded-2xl bg-black/55 px-4 py-4 shadow-lg backdrop-blur-sm sm:px-5">
-            <button
-              onClick={() => navigate(-1)}
-              className="mb-4 flex w-fit items-center gap-1 text-sm text-white/90 transition-colors hover:text-white"
-            >
-              <ArrowLeft className="h-4 w-4" /> Back
-            </button>
-            <Badge className="mb-2 w-fit capitalize">{event.category}</Badge>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white md:text-5xl">
-              {event.title}
-            </h1>
-            <p className="mt-2 text-sm text-white/90 md:text-base">
-              {new Date(event.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} · {event.location}
-            </p>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/30" />
+        <div className="relative mx-auto flex h-full max-w-7xl flex-col justify-between px-4 pb-12 pt-6 sm:px-6 lg:px-8">
+          <button onClick={() => navigate(-1)} className="flex w-fit items-center gap-2 rounded-full border border-white/30 bg-black/25 px-3 py-2 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/45">
+            <ArrowLeft className="h-4 w-4" /> Back to events
+          </button>
+          <div className="max-w-4xl">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <Badge className="border-0 bg-white text-foreground hover:bg-white capitalize">{event.category}</Badge>
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${registrationClosed ? "bg-amber-100 text-amber-950" : "bg-emerald-100 text-emerald-950"}`}>
+                {registrationClosed ? "Registration closed" : "Registration open"}
+              </span>
+            </div>
+            <h1 className="max-w-4xl text-3xl font-extrabold leading-tight tracking-tight text-white drop-shadow-sm sm:text-4xl md:text-5xl">{event.title}</h1>
+            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm font-medium text-white/90 sm:text-base">
+              <span className="flex items-center gap-2"><Calendar className="h-4 w-4" />{formatEventDateRange(event.date, event.endDate)}</span>
+              <span className="flex items-center gap-2"><MapPin className="h-4 w-4" />{event.location}</span>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Content */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
-        <div className="grid lg:grid-cols-3 gap-10">
-          {/* Left Side */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* Event Details Grid */}
-            <section>
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <Info className="h-5 w-5 text-primary" /> Event Details
-              </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {details.map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-xl border bg-card p-4 space-y-1"
-                  >
-                    <item.icon className="h-5 w-5 text-primary" />
-                    <p className="text-xs text-muted-foreground">{item.label}</p>
-                    <p className="font-semibold text-sm capitalize">{item.value}</p>
-                  </div>
-                ))}
-              </div>
-              <Button variant="outline" className="mt-4 gap-2" onClick={() => navigate(`/event/${encodeURIComponent(id ?? "")}/results`)}><Trophy className="h-4 w-4" /> View public results</Button>
-            </section>
+      <div className="relative mx-auto -mt-6 max-w-7xl px-4 pb-14 sm:px-6 lg:px-8">
+        <div className="mb-8 grid gap-px overflow-hidden rounded-2xl border bg-border shadow-md sm:grid-cols-2 lg:grid-cols-4">
+          {details.slice(0, 4).map((item) => (
+            <div key={item.label} className="flex items-start gap-3 bg-card p-4 sm:p-5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><item.icon className="h-4 w-4" /></span>
+              <div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">{item.label}</p><p className="mt-1 text-sm font-semibold capitalize leading-5">{item.value}</p></div>
+            </div>
+          ))}
+        </div>
 
-            {/* Sport-Specific Message */}
-            {sportMessage && (
-              <section>
-                <div className="flex items-start gap-3 rounded-xl border bg-card p-4">
-                  <Info className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">{sportMessage}</p>
-                  </div>
-                </div>
-              </section>
-            )}
+        {(hasPublishedNumbers || hasPublishedResults) && <section className="mb-8 overflow-hidden rounded-2xl border bg-card shadow-sm">
+          <div className="border-b px-5 py-4 sm:px-6"><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Event updates</p><h2 className="mt-1 text-lg font-bold">Published information</h2></div>
+          <div className={`grid gap-px bg-border ${hasPublishedNumbers && hasPublishedResults ? "md:grid-cols-2" : ""}`}>
+            {hasPublishedNumbers && <button type="button" onClick={() => navigate(`/event/${event.id}/number-list`)} className="group flex items-center gap-4 bg-card p-5 text-left transition-colors hover:bg-muted/40 sm:p-6">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><FileText className="h-5 w-5" /></span>
+              <span className="min-w-0 flex-1"><span className="block font-bold">{numberLabel}s are published</span><span className="mt-1 block text-sm leading-5 text-muted-foreground">Find your assigned {numberLabel.toLowerCase()} before event day.</span></span>
+              <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />
+            </button>}
+            {hasPublishedResults && <button type="button" onClick={() => navigate(`/event/${encodeURIComponent(id ?? "")}/results`)} className="group flex items-center gap-4 bg-card p-5 text-left transition-colors hover:bg-muted/40 sm:p-6">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Trophy className="h-5 w-5" /></span>
+              <span className="min-w-0 flex-1"><span className="block font-bold">Results are live</span><span className="mt-1 block text-sm leading-5 text-muted-foreground">View published results and category standings.</span></span>
+              <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />
+            </button>}
+          </div>
+        </section>}
 
-            {/* Description */}
-            <section>
-              <h2 className="mb-3 text-xl font-bold">About This Event</h2>
-              <div className="space-y-5 text-muted-foreground">
-                <p className="whitespace-pre-line leading-relaxed">{event.description}</p>
-                <div className="flex items-start gap-3 rounded-xl border bg-card p-4">
-                  <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Event location</p>
-                    <p className="font-semibold text-foreground">{fullLocation}</p>
-                  </div>
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+          <div className="space-y-8">
+            <section id="about" className="overflow-hidden rounded-2xl border bg-card">
+              <div className="p-5 sm:p-6">
+                <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Event overview</p><h2 className="mt-1 text-2xl font-bold">About the event</h2></div>
+                <p className="mt-5 whitespace-pre-line leading-7 text-muted-foreground">{event.description}</p>
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <div className="flex items-start gap-3 rounded-xl bg-muted/45 p-4"><MapPin className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div><p className="text-xs font-medium text-muted-foreground">Venue</p><p className="mt-1 text-sm font-semibold leading-5">{fullLocation}</p></div></div>
+                  {event.distance && <div className="flex items-start gap-3 rounded-xl bg-muted/45 p-4"><Trophy className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div><p className="text-xs font-medium text-muted-foreground">Categories / distance</p><p className="mt-1 text-sm font-semibold leading-5">{event.distance}</p></div></div>}
                 </div>
               </div>
+              {sportMessage && <div className="flex items-start gap-3 border-t bg-primary/[0.035] px-5 py-4 sm:px-6"><Info className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><p className="text-sm leading-6 text-muted-foreground">{sportMessage}</p></div>}
             </section>
 
             {/* Schedule */}
@@ -211,20 +235,13 @@ const EventDetail = () => {
                 <Clock className="h-5 w-5 text-primary" /> Event Schedule
               </h2>
               <div className="rounded-xl border bg-card p-5">
-                {event.schedule?.length ? <div className="space-y-0">
-                  {event.schedule.map((item, i) => (
-                    <div key={`${item.time}-${i}`} className="group flex items-start gap-4 py-3">
-                      <div className="flex flex-col items-center">
-                        <div className="h-3 w-3 rounded-full border-2 border-primary bg-card group-first:bg-primary" />
-                        {i < event.schedule!.length - 1 && <div className="min-h-[20px] h-full w-px bg-border" />}
-                      </div>
-                      <div className="-mt-1 flex items-center gap-3">
-                        <span className="w-14 font-mono text-sm font-semibold text-primary">{item.time}</span>
-                        <span className="text-sm text-muted-foreground">{item.label}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div> : <p className="text-sm text-muted-foreground">The event schedule will be announced by the organizer.</p>}
+                {event.schedule?.length ? <div className="space-y-6">{scheduleDays.map((date) => {
+                  const items = event.schedule!.filter((item) => (item.date || event.date) === date).sort((left, right) => left.time.localeCompare(right.time));
+                  return <div key={date}>
+                    <div className="mb-2 flex items-center gap-3"><div className="rounded-lg bg-primary/10 px-3 py-2 text-center"><p className="text-[10px] font-bold uppercase tracking-wider text-primary">Day {eventDayNumber(event.date, date)}</p><p className="text-sm font-bold">{parseEventDate(date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</p></div><div className="h-px flex-1 bg-border" /></div>
+                    <div className="space-y-0">{items.map((item, itemIndex) => <div key={`${date}-${item.time}-${itemIndex}`} className="group flex items-start gap-4 py-3"><div className="flex flex-col items-center"><div className="h-3 w-3 rounded-full border-2 border-primary bg-card group-first:bg-primary" />{itemIndex < items.length - 1 && <div className="min-h-[20px] h-full w-px bg-border" />}</div><div className="-mt-1 flex items-center gap-3"><span className="w-14 font-mono text-sm font-semibold text-primary">{item.time}</span><span className="text-sm text-muted-foreground">{item.label}</span></div></div>)}</div>
+                  </div>;
+                })}</div> : <p className="text-sm text-muted-foreground">The event schedule will be announced by the organizer.</p>}
               </div>
             </section>
 
@@ -303,142 +320,60 @@ const EventDetail = () => {
             </section>
           </div>
 
-          {/* Right Side — Sticky Ticket Card */}
-          <div className="lg:col-span-1">
-            <div className="sticky top-24 space-y-4">
-              <div className="rounded-xl border bg-card shadow-lg overflow-hidden">
-                <div className="bg-primary px-5 py-4">
-                  <h2 className="text-lg font-bold text-primary-foreground">
-                    Select Tickets
-                  </h2>
-                  <p className="text-sm text-primary-foreground/70">
-                    {event.participants.toLocaleString()} registered
-                  </p>
-                </div>
+          <aside className="order-first lg:order-none lg:sticky lg:top-24">
+            <div className="overflow-hidden rounded-2xl border bg-card shadow-lg shadow-black/5">
+              <div className="border-b p-5">
+                <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Registration</p><h2 className="mt-1 text-xl font-bold">Choose your entry</h2></div><span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">{event.participants.toLocaleString()} registered</span></div>
+                <p className="mt-2 text-sm text-muted-foreground">Select the ticket and number of entries you want to register.</p>
+              </div>
 
-                {registrationClosed && <div className="border-b bg-amber-50 px-5 py-4 text-sm text-amber-950"><p className="font-semibold">Registration is closed</p><p className="mt-1">The organizer is not accepting new responses for this race.</p></div>}
+              {registrationClosed && <div className="border-b border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-950"><p className="font-semibold">Registration is closed</p><p className="mt-1 leading-5">The organizer is no longer accepting new registrations.</p></div>}
 
-                <div className="p-5 space-y-4">
+              <div className="space-y-4 p-4 sm:p-5">
+                <div className="space-y-3">
                   {event.tiers.map((tier) => {
                     const qty = quantities[tier.id] || 0;
-                    return (
-                      <div
-                        key={tier.id}
-                        className={`rounded-lg border p-4 space-y-3 transition-colors ${
-                          qty > 0 ? "border-primary bg-primary/5" : "hover:border-muted-foreground/30"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h3 className="font-bold text-sm">{tier.name}</h3>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {tier.description}
-                            </p>
-                          </div>
-                          <span className="text-lg font-bold text-primary whitespace-nowrap ml-3">
-                            ₹{tier.price}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">
-                            {tier.available} spots left
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => updateQty(tier.id, -1)}
-                              disabled={registrationClosed || qty === 0}
-                              className="h-7 w-7 rounded-md border flex items-center justify-center text-muted-foreground hover:bg-muted disabled:opacity-30 transition-colors"
-                            >
-                              <Minus className="h-3.5 w-3.5" />
-                            </button>
-                            <span className="w-6 text-center text-sm font-semibold">
-                              {qty}
-                            </span>
-                            <button
-                              onClick={() => updateQty(tier.id, 1)}
-                              disabled={registrationClosed || qty >= tierMaxQty(tier)}
-                              className="h-7 w-7 rounded-md border flex items-center justify-center text-muted-foreground hover:bg-muted disabled:opacity-30 transition-colors"
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {tier.entryType === "team" && (
-                          <p className="text-xs text-muted-foreground">
-                            Only one team can be registered per registration
-                            {tier.teamSizeMin && tier.teamSizeMax ? ` (${tier.teamSizeMin}–${tier.teamSizeMax} members).` : "."}
-                          </p>
-                        )}
+                    const soldOut = tier.available <= 0;
+                    return <div key={tier.id} className={`rounded-xl border p-4 transition-colors ${qty > 0 ? "border-primary bg-primary/[0.04] shadow-sm" : "bg-background hover:border-primary/40"}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0"><div className="flex items-center gap-2"><h3 className="font-bold leading-5">{tier.name}</h3>{qty > 0 && <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"><Check className="h-3 w-3" /></span>}</div>{tier.description && <p className="mt-1 text-xs leading-5 text-muted-foreground">{tier.description}</p>}</div>
+                        <span className="shrink-0 text-lg font-extrabold text-primary">{tier.price === 0 ? "Free" : formatPaise(tier.price * 100)}</span>
                       </div>
-                    );
+
+                      {tier.entryType === "team" && <p className="mt-3 rounded-lg bg-muted/60 px-3 py-2 text-xs leading-5 text-muted-foreground">One ticket registers one team{tier.teamSizeMin && tier.teamSizeMax ? ` of ${tier.teamSizeMin}–${tier.teamSizeMax} members` : ""}.</p>}
+
+                      <div className="mt-4 flex items-center justify-between gap-4">
+                        <span className={`text-xs font-medium ${soldOut ? "text-destructive" : tier.available <= 10 ? "text-amber-700" : "text-muted-foreground"}`}>{soldOut ? "Sold out" : `${tier.available.toLocaleString("en-IN")} ${tier.available === 1 ? "spot" : "spots"} left`}</span>
+                        <div className="flex items-center rounded-lg border bg-card" aria-label={`Quantity for ${tier.name}`}>
+                          <button aria-label={`Remove one ${tier.name}`} onClick={() => updateQty(tier.id, -1)} disabled={registrationClosed || qty === 0} className="flex h-9 w-9 items-center justify-center rounded-l-lg text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-30"><Minus className="h-4 w-4" /></button>
+                          <span className="w-9 text-center text-sm font-bold" aria-live="polite">{qty}</span>
+                          <button aria-label={`Add one ${tier.name}`} onClick={() => updateQty(tier.id, 1)} disabled={registrationClosed || soldOut || qty >= tierMaxQty(tier)} className="flex h-9 w-9 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-30"><Plus className="h-4 w-4" /></button>
+                        </div>
+                      </div>
+                    </div>;
                   })}
-
-                  <Separator />
-
-                  {participantBearsFee && totalTickets > 0 && sportPassFeePaise > 0 ? (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-sm text-muted-foreground">
-                        <span>Registration Fee</span>
-                        <span>{formatPaise(baseTotalPaise)}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-sm text-muted-foreground">
-                        <span>SportPass Fee</span>
-                        <span>{formatPaise(sportPassFeePaise)}</span>
-                      </div>
-                      <div className="flex items-center justify-between border-t pt-1.5">
-                        <span className="text-sm font-medium">Total</span>
-                        <span className="text-xl font-bold">{formatPaise(participantTotalPaise)}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        {totalTickets} ticket{totalTickets !== 1 ? "s" : ""}
-                      </span>
-                      <span className="text-xl font-bold">₹{totalPrice}</span>
-                    </div>
-                  )}
-
-                  <Button
-                    className="w-full"
-                    size="lg"
-                    disabled={registrationClosed || totalTickets === 0}
-                    onClick={() => {
-                      const cart = Object.entries(quantities)
-                        .filter(([, quantity]) => quantity > 0)
-                        .map(([ticketId, quantity]) => ({ ticketId, quantity }));
-                      sessionStorage.setItem(`sportpass_cart_${event.id}`, JSON.stringify(cart));
-                      navigate(`/checkout/${event.id}`);
-                    }}
-                  >
-                    {registrationClosed ? "Registration Closed" : totalTickets === 0 ? "Select Tickets to Continue" : `Register Now — ${formatPaise(participantTotalPaise)}`}
-                  </Button>
-
-                  {/* Show Bib Number Link if allocations are enabled */}
-                  {hasNumberAllocation && (
-                    <div className="pt-4">
-                      <Separator />
-                      <div className="mt-4 text-center">
-                        <p className="text-sm text-muted-foreground mb-2">
-                          {numberLabel}
-                        </p>
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => navigate(`/event/${event.id}/number-list`)}
-                        >
-                          <FileText className="mr-2 h-4 w-4" />
-                          View {numberLabel} List
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                 </div>
+
+                <div className="rounded-xl bg-muted/45 p-4">
+                  {participantBearsFee && totalTickets > 0 && sportPassFeePaise > 0 ? <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm text-muted-foreground"><span>Registration fee</span><span>{formatPaise(baseTotalPaise)}</span></div>
+                    <div className="flex items-center justify-between text-sm text-muted-foreground"><span>SportPass fee</span><span>{formatPaise(sportPassFeePaise)}</span></div>
+                    <div className="flex items-center justify-between border-t pt-3"><span className="font-bold">Total</span><span className="text-xl font-extrabold">{formatPaise(participantTotalPaise)}</span></div>
+                  </div> : <div className="flex items-center justify-between"><div><p className="text-xs text-muted-foreground">{totalTickets} {totalTickets === 1 ? "entry" : "entries"} selected</p><p className="font-bold">Total</p></div><span className="text-xl font-extrabold">{formatPaise(baseTotalPaise)}</span></div>}
+                </div>
+
+                <Button className="h-12 w-full gap-2 text-base" size="lg" disabled={registrationClosed || totalTickets === 0} onClick={() => {
+                  const cart = Object.entries(quantities).filter(([, quantity]) => quantity > 0).map(([ticketId, quantity]) => ({ ticketId, quantity }));
+                  sessionStorage.setItem(`sportpass_cart_${event.id}`, JSON.stringify(cart));
+                  navigate(`/checkout/${event.id}`);
+                }}>
+                  {registrationClosed ? "Registration closed" : totalTickets === 0 ? "Select an entry to continue" : <>Continue to registration <ArrowRight className="h-4 w-4" /></>}
+                </Button>
+                {!registrationClosed && <p className="text-center text-xs leading-5 text-muted-foreground">You can review participant details and the final amount before payment.</p>}
+
               </div>
             </div>
-          </div>
+          </aside>
         </div>
       </div>
     </Layout>

@@ -2,6 +2,7 @@ export type CommunicationEvent = {
   id: string;
   name: string;
   eventDate: string;
+  eventEndDate?: string | null;
   sport: string;
   registrationStatus?: "open" | "closed";
   location: {
@@ -59,7 +60,9 @@ export function buildMessageFromTemplate(
   event: CommunicationEvent,
   registrationUrl = buildRegistrationUrl(event.id),
 ): string {
-  const date      = formatCommunicationDate(event.eventDate);
+  const date = event.eventEndDate && event.eventEndDate !== event.eventDate
+    ? `${formatCommunicationDate(event.eventDate)} – ${formatCommunicationDate(event.eventEndDate)}`
+    : formatCommunicationDate(event.eventDate);
   const location  = formatCommunicationLocation(event);
   const name      = event.name;
   const categories =

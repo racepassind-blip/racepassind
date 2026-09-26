@@ -74,6 +74,7 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
         "sport": event.category,
         "description": event.description,
         "eventDate": event.date,
+        "eventEndDate": event.end_date.date().isoformat() if event.end_date else None,
         "location": {
             "name": event.location_name,
             "address": event.address,
@@ -255,7 +256,11 @@ def create_event(
         banner_url=payload.banner_url,
         whatsapp_group_url=_normalize_whatsapp_group_url(payload.whatsapp_group_url),
         start_date=dt.datetime.combine(payload.event_date, dt.time.min),
-        end_date=None,
+        end_date=(
+            dt.datetime.combine(payload.event_end_date, dt.time.min)
+            if payload.event_end_date and payload.event_end_date > payload.event_date
+            else None
+        ),
         registration_open=payload.registration_open,
         registration_close=payload.registration_close,
         max_participants=payload.max_participants,
@@ -265,7 +270,7 @@ def create_event(
         distance=_legacy_event_distance(payload),
         participants=0,
         rules=payload.rules,
-        schedule=[item.model_dump() for item in payload.schedule],
+        schedule=[item.model_dump(mode="json", exclude_none=True) for item in payload.schedule],
         field_config=field_config,
         addon_config=addon_config,
         payment_collection_method=payload.payment_collection_method,
@@ -513,6 +518,11 @@ def update_event(
     event.description = payload.description.strip()
     event.category = payload.sport.strip().lower()
     event.start_date = dt.datetime.combine(payload.event_date, dt.time.min)
+    event.end_date = (
+        dt.datetime.combine(payload.event_end_date, dt.time.min)
+        if payload.event_end_date and payload.event_end_date > payload.event_date
+        else None
+    )
     event.location_name = payload.location_name.strip()
     event.address = payload.address.strip() if payload.address else None
     event.city = payload.city.strip() if payload.city else None
@@ -525,7 +535,7 @@ def update_event(
     event.latitude = payload.latitude
     event.longitude = payload.longitude
     event.rules = payload.rules
-    event.schedule = [item.model_dump() for item in payload.schedule]
+    event.schedule = [item.model_dump(mode="json", exclude_none=True) for item in payload.schedule]
     event.field_config = field_config
     event.addon_config = addon_config
     event.registration_open = payload.registration_open

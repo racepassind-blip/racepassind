@@ -187,6 +187,7 @@ export interface OrganizerEvent {
   sport: string;
   description: string;
   eventDate: string;
+  eventEndDate?: string | null;
   location: {
     name: string | null;
     address: string | null;
@@ -329,6 +330,27 @@ export function useEvents() {
   });
 }
 
+export interface PublicEventSearchResponse {
+  items: SportEvent[];
+  page: number;
+  pageSize: number;
+  total: number;
+  sports: string[];
+  cities: string[];
+}
+
+export function useEventSearch(filters: { q: string; sport: string; city: string; timing: string; page: number; pageSize: number }) {
+  const params = new URLSearchParams({ timing: filters.timing, page: String(filters.page), page_size: String(filters.pageSize) });
+  if (filters.q.trim()) params.set("q", filters.q.trim());
+  if (filters.sport !== "ALL") params.set("sport", filters.sport);
+  if (filters.city !== "ALL") params.set("city", filters.city);
+  return useQuery({
+    queryKey: ["event-search", filters.q, filters.sport, filters.city, filters.timing, filters.page, filters.pageSize],
+    queryFn: () => apiRequest<PublicEventSearchResponse>(`/events/search?${params}`),
+    placeholderData: (previous) => previous,
+  });
+}
+
 export function useEvent(eventId: string | undefined) {
   return useQuery({
     queryKey: ["events", eventId],
@@ -337,10 +359,10 @@ export function useEvent(eventId: string | undefined) {
   });
 }
 
-export function usePublicEventResults(eventId: string | undefined) {
+export function usePublicEventResults(eventId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["public-event-results", eventId],
-    enabled: Boolean(eventId),
+    enabled: Boolean(eventId) && enabled,
     queryFn: () => apiRequest<PublicEventResults>(`/events/${eventId}/results`),
   });
 }

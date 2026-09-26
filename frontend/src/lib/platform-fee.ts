@@ -4,28 +4,28 @@
 
 export type PlatformFeeBearer = "ORGANIZER" | "PARTICIPANT";
 
-// Defaults match the seeded PlatformFeeConfig (5% + ₹10). The backend sends the
-// live values on the event/registration payloads; use those when available.
-export const DEFAULT_FEE_PERCENTAGE_BASIS_POINTS = 500;
-export const DEFAULT_FEE_PER_REGISTRATION_PAISE = 1000;
+export const DEFAULT_FEE_PERCENTAGE_BASIS_POINTS = 400;
+export const DEFAULT_FEE_MINIMUM_PAISE = 2000;
+export const DEFAULT_FEE_MAXIMUM_PAISE = 6000;
 
 export interface FeeConfig {
   percentageBasisPoints: number;
-  perRegistrationPaise: number;
+  minimumFeePaise: number;
+  maximumFeePaise: number;
 }
 
 /**
  * SportPass fee for a single registration, in paise.
  * Free registrations (base <= 0) never accrue a fee. Otherwise the fee is
- * `pct% of base + flat`, using the full rule (5% + ₹10), NOT just 5%.
- * Mirrors the backend's round-half-up integer arithmetic ((base*bps + 5000) / 10000).
+ * min(max(base × percentage, minimum), maximum), rounded half up.
  */
 export function computeSportPassFeePaise(baseAmountPaise: number, config?: Partial<FeeConfig>): number {
   if (baseAmountPaise <= 0) return 0;
   const bps = config?.percentageBasisPoints ?? DEFAULT_FEE_PERCENTAGE_BASIS_POINTS;
-  const perReg = config?.perRegistrationPaise ?? DEFAULT_FEE_PER_REGISTRATION_PAISE;
+  const minimum = config?.minimumFeePaise ?? DEFAULT_FEE_MINIMUM_PAISE;
+  const maximum = config?.maximumFeePaise ?? DEFAULT_FEE_MAXIMUM_PAISE;
   const percentageComponent = Math.floor((baseAmountPaise * bps + 5000) / 10000);
-  return percentageComponent + perReg;
+  return Math.min(Math.max(percentageComponent, minimum), maximum);
 }
 
 export interface ParticipantPricing {

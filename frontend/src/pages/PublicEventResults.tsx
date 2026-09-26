@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, CalendarDays, CheckCircle2, Clock3, ExternalLink, ListFilter, RefreshCw, Trophy, Users } from "lucide-react";
+import { ArrowLeft, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, ExternalLink, ListFilter, RefreshCw, Trophy, Users } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Layout } from "@/components/Layout";
@@ -89,6 +89,7 @@ const PublicEventResults = () => {
   const { data, isLoading, isError, refetch, isFetching } = usePublicEventResults(id);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [page, setPage] = useState(1);
 
   if (isLoading) {
     return <Layout><div className="mx-auto max-w-7xl px-4 py-24 text-center text-sm text-muted-foreground">Loading event results…</div></Layout>;
@@ -110,11 +111,16 @@ const PublicEventResults = () => {
   const completedCount = data.matches.filter((match) => match.status === "completed").length;
   const liveCount = data.matches.filter((match) => match.status === "in_progress").length;
   const upcomingCount = data.matches.filter((match) => match.status === "scheduled").length;
-  const visibleMatches = data.matches.filter((match) => {
+  const filteredMatches = data.matches.filter((match) => {
     const matchesStatus = statusFilter === "all" || match.status === statusFilter;
     const matchesCategory = categoryFilter === "all" || match.category.id === categoryFilter;
     return matchesStatus && matchesCategory;
   });
+  const pageSize = 25;
+  const pageCount = Math.max(1, Math.ceil(filteredMatches.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pageOffset = (safePage - 1) * pageSize;
+  const visibleMatches = filteredMatches.slice(pageOffset, pageOffset + pageSize);
   const matchesByCategory = data.categories
     .map((category) => ({ category, matches: visibleMatches.filter((match) => match.category.id === category.id) }))
     .filter(({ matches }) => matches.length > 0);
@@ -149,15 +155,15 @@ const PublicEventResults = () => {
           <div className="mt-8 overflow-hidden rounded-2xl border bg-card shadow-sm">
             <div className="flex flex-col gap-4 border-b p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
               <div><div className="flex items-center gap-2 text-primary"><ListFilter className="h-4 w-4" /><p className="text-xs font-bold uppercase tracking-[0.16em]">Match centre</p></div><h2 className="mt-1 text-2xl font-black tracking-tight">Fixtures & scores</h2></div>
-              <div className="flex items-center gap-2"><label htmlFor="category-filter" className="text-sm text-muted-foreground">Category</label><select id="category-filter" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm font-medium"><option value="all">All categories</option>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div>
+              <div className="flex items-center gap-2"><label htmlFor="category-filter" className="text-sm text-muted-foreground">Category</label><select id="category-filter" value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setPage(1); }} className="h-9 rounded-md border border-input bg-background px-3 text-sm font-medium"><option value="all">All categories</option>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div>
             </div>
             <div className="flex gap-1 overflow-x-auto border-b bg-muted/30 p-2" aria-label="Filter results by status">
-              {statusFilters.map((filter) => { const count = filter.value === "all" ? data.matches.length : data.matches.filter((match) => match.status === filter.value).length; return <button key={filter.value} type="button" aria-pressed={statusFilter === filter.value} onClick={() => setStatusFilter(filter.value)} className={`whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition-colors ${statusFilter === filter.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background/70 hover:text-foreground"}`}>{filter.label}<span className="ml-2 text-xs text-muted-foreground">{count}</span></button>; })}
+              {statusFilters.map((filter) => { const count = filter.value === "all" ? data.matches.length : data.matches.filter((match) => match.status === filter.value).length; return <button key={filter.value} type="button" aria-pressed={statusFilter === filter.value} onClick={() => { setStatusFilter(filter.value); setPage(1); }} className={`whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition-colors ${statusFilter === filter.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background/70 hover:text-foreground"}`}>{filter.label}<span className="ml-2 text-xs text-muted-foreground">{count}</span></button>; })}
             </div>
 
             {data.matches.length === 0 ? (
               <div className="p-12 text-center"><Trophy className="mx-auto h-9 w-9 text-muted-foreground" /><p className="mt-4 font-semibold">No public results yet</p><p className="mx-auto mt-1 max-w-md text-sm leading-6 text-muted-foreground">Results will appear here as the organizer publishes the event schedule and score updates.</p></div>
-            ) : visibleMatches.length === 0 ? (
+            ) : filteredMatches.length === 0 ? (
               <div className="p-12 text-center"><p className="font-semibold">No matches in this view</p><p className="mt-1 text-sm text-muted-foreground">Try another status or category filter.</p></div>
             ) : (
               <div className="divide-y">
@@ -170,6 +176,7 @@ const PublicEventResults = () => {
                 })}
               </div>
             )}
+            {filteredMatches.length > pageSize && <div className="flex flex-col gap-3 border-t px-4 py-4 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-6"><span className="text-muted-foreground">Showing {pageOffset + 1}–{Math.min(pageOffset + pageSize, filteredMatches.length)} of {filteredMatches.length} matches</span><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft className="h-4 w-4" /> Previous</Button><span className="min-w-20 text-center text-xs font-medium text-muted-foreground">Page {safePage} of {pageCount}</span><Button variant="outline" size="sm" disabled={safePage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Next <ChevronRight className="h-4 w-4" /></Button></div></div>}
           </div>
 
           {data.categories.filter((category) => category.entryType === "team").map((category) => (

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ArchiveRestore, CalendarDays, RefreshCw, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ArchiveRestore, CalendarDays, ChevronLeft, ChevronRight, RefreshCw, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
@@ -30,6 +30,12 @@ interface AdminEvent {
   participantCount: number;
 }
 
+interface AdminEventPage {
+  items: AdminEvent[];
+  total: number;
+  summary: { participants: number; organizations: number; featuresUnlocked: number };
+}
+
 function formatDate(value: string | null) {
   if (!value) return "—";
   const date = new Date(value);
@@ -48,19 +54,27 @@ const AdminEventRecovery = () => {
   const [actionId, setActionId] = useState<string | null>(null);
   const [eventToRestore, setEventToRestore] = useState<AdminEvent | null>(null);
   const [eventToDelete, setEventToDelete] = useState<AdminEvent | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState({ participants: 0, organizations: 0 });
+  const pageSize = 25;
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      setEvents(await apiRequest<AdminEvent[]>("/admin/events?archived=true"));
+      const response = await apiRequest<AdminEventPage>(`/admin/events?archived=true&page=${page}&page_size=${pageSize}`);
+      setEvents(response.items);
+      setTotal(response.total);
+      setSummary(response.summary);
+      if (response.items.length === 0 && page > 1) setPage((current) => current - 1);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not load archived events.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [page]);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [load]);
 
   const restoreEvent = async () => {
     if (!eventToRestore) return;
@@ -68,8 +82,8 @@ const AdminEventRecovery = () => {
     setActionId(event.id);
     try {
       await apiRequest(`/admin/events/${event.id}/restore`, { method: "POST", body: "{}" });
-      setEvents((current) => current.filter((item) => item.id !== event.id));
       setEventToRestore(null);
+      await load();
       toast.success(`${event.name} was restored and is visible according to its publication status.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not restore the event.");
@@ -84,8 +98,8 @@ const AdminEventRecovery = () => {
     setActionId(event.id);
     try {
       await apiRequest(`/admin/events/${event.id}`, { method: "DELETE" });
-      setEvents((current) => current.filter((item) => item.id !== event.id));
       setEventToDelete(null);
+      await load();
       toast.success(`${event.name} was permanently deleted. All registrations, payments, and related data were removed.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not delete the event.");
@@ -107,9 +121,9 @@ const AdminEventRecovery = () => {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <Card><CardContent className="flex items-center gap-3 p-5"><ArchiveRestore className="h-5 w-5 text-amber-700" /><div><p className="text-2xl font-black">{events.length}</p><p className="text-sm text-muted-foreground">Archived events</p></div></CardContent></Card>
-          <Card><CardContent className="flex items-center gap-3 p-5"><UsersRound className="h-5 w-5 text-primary" /><div><p className="text-2xl font-black">{events.reduce((total, event) => total + event.participantCount, 0).toLocaleString("en-IN")}</p><p className="text-sm text-muted-foreground">Preserved participants</p></div></CardContent></Card>
-          <Card><CardContent className="flex items-center gap-3 p-5"><CalendarDays className="h-5 w-5 text-emerald-700" /><div><p className="text-2xl font-black">{new Set(events.map((event) => event.organization.id)).size}</p><p className="text-sm text-muted-foreground">Organizations represented</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-5"><ArchiveRestore className="h-5 w-5 text-amber-700" /><div><p className="text-2xl font-black">{total}</p><p className="text-sm text-muted-foreground">Archived events</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-5"><UsersRound className="h-5 w-5 text-primary" /><div><p className="text-2xl font-black">{summary.participants.toLocaleString("en-IN")}</p><p className="text-sm text-muted-foreground">Preserved participants</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-5"><CalendarDays className="h-5 w-5 text-emerald-700" /><div><p className="text-2xl font-black">{summary.organizations}</p><p className="text-sm text-muted-foreground">Organizations represented</p></div></CardContent></Card>
         </div>
 
         <Card>
@@ -123,6 +137,7 @@ const AdminEventRecovery = () => {
                 </tbody>
               </table>
             </div>
+            {total > pageSize && <div className="flex items-center justify-between gap-3 border-t px-5 py-4"><p className="text-sm text-muted-foreground">Page {page} of {Math.ceil(total / pageSize)} · {total} archived events</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage((current) => current + 1)}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>}
           </CardContent>
         </Card>
       </div>

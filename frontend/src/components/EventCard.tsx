@@ -12,9 +12,12 @@ const categoryColors: Record<string, string> = {
 };
 
 export function EventCard({ event }: { event: SportEvent }) {
-  const lowestPrice = Math.min(...event.tiers.map((t) => t.price));
+  const lowestPrice = event.tiers.length > 0 ? Math.min(...event.tiers.map((t) => t.price)) : null;
   const locationName = event.locationDetails?.name || event.location;
   const cityState = [event.locationDetails?.city, event.locationDetails?.state].filter(Boolean).join(", ");
+  const eventDateLabel = event.endDate && event.endDate !== event.date
+    ? `${new Date(`${event.date}T00:00:00`).toLocaleDateString("en-IN", { month: "short", day: "numeric" })} – ${new Date(`${event.endDate}T00:00:00`).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}`
+    : new Date(`${event.date}T00:00:00`).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
 
   return (
     <Link
@@ -42,11 +45,7 @@ export function EventCard({ event }: { event: SportEvent }) {
         <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
           <span className="flex items-center gap-2">
             <Calendar className="h-4 w-4" />
-            {new Date(event.date).toLocaleDateString("en-IN", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
+            {eventDateLabel}
           </span>
           <span className="flex items-center gap-2">
             <MapPin className="h-4 w-4" />
@@ -65,7 +64,7 @@ export function EventCard({ event }: { event: SportEvent }) {
         </div>
         <div className="flex items-center justify-between pt-2 border-t">
           <span className="text-sm text-muted-foreground">{event.distance}</span>
-          <span className="font-bold text-primary">From ₹{lowestPrice.toLocaleString("en-IN")}</span>
+          <span className="font-bold text-primary">{lowestPrice === null ? "Details soon" : `From ₹${lowestPrice.toLocaleString("en-IN")}`}</span>
         </div>
       </div>
     </Link>
