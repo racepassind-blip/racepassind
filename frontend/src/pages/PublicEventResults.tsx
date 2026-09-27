@@ -10,35 +10,35 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { usePublicEventResults, usePublicStandings } from "@/hooks/useEvents";
 import type { PublicMatchResult } from "@/hooks/useEvents";
 
-function PublicStandings({ eventId, categoryId, categoryName }: { eventId: string; categoryId: string; categoryName: string }) {
+function PublicStandings({ eventId, categoryId, categoryName, isTeam }: { eventId: string; categoryId: string; categoryName: string; isTeam: boolean }) {
   const { data: standings = [], isLoading } = usePublicStandings(eventId, categoryId);
   if (isLoading || standings.length === 0) return null;
   return (
     <Card className="mt-5">
       <CardHeader>
         <CardTitle>Standings — {categoryName}</CardTitle>
-        <CardDescription>League table from completed team matches.</CardDescription>
+        <CardDescription>League table from approved completed matches.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
           <Table className="min-w-[560px]">
             <TableHeader>
               <TableRow>
-                <TableHead>Team</TableHead>
-                <TableHead className="text-center">P</TableHead>
-                <TableHead className="text-center">W</TableHead>
-                <TableHead className="text-center">D</TableHead>
-                <TableHead className="text-center">L</TableHead>
-                <TableHead className="text-center font-bold">Pts</TableHead>
+                <TableHead>{isTeam ? "Team" : "Player / Pair"}</TableHead>
+                <TableHead className="text-center">{isTeam ? "P" : "Played"}</TableHead>
+                <TableHead className="text-center">{isTeam ? "W" : "Won"}</TableHead>
+                {isTeam && <TableHead className="text-center">D</TableHead>}
+                <TableHead className="text-center">{isTeam ? "L" : "Lost"}</TableHead>
+                <TableHead className="text-center font-bold">{isTeam ? "Pts" : "Points"}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {standings.map((row) => (
                 <TableRow key={row.registrationId}>
-                  <TableCell className="font-medium">{row.teamName}</TableCell>
+                  <TableCell className="font-medium">{row.displayName ?? row.teamName}</TableCell>
                   <TableCell className="text-center">{row.matchesPlayed}</TableCell>
                   <TableCell className="text-center">{row.wins}</TableCell>
-                  <TableCell className="text-center">{row.draws}</TableCell>
+                  {isTeam && <TableCell className="text-center">{row.draws}</TableCell>}
                   <TableCell className="text-center">{row.losses}</TableCell>
                   <TableCell className="text-center font-bold">{row.points}</TableCell>
                 </TableRow>
@@ -176,8 +176,8 @@ const PublicEventResults = () => {
             {filteredMatches.length > pageSize && <div className="flex flex-col gap-3 border-t px-4 py-4 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-6"><span className="text-muted-foreground">Showing {pageOffset + 1}–{Math.min(pageOffset + pageSize, filteredMatches.length)} of {filteredMatches.length} matches</span><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft className="h-4 w-4" /> Previous</Button><span className="min-w-20 text-center text-xs font-medium text-muted-foreground">Page {safePage} of {pageCount}</span><Button variant="outline" size="sm" disabled={safePage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Next <ChevronRight className="h-4 w-4" /></Button></div></div>}
           </div>
 
-          {data.categories.filter((category) => category.entryType === "team").map((category) => (
-            <PublicStandings key={category.id} eventId={data.event.id} categoryId={category.id} categoryName={category.name} />
+          {data.categories.filter((category) => category.entryType === "team" || (data.event.category === "badminton" && ["singles", "doubles"].includes(category.entryType ?? ""))).map((category) => (
+            <PublicStandings key={category.id} eventId={data.event.id} categoryId={category.id} categoryName={category.name} isTeam={category.entryType === "team"} />
           ))}
 
           <div className="mt-8 flex justify-center"><Button asChild variant="ghost" className="gap-2"><a href={`/event/${encodeURIComponent(data.event.id)}`}><ExternalLink className="h-4 w-4" /> View full event page</a></Button></div>

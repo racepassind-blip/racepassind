@@ -54,14 +54,14 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
 
   const availableItems: NavItem[] = [
     ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: "Events", icon: CalendarDays, to: "/organizer" }, { label: "SportPass Credits", icon: CreditCard, to: "/organizer/credits" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }]),
+    { label: "Registrations", icon: ClipboardList, to: `/organizer/registrations${eventQuery}` },
     ...(eventId && supportsTournamentUnlocked ? [
       { label: "Tournament setup", icon: Settings2, to: `/organizer/events/${eventId}/tournament` },
       { label: "Matches", icon: Trophy, to: `/organizer/events/${eventId}/tournament/matches` },
       { label: "Scoring", icon: Gauge, to: `/organizer/events/${eventId}/tournament/scoring` },
-      { label: "Results", icon: Medal, to: `/organizer/events/${eventId}/tournament/results` },
       { label: "Bracket", icon: GitBranch, to: `/organizer/events/${eventId}/tournament/bracket` },
+      { label: "Results", icon: Medal, to: `/organizer/events/${eventId}/tournament/results` },
     ] : []),
-    { label: "Registrations", icon: ClipboardList, to: `/organizer/registrations${eventQuery}` },
     ...(eventId && supportsCommunications ? [{ label: "Communications", icon: MessageSquare, to: `/organizer/events/${eventId}/communications` }] : []),
     ...(eventId && supportsCheckin ? [{ label: "Check-in", icon: ScanLine, to: `/organizer/events/${eventId}/check-in` }] : []),
     ...(eventId && supportsBib ? [{ label: "Bib Management", icon: Package, to: `/organizer/events/${eventId}/allocations` }] : []),
@@ -78,8 +78,8 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
       { label: "Tournament setup", icon: Settings2 },
       { label: "Matches", icon: Trophy },
       { label: "Scoring", icon: Gauge },
-      { label: "Results", icon: Medal },
       { label: "Bracket", icon: GitBranch },
+      { label: "Results", icon: Medal },
     ] : []),
     ...(eventId && currentSportConfig.supports_communications ? [{ label: "Communications", icon: MessageSquare }] : []),
     ...(currentSportConfig.supports_checkin ? [{ label: "Check-in", icon: ScanLine }] : []),

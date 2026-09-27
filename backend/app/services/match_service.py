@@ -132,6 +132,16 @@ def _validate_match_context(db: Session, user, event: Event, payload) -> tuple[E
 
 def _validate_match_round(db: Session, event: Event, category: EventCategory, round_id: UUID | None) -> TournamentRound | None:
     if round_id is None:
+        # Once a Knockout event has configured rounds, every match must name the
+        # round it belongs to. Allowing a missing round here would bypass the
+        # eligibility checks for later rounds (including eliminated entries).
+        if _current_tournament_format(db, event) == "knockout" and db.scalar(
+            select(TournamentRound.id).where(
+                TournamentRound.event_id == event.id,
+                TournamentRound.category_id == category.id,
+            ).limit(1)
+        ) is not None:
+            raise MatchValidationError("A configured knockout round is required for this match")
         return None
     round_item = db.scalar(
         select(TournamentRound).where(
@@ -208,6 +218,7 @@ def serialize_match(match: Match, *, include_bouts: bool = False) -> dict:
         "nextMatchId": str(match.next_match_id) if match.next_match_id else None,
         "nextMatchSlot": match.next_match_slot,
         "scheduledTime": match.scheduled_time.isoformat() if match.scheduled_time else None,
+        "durationMinutes": match.duration_minutes,
         "status": match.status,
         "winner": match.winner,
         "winnerBy": match.winner_by,
@@ -280,6 +291,90 @@ def _winner_registration_id(match: Match) -> UUID | None:
     return None
 
 
+def _current_tournament_format(db: Session, event: Event) -> str:
+    field_config = db.scalar(select(Event.field_config).where(Event.id == event.id))
+    return ((field_config or {}).get("sport_config") or {}).get("tournament_format", "knockout")
+
+
+def _validate_knockout_eligibility(
+    db: Session,
+    event: Event,
+    category: EventCategory,
+    round_item: TournamentRound | None,
+    entry_ids: set[UUID],
+    *,
+    match_id: UUID | None = None,
+) -> None:
+    """Protect later configured rounds from invalid manual placements.
+
+    Automatic advancement writes its destination directly after validating both
+    feeder winners, so it does not need to manufacture a manual-placement reason.
+    """
+    if round_item is None or _current_tournament_format(db, event) != "knockout":
+        return
+
+    previous_round = db.scalar(
+        select(TournamentRound)
+        .where(
+            TournamentRound.event_id == event.id,
+            TournamentRound.category_id == category.id,
+            TournamentRound.position < round_item.position,
+        )
+        .order_by(TournamentRound.position.desc())
+        .limit(1)
+    )
+    if previous_round is None:
+        return  # The first configured round is open to confirmed entries.
+
+    for entry_id in entry_ids:
+        lost_earlier = db.scalar(
+            select(Match.id)
+            .join(TournamentRound, TournamentRound.id == Match.round_id)
+            .where(
+                Match.event_id == event.id,
+                Match.category_id == category.id,
+                TournamentRound.position < round_item.position,
+                Match.status == "completed",
+                (
+                    ((Match.entry_a_registration_id == entry_id) & (Match.winner == "entry_b"))
+                    | ((Match.entry_b_registration_id == entry_id) & (Match.winner == "entry_a"))
+                ),
+            )
+            .limit(1)
+        )
+        if lost_earlier is not None:
+            raise MatchValidationError(
+                f"An entry that lost an earlier knockout match cannot be placed in {round_item.name}"
+            )
+
+        # Editing an existing placement is valid unless an earlier loss was found.
+        if match_id is not None and db.scalar(
+            select(Match.id).where(
+                Match.id == match_id,
+                Match.round_id == round_item.id,
+                (Match.entry_a_registration_id == entry_id) | (Match.entry_b_registration_id == entry_id),
+            )
+        ) is not None:
+            continue
+
+        won_previous = db.scalar(
+            select(Match.id).where(
+                Match.event_id == event.id,
+                Match.category_id == category.id,
+                Match.round_id == previous_round.id,
+                Match.status == "completed",
+                (
+                    ((Match.entry_a_registration_id == entry_id) & (Match.winner == "entry_a"))
+                    | ((Match.entry_b_registration_id == entry_id) & (Match.winner == "entry_b"))
+                ),
+            ).limit(1)
+        )
+        if won_previous is None:
+            raise MatchValidationError(
+                f"An entry must win a completed match in {previous_round.name} before being placed in {round_item.name}; missing matches are not byes"
+            )
+
+
 def _link_sources_to_destination(db: Session, sources: list[Match], destination: Match) -> None:
     """Link a paired set of source matches to the matching destination slots."""
     expected = {
@@ -308,6 +403,11 @@ def _advance_completed_match(db: Session, event: Event, match: Match) -> None:
         or match.round_id is None
         or match.bracket_position is None
     ):
+        return
+
+    # Categories inherit the event format. Read the persisted configuration so
+    # old auto_advance flags (or a cached Event) cannot override League setup.
+    if _current_tournament_format(db, event) != "knockout":
         return
 
     # An already-linked completion is an idempotent retry.
@@ -396,12 +496,65 @@ def _advance_completed_match(db: Session, event: Event, match: Match) -> None:
     _link_sources_to_destination(db, sources, destination)
 
 
+def _utc(value: dt.datetime) -> dt.datetime:
+    return value.replace(tzinfo=dt.timezone.utc) if value.tzinfo is None else value.astimezone(dt.timezone.utc)
+
+
+def scheduling_conflicts(db: Session, event: Event, payload, match_id: UUID | None = None) -> list[str]:
+    if payload.scheduled_time is None:
+        return []
+    start = _utc(payload.scheduled_time)
+    end = start + dt.timedelta(minutes=payload.duration_minutes)
+    entry_ids = {payload.entry_a_registration_id, payload.entry_b_registration_id}
+    registrations = db.scalars(select(Registration).where(Registration.event_id == event.id, Registration.id.in_(entry_ids))).all()
+
+    def players(registration, selected):
+        members = registration.participant_memberships
+        if selected:
+            return {member.participant_id for member in members if str(member.id) in {str(value) for value in selected}}
+        return {member.participant_id for member in members} or {registration.participant_id}
+
+    player_ids = set()
+    for registration in registrations:
+        selected = payload.player_a_participant_ids if registration.id == payload.entry_a_registration_id else payload.player_b_participant_ids
+        player_ids.update(players(registration, selected))
+    conflicts = []
+    for other in db.execute(_match_query(event.id).where(Match.scheduled_time.is_not(None))).unique().scalars():
+        if other.id == match_id:
+            continue
+        other_start = _utc(other.scheduled_time)
+        if start >= other_start + dt.timedelta(minutes=other.duration_minutes) or other_start >= end:
+            continue
+        reasons = []
+        if other.court_id == payload.court_id:
+            reasons.append(f"Court {other.court.name} is already booked")
+        if entry_ids & {other.entry_a_registration_id, other.entry_b_registration_id}:
+            reasons.append("A selected player/team is already scheduled")
+        elif player_ids & (players(other.entry_a_registration, other.player_a_participant_ids) | players(other.entry_b_registration, other.player_b_participant_ids)):
+            reasons.append("A selected player is already scheduled")
+        if reasons:
+            conflicts.append(f"{'; '.join(reasons)}: {other.round_label} ({other_start.isoformat()}).")
+    return conflicts
+
+
+def _protect_schedule(db: Session, event: Event, payload, match_id: UUID | None = None) -> None:
+    # Serialize scheduling writes for this event, including concurrent creates.
+    db.execute(select(Event.id).where(Event.id == event.id).with_for_update()).all()
+    conflicts = scheduling_conflicts(db, event, payload, match_id)
+    if conflicts:
+        raise MatchValidationError("Scheduling conflict: " + " ".join(conflicts))
+
+
 def create_match(db: Session, user, event: Event, payload) -> dict:
     category, court, entry_a, entry_b = _validate_match_context(db, user, event, payload)
     round_item = _validate_match_round(db, event, category, payload.round_id)
+    _validate_knockout_eligibility(db, event, category, round_item, {entry_a.id, entry_b.id})
     match_type, player_a_ids, player_b_ids = _validate_policy(_policy(event).select_players, category, entry_a, entry_b, payload)
+    _protect_schedule(db, event, payload)
     config = _scoring_config(db, event, category.id, create=True)
     games = _validate_policy(_policy(event).normalize_games, payload.games, config.games_to_win)
+    if event.category == "badminton" and category.entry_type in {"singles", "doubles"} and payload.status == "completed":
+        _validate_policy(_policy(event).validate_score_winner, games, config.games_to_win, config.points_per_game, payload.winner)
     match = Match(
         event_id=event.id,
         category_id=category.id,
@@ -413,6 +566,7 @@ def create_match(db: Session, user, event: Event, payload) -> dict:
         bracket_position=_next_bracket_position(db, round_item),
         auto_advance=payload.auto_advance,
         scheduled_time=payload.scheduled_time,
+        duration_minutes=payload.duration_minutes,
         status=payload.status,
         winner=payload.winner,
         games_to_win=config.games_to_win,
@@ -460,6 +614,7 @@ def update_match(db: Session, user, event: Event, match_id: UUID, payload) -> di
         )
     category, court, entry_a, entry_b = _validate_match_context(db, user, event, payload)
     round_item = _validate_match_round(db, event, category, payload.round_id)
+    _validate_knockout_eligibility(db, event, category, round_item, {entry_a.id, entry_b.id}, match_id=match.id)
     has_scores = bool(match.games)
     if match.category_id != category.id and (has_scores or match.status == "completed"):
         raise MatchValidationError("A scored or completed match cannot change category")
@@ -469,7 +624,12 @@ def update_match(db: Session, user, event: Event, match_id: UUID, payload) -> di
         match.points_per_game = config.points_per_game
         match.games = []
     match_type, player_a_ids, player_b_ids = _validate_policy(_policy(event).select_players, category, entry_a, entry_b, payload)
+    _protect_schedule(db, event, payload, match_id)
     normalized_games = _validate_policy(_policy(event).normalize_games, payload.games, match.games_to_win)
+    if event.category == "badminton" and category.entry_type in {"singles", "doubles"} and payload.status == "completed":
+        _validate_policy(_policy(event).validate_score_winner,
+            normalized_games if normalized_games is not None else match.games,
+            match.games_to_win, match.points_per_game, payload.winner)
     if normalized_games is not None:
         match.games = normalized_games
     match.category_id = category.id
@@ -482,6 +642,7 @@ def update_match(db: Session, user, event: Event, match_id: UUID, payload) -> di
         match.bracket_position = None
         db.flush()
         match.bracket_position = _next_bracket_position(db, round_item)
+    match.duration_minutes = payload.duration_minutes
     match.scheduled_time = payload.scheduled_time
     match.status = payload.status
     match.winner = payload.winner
@@ -614,6 +775,7 @@ def _serialize_public_match(match: Match) -> dict:
         "roundLabel": match.round.name if match.round else match.round_label,
         "court": {"name": match.court.name},
         "scheduledTime": match.scheduled_time.isoformat() if match.scheduled_time else None,
+        "durationMinutes": match.duration_minutes,
         "status": match.status,
         "resultApproved": True,
         "approvedAt": match.result_approved_at.isoformat() if match.result_approved_at else None,
@@ -883,12 +1045,17 @@ def _serialize_team_scoring(config: TeamMatchScoring) -> dict:
 # ---------------------------------------------------------------------------
 
 def compute_standings(db: Session, event_id: UUID, category_id: UUID, *, approved_only: bool = False) -> list[dict]:
-    """Return sorted standings for a team category."""
+    """Return team standings or badminton singles/doubles League standings."""
     category = db.scalar(select(EventCategory).where(EventCategory.id == category_id))
     if category is None or category.event_id != event_id:
         raise MatchValidationError("Category not found for this event")
-    if category.entry_type != "team":
-        raise MatchValidationError("Standings are only available for team-format categories")
+    event = db.get(Event, event_id)
+    is_team = category.entry_type == "team"
+    if not is_team:
+        if event.category != "badminton" or category.entry_type not in {"singles", "doubles"}:
+            raise MatchValidationError("Standings are not available for this category")
+        if ((event.field_config or {}).get("sport_config") or {}).get("tournament_format") != "league":
+            return []
 
     # Load scoring config (use defaults if not set)
     config = db.scalar(
@@ -897,7 +1064,6 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID, *, approve
             TeamMatchScoring.category_id == category_id,
         )
     )
-    event = db.get(Event, event_id)
     policy = _policy(event)
 
     # Load all completed matches
@@ -915,6 +1081,9 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID, *, approve
     )
     if approved_only:
         matches_query = matches_query.where(Match.result_approved_at.is_not(None))
+    if not is_team:
+        # Badminton has no draws: incomplete result records do not affect rank.
+        matches_query = matches_query.where(Match.winner.in_(["entry_a", "entry_b"]))
     matches = db.scalars(matches_query).unique().all()
 
     # Accumulate stats per registration_id
@@ -933,6 +1102,9 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID, *, approve
                 "losses": 0,
                 "points": 0,
             }
+            if not is_team:
+                names = [member.participant.name for member in reg.participant_memberships] or [reg.participant.name]
+                stats[rid]["displayName"] = " / ".join(names)
         return stats[rid]
 
     for match in matches:
@@ -943,7 +1115,10 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID, *, approve
         sa["matchesPlayed"] += 1
         sb["matchesPlayed"] += 1
 
-        points_a, points_b = policy.standings_points(match.winner, config)
+        points_a, points_b = (
+            policy.standings_points(match.winner, config) if is_team
+            else (2, 0) if match.winner == "entry_a" else (0, 2)
+        )
         sa["points"] += points_a
         sb["points"] += points_b
         if match.winner == "entry_a":
@@ -956,5 +1131,7 @@ def compute_standings(db: Session, event_id: UUID, category_id: UUID, *, approve
             sa["draws"] += 1
             sb["draws"] += 1
 
-    # Sort by points only (descending)
+    if not is_team:
+        return sorted(stats.values(), key=lambda r: (-r["points"], -r["wins"], r["displayName"].casefold(), r["registrationId"]))
+    # Preserve the existing team ordering.
     return sorted(stats.values(), key=lambda r: -r["points"])

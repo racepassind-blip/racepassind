@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, CheckCircle2, ExternalLink, GitBranch, Gauge, ListOrdered, Medal, Pencil, Plus, RefreshCw, Trash2, Trophy } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, CheckCircle2, ExternalLink, GitBranch, Gauge, ListOrdered, Medal, Pencil, Plus, RefreshCw, Swords, Trash2, Trophy, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
 import OrganizerScoringConfig from "@/components/OrganizerScoringConfig";
 import TeamScoringConfig from "@/components/TeamScoringConfig";
+import TournamentSetupGuide from "@/components/TournamentSetupGuide";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +44,8 @@ const OrganizerEventTournament = () => {
   const [roundCategoryId, setRoundCategoryId] = useState("");
   const [roundDrafts, setRoundDrafts] = useState<Array<Pick<OrganizerTournamentRound, "id" | "name">>>([]);
   const [isSavingRounds, setIsSavingRounds] = useState(false);
+  const [tournamentFormat, setTournamentFormat] = useState<"league" | "knockout">("knockout");
+  const [isSavingFormat, setIsSavingFormat] = useState(false);
   const { data: configuredRoundsData, isLoading: isLoadingRounds, isError: isRoundsError } = useOrganizerTournamentRounds(eventId, roundCategoryId || undefined, supportsTournament);
   const configuredRounds = configuredRoundsData ?? emptyRounds;
 
@@ -53,6 +56,29 @@ const OrganizerEventTournament = () => {
   useEffect(() => {
     setRoundDrafts(configuredRounds.map((round) => ({ id: round.id, name: round.name })));
   }, [configuredRounds]);
+
+  useEffect(() => {
+    const configuredFormat = dashboard?.event.sportConfig?.tournament_format;
+    setTournamentFormat(configuredFormat === "league" ? "league" : "knockout");
+  }, [dashboard?.event.sportConfig?.tournament_format]);
+
+  const saveTournamentFormat = async () => {
+    if (!eventId) return;
+    setIsSavingFormat(true);
+    try {
+      await apiRequest(`/organizer/events/${eventId}/tournament-format`, {
+        method: "PUT",
+        body: JSON.stringify({ tournament_format: tournamentFormat }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["organizer-event-dashboard", eventId] });
+      await queryClient.invalidateQueries({ queryKey: ["organizer-matches", eventId] });
+      toast.success("Tournament format saved.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save the tournament format.");
+    } finally {
+      setIsSavingFormat(false);
+    }
+  };
 
   const addRound = () => {
     setRoundDrafts((current) => [...current, { id: `new-${Date.now()}-${current.length}`, name: "" }]);
@@ -178,7 +204,7 @@ const OrganizerEventTournament = () => {
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Set up the structure once, then move into matches and scoring when your event is ready to run.</p>
               <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground"><span className="flex items-center gap-2"><Trophy className="h-4 w-4 text-primary" />{event.name}</span><span className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" />{eventDateLabel}</span></div>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row lg:shrink-0"><Button asChild className="gap-2"><Link to={`/organizer/events/${event.id}/tournament/matches`}>Open matches <ArrowRight className="h-4 w-4" /></Link></Button><Button variant="outline" onClick={() => void refetch()} disabled={isFetching}><RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />Refresh data</Button></div>
+            <div className="flex flex-col gap-2 sm:flex-row lg:shrink-0"><TournamentSetupGuide eventId={event.id} initialFormat={tournamentFormat} /><Button asChild className="gap-2"><Link to={`/organizer/events/${event.id}/tournament/matches`}>Open matches <ArrowRight className="h-4 w-4" /></Link></Button><Button variant="outline" onClick={() => void refetch()} disabled={isFetching}><RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />Refresh data</Button></div>
           </div>
         </section>
 
@@ -192,14 +218,31 @@ const OrganizerEventTournament = () => {
             {[
               { label: "Matches", description: "Create and assign matches", icon: Trophy, to: `/organizer/events/${event.id}/tournament/matches` },
               { label: "Scoring", description: "Record live game scores", icon: Gauge, to: `/organizer/events/${event.id}/tournament/scoring` },
-              { label: "Results", description: "Review completed matches", icon: Medal, to: `/organizer/events/${event.id}/tournament/results` },
               { label: "Bracket", description: "See progression by round", icon: GitBranch, to: `/organizer/events/${event.id}/tournament/bracket` },
+              { label: "Results", description: "Review completed matches", icon: Medal, to: `/organizer/events/${event.id}/tournament/results` },
             ].map((item) => <Button key={item.label} asChild variant="outline" className="h-auto justify-start gap-3 px-4 py-3 text-left"><Link to={item.to}><item.icon className="h-5 w-5 shrink-0 text-primary" /><span className="min-w-0 flex-1"><span className="block font-semibold">{item.label}</span><span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">{item.description}</span></span><ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /></Link></Button>)}
           </CardContent>
         </Card>
 
         <OrganizerScoringConfig eventId={event.id} enabled={eventSportConfig.result_type === "match_score"} sport={event.sport} />
         <TeamScoringConfig eventId={event.id} categories={event.categories} />
+
+        {event.sport === "badminton" && <Card>
+          <CardHeader className="border-b"><CardTitle>Tournament format</CardTitle><CardDescription>Choose how results affect the next round. This controls advancement and the player-status drawer when scheduling matches.</CardDescription></CardHeader>
+          <CardContent className="space-y-4 p-4 sm:p-6">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button type="button" onClick={() => setTournamentFormat("league")} className={`rounded-xl border p-4 text-left transition ${tournamentFormat === "league" ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:border-primary/40"}`} aria-pressed={tournamentFormat === "league"}>
+                <div className="flex items-center gap-2 font-semibold"><Users className="h-5 w-5 text-primary" />League</div>
+                <p className="mt-2 text-sm text-muted-foreground">Everyone continues playing. A loss does not eliminate a player or team.</p>
+              </button>
+              <button type="button" onClick={() => setTournamentFormat("knockout")} className={`rounded-xl border p-4 text-left transition ${tournamentFormat === "knockout" ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:border-primary/40"}`} aria-pressed={tournamentFormat === "knockout"}>
+                <div className="flex items-center gap-2 font-semibold"><Swords className="h-5 w-5 text-primary" />Knockout</div>
+                <p className="mt-2 text-sm text-muted-foreground">Winners advance. Previous-round losers are marked eliminated.</p>
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 border-t pt-4"><Button type="button" onClick={() => void saveTournamentFormat()} disabled={isSavingFormat}>{isSavingFormat ? "Saving…" : "Save tournament format"}</Button><p className="text-xs text-muted-foreground">Changing the format does not delete existing matches or results.</p></div>
+          </CardContent>
+        </Card>}
 
         <Card>
           <CardHeader className="border-b"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle className="flex items-center gap-2"><ListOrdered className="h-5 w-5 text-primary" />Round order</CardTitle><CardDescription className="mt-2 max-w-3xl">Define the stages for each category. The first round appears on the left of the bracket and the final stage on the right.</CardDescription></div><Badge variant="secondary" className="w-fit">{roundDrafts.length} {roundDrafts.length === 1 ? "round" : "rounds"}</Badge></div></CardHeader>

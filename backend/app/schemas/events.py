@@ -65,6 +65,12 @@ class EventScheduleItem(BaseModel):
     label: str = Field(min_length=1, max_length=240)
 
 
+class TournamentFormatIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tournament_format: Literal["league", "knockout"]
+
+
 class OrganizerEventCreateV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -236,7 +242,8 @@ class OrganizerEventUpdateV1(BaseModel):
     @model_validator(mode="after")
     def validate_category_distances(self):
         adapter = get_adapter(self.sport)
-        self.sport_config = adapter.normalize_event_config(self.sport_config)
+        if "sport_config" in self.model_fields_set:
+            self.sport_config = adapter.normalize_event_config(self.sport_config)
         for category in self.categories:
             category.distance = adapter.category_distance(category.distance)
         return self

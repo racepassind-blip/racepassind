@@ -38,6 +38,7 @@ class MatchIn(BaseModel):
     court_id: UUID
     round_id: UUID | None = None
     round_label: str = Field(min_length=1, max_length=160)
+    duration_minutes: int = Field(default=30, ge=1, le=1440)
     scheduled_time: dt.datetime | None = None
     status: MatchStatus = "scheduled"
     winner: MatchWinner | None = None

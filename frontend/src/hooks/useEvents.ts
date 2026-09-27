@@ -128,6 +128,7 @@ export interface OrganizerMatch {
   nextMatchId: string | null;
   nextMatchSlot: "entry_a" | "entry_b" | null;
   scheduledTime: string | null;
+  durationMinutes?: number;
   status: "scheduled" | "in_progress" | "completed";
   winner: "entry_a" | "entry_b" | null;
   winnerBy?: "bouts" | "manual" | null;
@@ -142,6 +143,7 @@ export interface OrganizerMatch {
 }
 
 export interface TeamStanding {
+  displayName?: string;
   registrationId: string;
   teamName: string;
   captainName: string;
@@ -160,6 +162,7 @@ export interface PublicMatchResult {
   roundLabel: string;
   court: { name: string };
   scheduledTime: string | null;
+  durationMinutes?: number;
   status: "scheduled" | "in_progress" | "completed";
   resultApproved: true;
   approvedAt: string;
@@ -194,6 +197,7 @@ export interface OrganizerEvent {
   organizationId: string;
   name: string;
   sport: string;
+  sportConfig?: { tournament_format?: "league" | "knockout" | "league_knockout"; [key: string]: unknown };
   description: string;
   eventDate: string;
   eventEndDate?: string | null;

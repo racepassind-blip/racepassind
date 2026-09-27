@@ -9,6 +9,7 @@ from app.api.deps import get_authorized_event, require_csrf, require_roles, requ
 from app.schemas.matches import BoutIn, MatchIn, MatchResultApprovalIn, ScoringConfigIn, TeamMatchScoringIn
 from app.services.match_service import (
     MatchValidationError,
+    scheduling_conflicts,
     compute_standings,
     create_bout,
     create_match,
@@ -94,6 +95,20 @@ def get_matches(
     if match_status is not None and match_status not in {"scheduled", "in_progress", "completed"}:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported match status")
     return list_matches(db, event.id, category_id=category_id, status=match_status)
+
+
+@router.post("/events/{event_id}/matches/conflicts")
+def check_match_conflicts(
+    event_id: UUID,
+    payload: MatchIn,
+    match_id: UUID | None = None,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_authorized_event(db, user, event_id)
+    require_tournament_capable(event, db)
+    return {"conflicts": scheduling_conflicts(db, event, payload, match_id)}
 
 
 @router.post("/events/{event_id}/matches", status_code=status.HTTP_201_CREATED)

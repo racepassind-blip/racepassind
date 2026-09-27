@@ -756,6 +756,7 @@ class Match(Base):
     next_match_slot: Mapped[str | None] = mapped_column(String(16), nullable=True)
     round_label: Mapped[str] = mapped_column(String(160), nullable=False)
     scheduled_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30, server_default="30")
     status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="scheduled")
     winner: Mapped[str | None] = mapped_column(String(20), nullable=True)
     winner_by: Mapped[str | None] = mapped_column(String(20), nullable=True)

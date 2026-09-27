@@ -37,6 +37,21 @@ class GameTournamentPolicy:
         return [dict(game_number=g.game_number, score_a=g.score_a, score_b=g.score_b)
                 for g in sorted(games, key=lambda g: g.game_number)]
 
+    def validate_score_winner(self, games, games_to_win: int, points_per_game: int, winner: str) -> None:
+        """Validate a completed result using normalized games and match settings."""
+        wins_a = wins_b = 0
+        for game in games or []:
+            score_a, score_b = game["score_a"], game["score_b"]
+            if score_a == score_b or max(score_a, score_b) < points_per_game:
+                raise ValueError("Completed matches require finished, untied game scores")
+            wins_a += score_a > score_b
+            wins_b += score_b > score_a
+        calculated = "entry_a" if wins_a >= games_to_win else "entry_b" if wins_b >= games_to_win else None
+        if calculated is None:
+            raise ValueError(f"A side must win {games_to_win} games before completing the match")
+        if winner != calculated:
+            raise ValueError("Selected winner does not match the game scores")
+
     def bout_winner(self, bouts) -> str | None:
         wins_a = sum(b.winner == "player_a" for b in bouts)
         wins_b = sum(b.winner == "player_b" for b in bouts)

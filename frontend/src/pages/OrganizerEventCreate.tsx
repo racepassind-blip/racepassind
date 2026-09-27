@@ -950,7 +950,7 @@ const OrganizerEventCreate = () => {
         schedule: normalizedSchedule,
         field_config: fieldConfig,
         addon_config: addonConfig,
-        sport_config: isCricket ? { ...cricketConfig, overs_per_innings: Number(cricketConfig.overs_per_innings), minimum_players: Number(cricketConfig.minimum_players), maximum_players: Number(cricketConfig.maximum_players) } : {},
+        sport_config: isCricket ? { ...cricketConfig, overs_per_innings: Number(cricketConfig.overs_per_innings), minimum_players: Number(cricketConfig.minimum_players), maximum_players: Number(cricketConfig.maximum_players) } : eventId && sport === "badminton" ? undefined : {},
         payment_collection_method: paymentCollectionMethod,
         platform_fee_bearer: platformFeeBearer,
         refund_policy_enabled: refundPolicyEnabled,

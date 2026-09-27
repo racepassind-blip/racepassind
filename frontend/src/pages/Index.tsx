@@ -7,11 +7,19 @@ import { CategoriesSection } from "@/components/CategoriesSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import heroImg from "@/assets/hero-marathon.jpg";
-import { useEvents } from "@/hooks/useEvents";
+import { useEventSearch } from "@/hooks/useEvents";
 
 const Index = () => {
   const [search, setSearch] = useState("");
-  const { data: events = [], isLoading, isError } = useEvents();
+  const { data, isLoading, isError } = useEventSearch({
+    q: "",
+    sport: "ALL",
+    city: "ALL",
+    timing: "UPCOMING",
+    page: 1,
+    pageSize: 48,
+  });
+  const events = data?.items ?? [];
 
   const query = search.trim().toLowerCase();
   const orderedEvents = [...events].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -94,7 +102,7 @@ const Index = () => {
           </Link>
         </div>
 
-        {featured.length > 0 ? <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{featured.map((event) => <EventCard key={event.id} event={event} />)}</div> : <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">Search results are shown below.</div>}
+        {featured.length > 0 ? <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{featured.map((event) => <EventCard key={event.id} event={event} />)}</div> : <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">{isLoading ? "Loading events…" : isError ? "Failed to load events." : query ? "Search results are shown below." : "No upcoming events right now. Check back soon."}</div>}
       </section>
 
       <div className="border-y bg-card">

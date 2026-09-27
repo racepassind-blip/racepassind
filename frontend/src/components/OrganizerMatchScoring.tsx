@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { OrganizerMatch } from "@/hooks/useEvents";
 import { useOrganizerMatches } from "@/hooks/useEvents";
 import { apiRequest } from "@/lib/api";
@@ -74,6 +75,42 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
     [activeMatches, selectedId],
   );
   const maxGames = selectedMatch ? selectedMatch.gamesToWin * 2 - 1 : 0;
+  const hasNarrowGame = selectedMatch?.pointsPerGame === 21 && rows.some((row) => {
+    const scoreA = Number(row.scoreA);
+    const scoreB = Number(row.scoreB);
+    return Number.isInteger(scoreA) && Number.isInteger(scoreB)
+      && Math.max(scoreA, scoreB) >= 21
+      && Math.abs(scoreA - scoreB) === 1;
+  });
+  const gameWins = useMemo(() => {
+    let winsA = 0;
+    let winsB = 0;
+    for (const row of rows) {
+      const scoreA = Number(row.scoreA);
+      const scoreB = Number(row.scoreB);
+      if (row.scoreA === "" || row.scoreB === "" || !Number.isInteger(scoreA) || !Number.isInteger(scoreB) || scoreA === scoreB) continue;
+      if (scoreA > scoreB) winsA += 1;
+      else winsB += 1;
+    }
+    return { winsA, winsB };
+  }, [rows]);
+  const decisionWinner = selectedMatch && (gameWins.winsA >= selectedMatch.gamesToWin || gameWins.winsB >= selectedMatch.gamesToWin)
+    ? gameWins.winsA >= selectedMatch.gamesToWin ? "entry_a" : "entry_b"
+    : "";
+  const hasExtraGameAfterDecision = Boolean(selectedMatch) && (() => {
+    let winsA = 0;
+    let winsB = 0;
+    const gamesToWin = selectedMatch?.gamesToWin ?? 0;
+    for (const row of rows) {
+      const scoreA = Number(row.scoreA);
+      const scoreB = Number(row.scoreB);
+      if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB) || row.scoreA === "" || row.scoreB === "") continue;
+      if (winsA >= gamesToWin || winsB >= gamesToWin) return true;
+      if (scoreA > scoreB) winsA += 1;
+      if (scoreB > scoreA) winsB += 1;
+    }
+    return false;
+  })();
 
   // Keep selection valid when matches list updates
   useEffect(() => {
@@ -120,6 +157,12 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
       }
       games.push({ game_number: row.gameNumber, score_a: scoreA, score_b: scoreB });
     }
+    if (complete && games.some((game) => Math.max(game.score_a, game.score_b) >= 21 && Math.abs(game.score_a - game.score_b) === 1)) {
+      toast.warning("This game has only a one-point winning margin. Confirm the official ruling before completing; you can continue if this is an intentional override.");
+    }
+    if (complete && hasExtraGameAfterDecision) {
+      toast.warning("A winner has already won the required number of games. You can declare the winner now, or continue if this extra game is intentional.");
+    }
     setIsSaving(true);
     try {
       // Preserve the picked players so scoring an edit doesn't wipe the selection.
@@ -140,6 +183,7 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
           round_id: selectedMatch.roundId,
           round_label: selectedMatch.roundLabel,
           scheduled_time: selectedMatch.scheduledTime,
+          duration_minutes: selectedMatch.durationMinutes ?? 30,
           status: complete ? "completed" : "in_progress",
           winner: complete ? winner : null,
           auto_advance: selectedMatch.autoAdvance,
@@ -148,6 +192,7 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
         }),
       });
       await queryClient.invalidateQueries({ queryKey: ["organizer-matches", eventId] });
+      await queryClient.invalidateQueries({ queryKey: ["organizer-standings", eventId] });
       toast.success(
         complete && savedMatch.nextMatchId
           ? "Match completed. Winner advanced to the next round."
@@ -191,18 +236,21 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
             <>
               <div className="space-y-2">
                 <Label htmlFor="score-match">Match</Label>
-                <select
-                  id="score-match"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={selectedId}
-                  onChange={(e) => setSelectedId(e.target.value)}
-                >
+                <Select value={selectedId} onValueChange={setSelectedId}>
+                  <SelectTrigger id="score-match" className="h-auto min-h-12 py-2">
+                    <SelectValue placeholder="Choose a match to score" />
+                  </SelectTrigger>
+                  <SelectContent>
                   {activeMatches.map((match) => (
-                    <option key={match.id} value={match.id}>
-                      {match.status === "in_progress" ? "▶ " : ""}{match.roundLabel}{match.matchType ? ` · ${matchTypeLabel(match)}` : ""} · {matchSideLabel(match.entryA, match.playersA)} vs {matchSideLabel(match.entryB, match.playersB)}
-                    </option>
+                    <SelectItem key={match.id} value={match.id}>
+                      <span className="flex flex-col py-0.5 text-left">
+                        <span className="font-semibold">{match.roundLabel}{match.matchType ? ` · ${matchTypeLabel(match)}` : ""}</span>
+                        <span className="text-xs text-muted-foreground">{matchSideLabel(match.entryA, match.playersA)} <span aria-hidden="true">vs</span> {matchSideLabel(match.entryB, match.playersB)}{match.status === "in_progress" ? " · In progress" : " · Scheduled"}</span>
+                      </span>
+                    </SelectItem>
                   ))}
-                </select>
+                  </SelectContent>
+                </Select>
                 <p className="text-xs text-muted-foreground">Only scheduled and in-progress matches are shown here. Completed matches are listed below.</p>
               </div>
 
@@ -231,24 +279,32 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
                     </div>
                   </div>
 
+                  <div className="rounded-lg border bg-muted/20 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Score entry</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Enter each game score, then select the official match winner below. You can save an unfinished scorecard at any time.</p>
+                  </div>
+
                   <>
                       <div className="space-y-3">
                         {rows.map((row, index) => (
                           <div key={row.gameNumber} className="grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3">
                             <div className="pb-2 text-sm font-medium">Game {row.gameNumber}</div>
                             <div className="space-y-2">
-                              <Label htmlFor={`score-a-${selectedMatch.id}-${row.gameNumber}`}>Entry A</Label>
+                              <Label htmlFor={`score-a-${selectedMatch.id}-${row.gameNumber}`}>{matchSideLabel(selectedMatch.entryA, selectedMatch.playersA)}</Label>
                               <Input id={`score-a-${selectedMatch.id}-${row.gameNumber}`} type="number" min={0} max={30} inputMode="numeric" value={row.scoreA} onChange={(e) => updateRow(index, "scoreA", e.target.value)} />
                             </div>
                             <div className="space-y-2">
-                              <Label htmlFor={`score-b-${selectedMatch.id}-${row.gameNumber}`}>Entry B</Label>
+                              <Label htmlFor={`score-b-${selectedMatch.id}-${row.gameNumber}`}>{matchSideLabel(selectedMatch.entryB, selectedMatch.playersB)}</Label>
                               <Input id={`score-b-${selectedMatch.id}-${row.gameNumber}`} type="number" min={0} max={30} inputMode="numeric" value={row.scoreB} onChange={(e) => updateRow(index, "scoreB", e.target.value)} />
                             </div>
                           </div>
                         ))}
                       </div>
 
-                      <p className="text-xs leading-5 text-muted-foreground">Normal target: {selectedMatch.pointsPerGame}. Deuce can continue to 30; the hard cap is 30–29. SportPass does not calculate or validate the winner.</p>
+                      <p className="text-xs leading-5 text-muted-foreground">Normal target: {selectedMatch.pointsPerGame}. Deuce can continue to 30; the hard cap is 30–29. The organizer records the official ruling.</p>
+                      {hasNarrowGame && <p role="alert" className="rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">One or more games has a one-point winning margin. Confirm the official ruling before completing; this is an organizer override and will not block saving.</p>}
+                      {hasExtraGameAfterDecision && <p role="alert" className="rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">A player has already won the required number of games. You can declare the winner now, or continue with this extra game if it is intentional.</p>}
+                      {decisionWinner && !hasExtraGameAfterDecision && <p role="status" className="rounded-md border border-emerald-300/60 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-900">{decisionWinner === "entry_a" ? matchSideLabel(selectedMatch.entryA, selectedMatch.playersA) : matchSideLabel(selectedMatch.entryB, selectedMatch.playersB)} has won {decisionWinner === "entry_a" ? gameWins.winsA : gameWins.winsB} games. Select the winner and click <strong>Complete match</strong> to finish.</p>}
 
                       <div className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-end sm:justify-between">
                         <div className="space-y-2">
@@ -260,8 +316,8 @@ const OrganizerMatchScoring = ({ eventId, showCompletedSection = true }: Organiz
                             onChange={(e) => setWinner(e.target.value as "entry_a" | "entry_b" | "")}
                           >
                             <option value="">Select winner</option>
-                            <option value="entry_a">Entry A — {matchSideLabel(selectedMatch.entryA, selectedMatch.playersA)}</option>
-                            <option value="entry_b">Entry B — {matchSideLabel(selectedMatch.entryB, selectedMatch.playersB)}</option>
+                            <option value="entry_a">{matchSideLabel(selectedMatch.entryA, selectedMatch.playersA)}</option>
+                            <option value="entry_b">{matchSideLabel(selectedMatch.entryB, selectedMatch.playersB)}</option>
                           </select>
                         </div>
                         <div className="flex gap-2">

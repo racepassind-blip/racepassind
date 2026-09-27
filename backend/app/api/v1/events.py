@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_authorized_event, get_authorized_organization, require_csrf, require_roles
 from app.infrastructure.storage.factory import get_storage_service
-from app.schemas.events import OrganizerEventCreateV1, OrganizerEventUpdateV1, PaymentSettingsIn, RegistrationStatusIn, rupees_to_paise
+from app.schemas.events import OrganizerEventCreateV1, OrganizerEventUpdateV1, PaymentSettingsIn, RegistrationStatusIn, TournamentFormatIn, rupees_to_paise
 from app.services.audit_service import record_audit
 from app.services.auth_service import utc_now
 from app.services.event_archive_service import restore_event_record
@@ -373,6 +373,34 @@ def get_event_dashboard(
     }
 
 
+@router.put("/events/{event_id}/tournament-format")
+def update_tournament_format(
+    event_id: UUID,
+    payload: TournamentFormatIn,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_authorized_event(db, user, event_id)
+    if event.category != "badminton":
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Tournament format can only be changed here for badminton events")
+    current_field_config = dict(event.field_config or {})
+    current_sport_config = dict(current_field_config.get("sport_config") or {})
+    current_sport_config["tournament_format"] = payload.tournament_format
+    normalized = get_adapter(event.category).normalize_event_config(current_sport_config)
+    event.field_config = {**current_field_config, "sport_config": normalized}
+    record_audit(
+        db,
+        actor_user_id=user.id,
+        action="tournament_format_updated",
+        resource_type="event",
+        resource_id=event.id,
+        metadata={"tournament_format": payload.tournament_format},
+    )
+    db.commit()
+    return {"sportConfig": normalized}
+
+
 def _ticket_has_registrations(db: Session, ticket_id: UUID) -> bool:
     return db.scalar(select(Registration.id).where(Registration.ticket_id == ticket_id).limit(1)) is not None
 
@@ -517,6 +545,18 @@ def update_event(
     existing_categories = {category.id: category for category in event.categories}
     submitted_category_ids: set[UUID] = set()
 
+    same_sport = event.category == payload.sport.strip().lower()
+    # Badminton configuration belongs to Tournament Setup. Preserve it even
+    # when older general editors submit an empty/default sport configuration.
+    preserve_sport_config = same_sport and (
+        event.category == "badminton" or "sport_config" not in payload.model_fields_set
+    )
+    sport_config = (
+        (event.field_config or {}).get("sport_config", {})
+        if preserve_sport_config
+        else get_adapter(payload.sport).normalize_event_config(payload.sport_config)
+    )
+
     event.name = payload.name.strip()
     event.description = payload.description.strip()
     event.category = payload.sport.strip().lower()
@@ -539,7 +579,7 @@ def update_event(
     event.longitude = payload.longitude
     event.rules = payload.rules
     event.schedule = [item.model_dump(mode="json", exclude_none=True) for item in payload.schedule]
-    event.field_config = {**field_config, "sport_config": payload.sport_config}
+    event.field_config = {**field_config, "sport_config": sport_config}
     event.addon_config = addon_config
     event.registration_open = payload.registration_open
     event.registration_close = payload.registration_close
