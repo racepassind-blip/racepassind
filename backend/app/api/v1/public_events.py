@@ -76,6 +76,10 @@ def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: in
         "participants": sum(ticket.quantity_sold for ticket in event.tickets),
         "maxParticipants": event.maxParticipants,
         "organizer": event.organizer,
+        "organizerInfo": {
+            "name": event.organization.name if event.organization else event.organizer,
+            "logoUrl": resolve_media_url(event.organization.logo_url, storage, get_settings().storage_signed_url_ttl_seconds) if event.organization else None,
+        },
         "registrationOpen": event.registration_open.isoformat() if event.registration_open else None,
         "registrationClose": event.registration_close.isoformat() if event.registration_close else None,
         "registrationStatus": event.registration_status,

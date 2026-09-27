@@ -656,6 +656,7 @@ def upload_organization_logo(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     return {
         "organizationId": str(organization.id),
+        # Return the freshly generated URL, matching event banner uploads.
         "logoUrl": uploaded.url,
         "contentType": uploaded.content_type,
         "sizeBytes": uploaded.size_bytes,

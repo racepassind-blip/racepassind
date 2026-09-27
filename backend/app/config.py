@@ -66,7 +66,7 @@ class Settings:
     storage_access_key: str | None = field(default=None, repr=False)
     storage_secret_key: str | None = field(default=None, repr=False)
     storage_local_root: str = ".storage"
-    storage_public_base_url: str = "http://localhost:8000"
+    storage_public_base_url: str = "http://localhost:8010"
     storage_signed_url_ttl_seconds: int = 900
     storage_max_upload_bytes: int = 2_000_000
     storage_max_dimension: int = 4096
@@ -101,7 +101,7 @@ class Settings:
             storage_access_key=os.getenv("STORAGE_ACCESS_KEY"),
             storage_secret_key=os.getenv("STORAGE_SECRET_KEY"),
             storage_local_root=os.getenv("STORAGE_LOCAL_ROOT", ".storage"),
-            storage_public_base_url=os.getenv("STORAGE_PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/"),
+            storage_public_base_url=os.getenv("STORAGE_PUBLIC_BASE_URL", "http://localhost:8010").rstrip("/"),
             storage_signed_url_ttl_seconds=int(os.getenv("STORAGE_SIGNED_URL_TTL_SECONDS", "900")),
             storage_max_upload_bytes=int(os.getenv("STORAGE_MAX_UPLOAD_BYTES", "2000000")),
             storage_max_dimension=int(os.getenv("STORAGE_MAX_DIMENSION", "4096")),

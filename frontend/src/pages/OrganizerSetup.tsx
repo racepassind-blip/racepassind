@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { ArrowRight, Building2, CheckCircle2 } from "lucide-react";
+import { ArrowRight, Building2, CheckCircle2, ImagePlus, ShieldCheck } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { OrganizerOnboardingLayout } from "@/components/OrganizerOnboardingLayout";
@@ -44,12 +44,23 @@ interface OrganizerSetupProps {
 
 const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
   const navigate = useNavigate();
+  const [section, setSection] = useState<"profile" | "verification">(window.location.hash === "#paid-verification" ? "verification" : "profile");
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", organizationType: "", city: "", state: "", description: "", website: "" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!logoFile) { setLogoPreviewUrl(null); return; }
+    const url = URL.createObjectURL(logoFile);
+    setLogoPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [logoFile]);
 
   useEffect(() => {
     const loadOrganization = async () => {
@@ -83,6 +94,7 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
       setError("Organization type, city, and state are required to complete onboarding.");
       return;
     }
+    setSaved(false);
     setSaving(true);
     setError(null);
     try {
@@ -110,7 +122,8 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
         description: updatedProfile.description ?? "",
         website: updatedProfile.website ?? "",
       });
-      navigate("/organizer");
+      setSaved(true);
+      if (!embedded) navigate("/organizer");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not save your organization profile.");
     } finally {
@@ -118,14 +131,20 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
     }
   };
 
+  const displayedLogo = logoPreviewUrl || organization?.logoUrl;
+
   const content = (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Organizer setup</p>
-          <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Set up your organization</h1>
-          <p className="mt-2 max-w-2xl text-muted-foreground">Keep it simple. Add the public details participants should see before you create your first event.</p>
+          <p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Organizer settings</p>
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Your organization</h1>
+          <p className="mt-2 max-w-2xl text-muted-foreground">Manage your public profile and verification in one place.</p>
         </div>
 
+        <div className="grid grid-cols-2 gap-2 rounded-xl border bg-muted/40 p-1.5" role="tablist" aria-label="Organization settings">
+          {([{ id: "profile", title: "Public profile", detail: "Logo and organization details", icon: Building2 }, { id: "verification", title: "Paid event verification", detail: "Required for paid events only", icon: ShieldCheck }] as const).map((item) => <button key={item.id} id={`organization-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`organization-panel-${item.id}`} onClick={() => setSection(item.id)} className={`flex items-start gap-3 rounded-lg p-3 text-left transition-colors sm:p-4 ${section === item.id ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:bg-background/60"}`}><item.icon className={`mt-0.5 hidden h-5 w-5 shrink-0 sm:block ${section === item.id ? "text-primary" : ""}`} /><span><span className="block text-sm font-semibold">{item.title}</span><span className="mt-1 hidden text-xs text-muted-foreground sm:block">{item.detail}</span></span></button>)}
+        </div>
+        <div id="organization-panel-profile" role="tabpanel" aria-labelledby="organization-tab-profile" hidden={section !== "profile"}>
         {loading ? (
           <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading your organization…</CardContent></Card>
         ) : error && !organization ? (
@@ -135,9 +154,24 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5 text-primary" /> Organization profile</CardTitle>
-                <CardDescription>These details can be updated later. Payment verification and payout information are not required here.</CardDescription>
+                <CardDescription>Your public identity. You can update these details whenever they change.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
+                <div className="rounded-xl border bg-muted/25 p-4 sm:p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                    <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-white">
+                      {displayedLogo && displayedLogo !== failedLogoUrl ? <img src={displayedLogo} alt="Organization logo preview" onError={() => setFailedLogoUrl(displayedLogo)} className="h-full w-full object-contain p-2" /> : <ImagePlus className="h-8 w-8 text-slate-400" />}
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <Label htmlFor="organization-logo" className="text-base font-semibold">Organization logo <span className="text-sm font-normal text-muted-foreground">(optional)</span></Label>
+                      <p className="text-sm text-muted-foreground">Shown alongside your name on the public event registration page.</p>
+                      <Input id="organization-logo" type="file" accept="image/png,image/jpeg,image/webp" disabled={saving} onChange={(event) => { setLogoFile(event.target.files?.[0] ?? null); setSaved(false); }} className="bg-background" />
+                      <p className="text-xs text-muted-foreground">PNG, JPEG, or WebP. Use a clear logo with some space around it.</p>
+                      {logoFile && <p className="text-xs font-medium text-primary">{logoFile.name} · Save changes to upload</p>}
+                      {displayedLogo && displayedLogo === failedLogoUrl && <p role="alert" className="text-xs text-destructive">The logo could not load. Choose a replacement or try reloading the page.</p>}
+                    </div>
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="organization-name">Organization name</Label>
                   <Input id="organization-name" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required minLength={2} maxLength={160} />
@@ -160,12 +194,6 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="organization-logo">Organization logo <span className="font-normal text-muted-foreground">(optional)</span></Label>
-                  <Input id="organization-logo" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setLogoFile(event.target.files?.[0] ?? null)} />
-                  {organization.logoUrl && <img src={organization.logoUrl} alt="Current organization logo" className="h-16 w-16 rounded-lg border object-cover" />}
-                  <p className="text-xs text-muted-foreground">PNG, JPEG, or WebP. The logo is used in participant-facing organization details.</p>
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="organization-description">Short description <span className="font-normal text-muted-foreground">(optional)</span></Label>
                   <Textarea id="organization-description" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} maxLength={2000} placeholder="Tell participants what your club or organization does." rows={5} />
                 </div>
@@ -177,23 +205,20 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
               </CardContent>
             </Card>
 
-            <Card className="border-primary/20 bg-primary/5">
-              <CardContent className="flex gap-3 p-5 text-sm text-muted-foreground">
-                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                <p>Your SportPass account is ready. Complete your organization profile now or update it later. Paid organizer verification is only required before publishing a paid event.</p>
-              </CardContent>
-            </Card>
-
-            {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+            {error && <p className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive" role="alert">{error}</p>}
+            {saved && <p role="status" className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Organization profile saved.</p>}
 
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <Button asChild type="button" variant="outline"><Link to="/organizer">Skip for now</Link></Button>
-              <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save and view events"} <ArrowRight className="ml-2 h-4 w-4" /></Button>
+              {!embedded && <Button asChild type="button" variant="outline"><Link to="/organizer">Back to events</Link></Button>}
+              <Button type="submit" disabled={saving}>{saving ? "Saving changes…" : embedded ? "Save changes" : "Save and view events"} <ArrowRight className="ml-2 h-4 w-4" /></Button>
             </div>
           </form>
         ) : null}
 
-        {organization && <PaidVerification organizationId={organization.id} />}
+        </div>
+        <div id="organization-panel-verification" role="tabpanel" aria-labelledby="organization-tab-verification" hidden={section !== "verification"}>
+          {organization ? <PaidVerification organizationId={organization.id} /> : <p className="p-6 text-sm text-muted-foreground">{loading ? "Loading organization…" : "Organization details could not be loaded. Reload to try again."}</p>}
+        </div>
       </div>
   );
 

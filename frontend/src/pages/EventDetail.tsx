@@ -327,6 +327,10 @@ const EventDetail = () => {
               <div className="border-b p-5">
                 <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Registration</p><h2 className="mt-1 text-xl font-bold">Choose your entry</h2></div><span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">{event.participants.toLocaleString()} registered</span></div>
                 <p className="mt-2 text-sm text-muted-foreground">Select the ticket and number of entries you want to register.</p>
+                <div className="mt-4 flex items-center gap-3 border-t pt-4">
+                  {event.organizerInfo?.logoUrl ? <img src={event.organizerInfo.logoUrl} alt={`${event.organizerInfo.name} logo`} className="h-10 w-10 rounded-lg border bg-white object-contain p-1" /> : <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-primary/10 text-sm font-black text-primary">{(event.organizerInfo?.name ?? event.organizer ?? "Organizer").slice(0, 1).toUpperCase()}</span>}
+                  <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Organized by</p><p className="truncate text-sm font-semibold">{event.organizerInfo?.name ?? event.organizer}</p></div>
+                </div>
               </div>
 
               {registrationClosed && <div className="border-b border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-950"><p className="font-semibold">Registration is closed</p><p className="mt-1 leading-5">The organizer is no longer accepting new registrations.</p></div>}

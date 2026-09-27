@@ -185,8 +185,8 @@ const PaidVerification = ({ organizationId }: PaidVerificationProps) => {
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2"><FileCheck2 className="h-5 w-5 text-primary" /> Paid Organizer Verification</CardTitle>
-            <CardDescription>Planning to run a paid event? Complete this once before publishing your first paid event. Free events don't require verification.</CardDescription>
+            <CardTitle className="flex items-center gap-2"><FileCheck2 className="h-5 w-5 text-primary" /> Paid event verification</CardTitle>
+            <CardDescription>Verify your organization once to publish paid events. You can run free events without completing this step.</CardDescription>
           </div>
           <Badge variant="outline" className={`w-fit gap-1.5 ${meta.className}`}><StatusIcon className="h-3.5 w-3.5" /> {meta.label}</Badge>
         </div>

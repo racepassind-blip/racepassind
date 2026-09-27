@@ -80,6 +80,7 @@ export interface SportEvent {
   participants: number;
   maxParticipants: number;
   organizer: string;
+  organizerInfo?: { name: string; logoUrl: string | null };
   rules: string[];
   registrationOpen?: string | null;
   registrationClose?: string | null;
