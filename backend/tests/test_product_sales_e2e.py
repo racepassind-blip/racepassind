@@ -1,5 +1,6 @@
 import unittest
 import io
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import Mock, patch
 from PIL import Image
 from fastapi import UploadFile, HTTPException
@@ -13,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 
 from db import Base, get_db
 from models import Organization, ProductListing, ProductOrder, ProductImage
-from app.api.v1.products import upload_image, serialize_listing, update_listing, ListingInput
+from app.api.v1.products import upload_image, serialize_listing, update_listing, ListingInput, inventory_summary, product_fee_preview, ProductFeePreview
 from app.api.deps import require_csrf
 from app.infrastructure.storage.factory import get_storage_service
 from main import app
@@ -153,8 +154,77 @@ class ProductSalesE2ETests(unittest.TestCase):
                 update_listing(LISTING_ID, payload, db=db, user=Mock(), storage=None)
             self.assertEqual(caught.exception.status_code, 409)
 
+    def test_size_summary_counts_units_by_id_and_excludes_inactive_orders(self):
+        order = self.place_test_order()
+        with self.Session() as db:
+            original = db.get(ProductOrder, UUID(order["id"]))
+            original.status = "confirmed"
+            for index, status in enumerate(["under_review", "fulfilled", "rejected", "expired"]):
+                db.add(ProductOrder(listing_id=LISTING_ID, request_key=str(uuid4()), access_hash="test",
+                    buyer_name="Buyer", buyer_email="test@example.com", buyer_phone="1234567890",
+                    status=status, snapshot=original.snapshot))
+            item = db.get(ProductListing, LISTING_ID)
+            catalog = {**item.catalog, "products": [{**item.catalog["products"][0], "name": "Renamed jersey"}]}
+            item.catalog = catalog
+            db.commit()
+            with patch("app.api.v1.products.get_authorized_organization"):
+                result = inventory_summary(LISTING_ID, db=db, user=Mock())
+            product = result["products"][0]
+            self.assertEqual(product["name"], "Renamed jersey")
+            row = product["variants"][0]
+            self.assertEqual(row["available"], 8)
+            self.assertEqual(row["confirmed"], 2)
+            self.assertEqual(row["under_review"], 2)
+            self.assertEqual(row["fulfilled"], 2)
+            self.assertEqual(row["awaiting_payment"], 0)
+
     def cart(self, quantity):
         return {"lines": [{"product_id": str(PRODUCT_ID), "variant_id": str(VARIANT_ID), "quantity": quantity, "customization": None}]}
+
+    def test_browser_preflight_allows_order_token_for_payment_reference(self):
+        response = self.client.options(
+            f"/api/v1/product-orders/{uuid4()}/reference",
+            headers={
+                "Origin": "http://localhost:8080",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type,x-csrf-token,x-order-token,x-request-id",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:8080")
+        self.assertIn("x-order-token", response.headers["access-control-allow-headers"].lower())
+
+    def test_pricing_preview_shows_actual_organizer_net(self):
+        with self.Session() as db, patch("app.api.v1.products.get_authorized_organization"):
+            organization_id = db.get(ProductListing, LISTING_ID).organization_id
+            for bearer, paid, net in [("ORGANIZER", 150000, 144000), ("PARTICIPANT", 156000, 150000)]:
+                result = product_fee_preview(ProductFeePreview(organization_id=organization_id, amount_paise=150000, fee_bearer=bearer), db=db, user=Mock())
+                self.assertEqual(result["platformFeePaise"], 6000)
+                self.assertEqual(result["customerPaysPaise"], paid)
+                self.assertEqual(result["organizerNetPaise"], net)
+
+    def test_fee_bearer_matches_product_preview_cart_and_upi_qr(self):
+        from app.services.payment_service import generate_qr_data_url
+        for bearer, expected_total in [("PARTICIPANT", 312000), ("ORGANIZER", 300000)]:
+            with self.subTest(bearer=bearer):
+                with self.Session() as db:
+                    item = db.get(ProductListing, LISTING_ID)
+                    item.fee_bearer = bearer
+                    catalog = dict(item.catalog)
+                    catalog["products"] = [{**catalog["products"][0], "variants": [{"id": str(VARIANT_ID), "label": "M", "price_paise": 150000, "stock": 10, "options": {}}]}]
+                    item.catalog = catalog
+                    db.commit()
+                store = self.client.get(f"/api/v1/products/{LISTING_ID}").json()
+                preview = store["price_previews"][str(VARIANT_ID)]
+                self.assertEqual(preview["participantTotalPaise"], 156000 if bearer == "PARTICIPANT" else 150000)
+                quote = self.client.post(f"/api/v1/products/{LISTING_ID}/quote", json=self.cart(2)).json()
+                self.assertEqual(quote["total_paise"], expected_total)
+                order = self.place_test_order()
+                payment = order["snapshot"]["payment"]
+                self.assertEqual(order["snapshot"]["platform_fee_paise"], 12000)
+                self.assertEqual(payment["amountPaise"], expected_total)
+                self.assertEqual(parse_qs(urlparse(payment["upiUri"]).query)["am"], [f"{expected_total / 100:.2f}"])
+                self.assertEqual(payment["qrDataUrl"], generate_qr_data_url(payment["upiUri"]))
 
     def test_public_store_quote_order_and_payment_reference(self):
         discovery = self.client.get("/api/v1/products")
@@ -184,6 +254,7 @@ class ProductSalesE2ETests(unittest.TestCase):
         order = placed.json()
         self.assertEqual(order["status"], "awaiting_payment")
         self.assertTrue(order["snapshot"]["payment"]["upiUri"].startswith("upi://pay?"))
+        self.assertIn(f"SportPass%20Order%20{order['id']}", order["snapshot"]["payment"]["upiUri"])
 
         repeated = self.client.post(f"/api/v1/products/{LISTING_ID}/orders", json=body)
         self.assertEqual(repeated.json()["id"], order["id"])

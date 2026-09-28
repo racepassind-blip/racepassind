@@ -83,12 +83,12 @@ def generate_qr_data_url(value: str) -> str:
     return f"data:image/svg+xml;base64,{encoded}"
 
 
-def build_upi_payment_details(settings: EventPaymentSettings, *, amount_paise: int, registration_reference: str) -> dict:
+def build_upi_payment_details(settings: EventPaymentSettings, *, amount_paise: int, registration_reference: str, merchandise_order: bool = False) -> dict:
     validate_manual_upi_settings(settings)
     upi_id = normalize_upi_id(settings.upi_id)
     payee_name = settings.payee_name.strip()
     amount = _amount_rupees(amount_paise)
-    transaction_note = f"SportPass {registration_reference}"
+    transaction_note = f"SportPass Order {registration_reference}" if merchandise_order else f"SportPass {registration_reference}"
     # Field order follows NPCI UPI deep-link spec.
     # mam (minimum amount) is intentionally omitted so the amount is non-editable.
     uri = "upi://pay?" + urlencode(

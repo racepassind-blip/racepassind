@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from app.listings.products import Product, ProductVariant, ProductCatalog, ProductCart, ProductCartLine, quote_products
+from app.listings.products import Product, ProductVariant, ProductCatalog, ProductCart, ProductCartLine, price_product_order, quote_products
 
 
 class ProductCatalogTests(unittest.TestCase):
@@ -48,6 +48,20 @@ class ProductCatalogTests(unittest.TestCase):
         quote = quote_products(self.catalog, ProductCart(lines=[self.line(customization="Pramodh")]))
         self.assertEqual(quote["lines"][0]["options"]["Size"], "M")
         self.assertEqual(quote["lines"][0]["customization"], "Pramodh")
+
+    def test_merch_fee_is_applied_once_to_the_complete_order_subtotal(self):
+        second = ProductVariant(id=uuid4(), label="Large", price_paise=200000, stock=5)
+        self.product.variants.append(second)
+        result = price_product_order(
+            None,
+            catalog=self.catalog,
+            cart=ProductCart(lines=[self.line(1), ProductCartLine(product_id=self.product.id, variant_id=second.id, quantity=1)]),
+            organization=None,
+            fee_bearer="PARTICIPANT",
+        )
+        self.assertEqual(result["subtotal_paise"], 215000)
+        self.assertEqual(result["platform_fee_paise"], 8600)
+        self.assertEqual(result["total_paise"], 223600)
 
     def test_reject_unoffered_customization(self):
         with self.assertRaisesRegex(ValueError, "Customization"):

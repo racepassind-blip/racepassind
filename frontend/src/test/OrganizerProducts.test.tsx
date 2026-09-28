@@ -7,11 +7,49 @@ vi.mock("@/components/OrganizerDashboardLayout", () => ({ OrganizerDashboardLayo
 vi.mock("react-router-dom", () => ({ useParams: () => ({ listingId: "store" }), useNavigate: () => vi.fn(), Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a> }));
 vi.mock("@/lib/api", () => ({ apiRequest: vi.fn(), uploadFile: vi.fn() }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+it.each(["ORGANIZER", "PARTICIPANT"])("shows clear one-item net pricing for %s", async (bearer) => {
+  const listing = { id: "store", organization_id: "org", name: "Race", description: "", status: "published", fee_bearer: bearer, upi_id: "race@upi", payee_name: "Race", images: {}, catalog: { max_units_per_order: 5, pickup_instructions: "Village", products: [{ id: "jersey", name: "Jersey", description: "", image_ids: [], size_chart_image_id: null, variants: [{ id: "m", label: "M", stock: 2, price_paise: 150000 }] }] } };
+  vi.mocked(apiRequest).mockImplementation(async (path, options) => {
+    if (path === "/organizer/organizations") return [{ id: "org", name: "Race" }] as never;
+    if (path === "/organizer/product-listings") return [listing] as never;
+    if (path === "/organizer/product-fee-preview") {
+      const { amount_paise: amount } = JSON.parse(options!.body as string);
+      const fee = Math.max(2000, amount * 0.04);
+      return { amountPaise: amount, feeBearer: bearer, platformFeePaise: fee, customerPaysPaise: amount + (bearer === "PARTICIPANT" ? fee : 0), organizerNetPaise: amount - (bearer === "ORGANIZER" ? fee : 0) } as never;
+    }
+    return [] as never;
+  });
+  render(<OrganizerProducts />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Products" }));
+  expect(await screen.findByText(bearer === "ORGANIZER" ? "₹1,440.00" : "₹1,560.00")).toBeInTheDocument();
+  expect(screen.getByText("₹60.00")).toBeInTheDocument();
+  expect(screen.queryByText("Organizer cost")).not.toBeInTheDocument();
+  expect(screen.getByText("Customer pays to your UPI")).toBeInTheDocument();
+  expect(screen.getByText("SportPass deducts from credits")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Your selling price (₹)"), { target: { value: "2000" } });
+  expect(await screen.findByText("₹80.00")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Available stock"), { target: { value: "0" } });
+  expect(screen.getByText("Sold out — customers cannot select this option.")).toBeInTheDocument();
+  expect(screen.getByText("Store details")).not.toBeVisible();
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  expect(screen.getByText("Store details")).toBeVisible();
+  expect(screen.getByLabelText("Available stock")).not.toBeVisible();
+  expect(screen.queryByRole("button", { name: "Add product" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  fireEvent.change(screen.getByPlaceholderText("Official race merchandise"), { target: { value: "Updated store" } });
+  fireEvent.click(screen.getByRole("tab", { name: "Products" }));
+  expect(screen.getByLabelText("Available stock")).toHaveValue(0);
+  expect(screen.getByLabelText("Your selling price (₹)")).toHaveValue(2000);
+  expect(screen.getByRole("button", { name: "Add product" })).toBeVisible();
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  expect(screen.getByPlaceholderText("Official race merchandise")).toHaveValue("Updated store");
+});
 it("previews the saved chart on reopen and attaches a replacement upload immediately", async () => {
   const listing = { id: "store", organization_id: "org", name: "Race store", description: "", status: "published", fee_bearer: "ORGANIZER", upi_id: "race@upi", payee_name: "Race", has_orders: true, images: { chart: "/chart.png" }, catalog: { max_units_per_order: 5, pickup_instructions: "Village", products: [{ id: "jersey", name: "Jersey", description: "", image_ids: [], size_chart_image_id: "chart", variants: [{ id: "m", label: "M", stock: 2, price_paise: 10000 }] }] } };
   vi.mocked(apiRequest).mockImplementation(async (path) => (path === "/organizer/organizations" ? [{ id: "org", name: "Race" }] : path === "/organizer/product-listings" ? [listing] : []) as never);
   vi.mocked(uploadFile).mockResolvedValue({ id: "new-chart", url: "/new-chart.png" });
   const view = render(<OrganizerProducts />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Products" }));
   expect(await screen.findByAltText("Jersey size chart")).toHaveAttribute("src", "/chart.png");
   expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
   const inputs = view.container.querySelectorAll('input[type="file"]');

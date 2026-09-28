@@ -9,6 +9,18 @@ vi.mock("@/lib/api", () => ({ apiRequest: vi.fn() }));
 const listing = { name: "Race store", status: "published", catalog: { max_units_per_order: 5, pickup_instructions: "Race village", products: [{ id: "jersey", name: "Race jersey", image_ids: ["front", "back"], size_chart_image_id: "chart", variants: [{ id: "s", label: "S", stock: 0, price_paise: 10000 }, { id: "m", label: "M", stock: 1, price_paise: 12000 }] }] }, images: { front: "/front.png", back: "/back.png", chart: "/actual-chart.png" } };
 beforeEach(() => vi.mocked(apiRequest).mockResolvedValue(listing));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+it.each(["ORGANIZER", "PARTICIPANT"])("shows a separate product fee only when the buyer pays (%s)", async (bearer) => {
+  vi.mocked(apiRequest).mockResolvedValue({ ...listing, fee_bearer: bearer, price_previews: { m: { platformFeePaise: 2000, participantTotalPaise: bearer === "PARTICIPANT" ? 14000 : 12000 } } });
+  render(<ProductStorefront />);
+  await screen.findByText("Race jersey");
+  if (bearer === "PARTICIPANT") {
+    expect(screen.getByText("₹140 total for one item")).toBeInTheDocument();
+    expect(screen.getByText("₹120 + ₹20 SportPass fee")).toBeInTheDocument();
+  } else {
+    expect(screen.queryByText(/SportPass fee/)).not.toBeInTheDocument();
+    expect(screen.getByText("₹120")).toBeInTheDocument();
+  }
+});
 it("shows all gallery photos and opens the persisted size chart after remount", async () => {
   const view = render(<ProductStorefront />);
   fireEvent.click(await screen.findByRole("button", { name: "View Race jersey photo 2" }));

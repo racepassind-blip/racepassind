@@ -219,3 +219,28 @@ def compute_participant_pricing(
         "fixedFeePaise": pricing["fixedFeePaise"],
         "currency": pricing["currency"],
     }
+
+
+def compute_product_order_pricing(*, base_amount_paise: int, fee_bearer: str) -> dict:
+    """Price one complete merchandise order.
+
+    Merchandise deliberately has its own policy: 4% of the complete order
+    subtotal, with a ₹20 minimum and no maximum. Registration pricing above is
+    intentionally unchanged and remains capped at its configured maximum.
+    """
+    bearer = fee_bearer if fee_bearer in FEE_BEARERS else FEE_BEARER_ORGANIZER
+    fee_paise = 0 if base_amount_paise <= 0 else max(
+        2000,
+        int((Decimal(base_amount_paise) * Decimal("0.04")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)),
+    )
+    return {
+        "baseAmountPaise": base_amount_paise,
+        "platformFeePaise": fee_paise,
+        "platformFeeBearer": bearer,
+        "participantTotalPaise": base_amount_paise + (fee_paise if bearer == FEE_BEARER_PARTICIPANT else 0),
+        "percentageBasisPoints": 400,
+        "minimumFeePaise": 2000,
+        "maximumFeePaise": None,
+        "fixedFeePaise": None,
+        "currency": "INR",
+    }

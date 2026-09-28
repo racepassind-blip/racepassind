@@ -22,6 +22,7 @@ from app.services.media_service import upload_media, resolve_media_url
 from app.services.image_validation import ImageValidationError
 from app.services.storage_service import StorageError
 from app.services.payment_service import normalize_upi_id, normalize_payment_reference, build_upi_payment_details
+from app.services.platform_fee_service import compute_product_order_pricing
 from app.services.credit_service import debit_credits, CreditValidationError
 
 router = APIRouter()
@@ -59,6 +60,12 @@ class DecisionInput(BaseModel):
     decision: Literal["approve", "reject", "fulfilled"]
 
 
+class ProductFeePreview(BaseModel):
+    organization_id: UUID
+    amount_paise: int = Field(ge=0, le=100_000_000)
+    fee_bearer: Literal["ORGANIZER", "PARTICIPANT"] = "ORGANIZER"
+
+
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -70,6 +77,22 @@ def listing(db, listing_id, user=None):
     if user is not None:
         get_authorized_organization(db, user, item.organization_id)
     return item
+
+
+@router.post("/organizer/product-fee-preview")
+def product_fee_preview(payload: ProductFeePreview, db: Session = Depends(get_db), user: User = Depends(require_roles("organizer", "admin"))):
+    organization = get_authorized_organization(db, user, payload.organization_id)
+    pricing = compute_product_order_pricing(base_amount_paise=payload.amount_paise, fee_bearer=payload.fee_bearer)
+    return {
+        "amountPaise": payload.amount_paise,
+        "platformFeePaise": pricing["platformFeePaise"],
+        "customerPaysPaise": pricing["participantTotalPaise"],
+        "organizerNetPaise": pricing["participantTotalPaise"] - pricing["platformFeePaise"],
+        "feeBearer": payload.fee_bearer,
+        "percentageBasisPoints": pricing["percentageBasisPoints"],
+        "minimumFeePaise": pricing["minimumFeePaise"],
+        "maximumFeePaise": pricing["maximumFeePaise"],
+    }
 
 
 def restore_stock(item, order):
@@ -96,6 +119,10 @@ def serialize_listing(db, item, storage, private=False):
     images = db.scalars(select(ProductImage).where(ProductImage.listing_id == item.id)).all()
     organization = db.get(Organization, item.organization_id)
     result = {"id": str(item.id), "name": item.name, "description": item.description, "catalog": item.catalog, "status": item.status, "fee_bearer": item.fee_bearer, "images": {str(image.id): resolve_media_url(image.reference, storage, get_settings().storage_signed_url_ttl_seconds) for image in images}, "organizer": {"name": organization.name if organization else "Organizer", "logo_url": resolve_media_url(organization.logo_url, storage, get_settings().storage_signed_url_ttl_seconds) if organization else None}}
+    result["price_previews"] = {
+        str(variant.id): compute_product_order_pricing(base_amount_paise=variant.price_paise, fee_bearer=item.fee_bearer)
+        for product in ProductCatalog.model_validate(item.catalog).products for variant in product.variants
+    }
     if private:
         result.update(organization_id=str(item.organization_id), upi_id=item.upi_id, payee_name=item.payee_name)
         result["has_orders"] = db.scalar(select(ProductOrder.id).where(ProductOrder.listing_id == item.id).limit(1)) is not None
@@ -292,7 +319,7 @@ def place_order(listing_id: UUID, payload: OrderInput, db: Session = Depends(get
     result = {**result, "pickup_instructions": catalog.pickup_instructions, "listing_name": item.name}
     if result["total_paise"]:
         settings = SimpleNamespace(method="manual_upi", is_active=True, upi_id=item.upi_id, payee_name=item.payee_name, instructions="Pay the exact total, then submit your payment reference for organizer review.", qr_image_url=None)
-        result["payment"] = build_upi_payment_details(settings, amount_paise=result["total_paise"], registration_reference=str(order.id))
+        result["payment"] = build_upi_payment_details(settings, amount_paise=result["total_paise"], registration_reference=str(order.id), merchandise_order=True)
     order.snapshot = result
     db.commit()
     return serialize_order(order)
@@ -329,6 +356,39 @@ def submit_reference(order_id: UUID, payload: ReferenceInput, x_order_token: str
     order.reserved_until = None
     db.commit()
     return serialize_order(order)
+
+
+def summarize_product_inventory(db, item):
+    products = []
+    variants = {}
+    for product in ProductCatalog.model_validate(item.catalog).products:
+        rows = []
+        for variant in product.variants:
+            row = {"id": str(variant.id), "label": variant.label, "available": variant.stock,
+                   "awaiting_payment": 0, "under_review": 0, "confirmed": 0, "fulfilled": 0}
+            rows.append(row)
+            variants[(str(product.id), str(variant.id))] = row
+        products.append({"id": str(product.id), "name": product.name, "variants": rows})
+    # All orders, independent of the paginated order list and its filters.
+    for status, snapshot in db.execute(select(ProductOrder.status, ProductOrder.snapshot).where(
+        ProductOrder.listing_id == item.id,
+        ProductOrder.status.in_(["awaiting_payment", "under_review", "confirmed", "fulfilled"]),
+    )):
+        for line in snapshot["lines"]:
+            row = variants.get((line["product_id"], line["variant_id"]))
+            if row is not None:
+                row[status] += line["quantity"]
+    return {"products": products}
+
+
+@router.get("/organizer/product-listings/{listing_id}/inventory-summary")
+def inventory_summary(listing_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_roles("organizer", "admin"))):
+    item = listing(db, listing_id, user)
+    expire_orders(db, item)
+    db.flush()
+    result = summarize_product_inventory(db, item)
+    db.commit()
+    return result
 
 
 @router.get("/organizer/product-listings/{listing_id}/orders")

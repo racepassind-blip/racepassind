@@ -58,7 +58,7 @@ app.add_middleware(
     allow_origins=list(settings.frontend_origins),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Accept", "Content-Type", "X-CSRF-Token", "X-Request-ID", "Idempotency-Key"],
+    allow_headers=["Accept", "Content-Type", "X-CSRF-Token", "X-Request-ID", "Idempotency-Key", "X-Order-Token"],
 )
 
 

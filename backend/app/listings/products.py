@@ -113,19 +113,13 @@ def quote_products(catalog: ProductCatalog, cart: ProductCart) -> dict:
 
 
 def price_product_order(db, *, catalog: ProductCatalog, cart: ProductCart, organization, fee_bearer: str) -> dict:
-    """Apply the organizer's pricing policy exactly once to the whole order."""
-    from app.services.platform_fee_service import compute_participant_pricing
+    """Apply the merchandise fee exactly once to the whole order."""
+    from app.services.platform_fee_service import compute_product_order_pricing
 
     if fee_bearer not in {"ORGANIZER", "PARTICIPANT"}:
         raise ValueError("Choose a valid fee bearer")
     quote = quote_products(catalog, cart)
-    pricing = compute_participant_pricing(
-        db,
-        base_amount_paise=quote["subtotal_paise"],
-        fee_bearer=fee_bearer,
-        organization=organization,
-        participant_count=1,
-    )
+    pricing = compute_product_order_pricing(base_amount_paise=quote["subtotal_paise"], fee_bearer=fee_bearer)
     return {
         **quote,
         "platform_fee_paise": pricing["platformFeePaise"],
