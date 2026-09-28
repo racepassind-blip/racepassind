@@ -1,0 +1,24 @@
+import "@testing-library/jest-dom/vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import OrganizerProducts from "@/pages/OrganizerProducts";
+import { apiRequest, uploadFile } from "@/lib/api";
+vi.mock("@/components/OrganizerDashboardLayout", () => ({ OrganizerDashboardLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
+vi.mock("react-router-dom", () => ({ useParams: () => ({ listingId: "store" }), useNavigate: () => vi.fn(), Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a> }));
+vi.mock("@/lib/api", () => ({ apiRequest: vi.fn(), uploadFile: vi.fn() }));
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
+it("previews the saved chart on reopen and attaches a replacement upload immediately", async () => {
+  const listing = { id: "store", organization_id: "org", name: "Race store", description: "", status: "published", fee_bearer: "ORGANIZER", upi_id: "race@upi", payee_name: "Race", has_orders: true, images: { chart: "/chart.png" }, catalog: { max_units_per_order: 5, pickup_instructions: "Village", products: [{ id: "jersey", name: "Jersey", description: "", image_ids: [], size_chart_image_id: "chart", variants: [{ id: "m", label: "M", stock: 2, price_paise: 10000 }] }] } };
+  vi.mocked(apiRequest).mockImplementation(async (path) => (path === "/organizer/organizations" ? [{ id: "org", name: "Race" }] : path === "/organizer/product-listings" ? [listing] : []) as never);
+  vi.mocked(uploadFile).mockResolvedValue({ id: "new-chart", url: "/new-chart.png" });
+  const view = render(<OrganizerProducts />);
+  expect(await screen.findByAltText("Jersey size chart")).toHaveAttribute("src", "/chart.png");
+  expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  const inputs = view.container.querySelectorAll('input[type="file"]');
+  expect(inputs[1]).toBeEnabled();
+  fireEvent.change(inputs[1], { target: { files: [new File(["chart"], "chart.png", { type: "image/png" })] } });
+  await waitFor(() => expect(screen.getByAltText("Jersey size chart")).toHaveAttribute("src", "/new-chart.png"));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith("/organizer/product-listings/store", expect.objectContaining({ method: "PUT", body: expect.stringContaining('"stock_baseline":{"m":2}') })));
+  expect(uploadFile).toHaveBeenCalledWith("/organizer/product-listings/store/images?product_id=jersey&kind=size", expect.any(File));
+});

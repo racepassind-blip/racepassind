@@ -145,7 +145,7 @@ def get_my_organization(
         organization = get_authorized_organization(db, user, organization_id)
     except HTTPException:
         raise
-    return _serialize_organization(organization)
+    return _serialize_organization(organization, storage)
 
 
 @router.put("/organizations/{organization_id}")

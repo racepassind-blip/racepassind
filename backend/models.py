@@ -1337,3 +1337,40 @@ __all__ = [
     "CreditTopupRequest",
     "CreditPaymentSettings",
 ]
+
+
+class ProductListing(Base):
+    __tablename__ = "product_listings"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    catalog: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    fee_bearer: Mapped[str] = mapped_column(String(20), nullable=False, default="ORGANIZER")
+    upi_id: Mapped[str] = mapped_column(String(320), nullable=False)
+    payee_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProductImage(Base):
+    __tablename__ = "product_images"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    listing_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("product_listings.id"), nullable=False, index=True)
+    reference: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ProductOrder(Base):
+    __tablename__ = "product_orders"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    listing_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("product_listings.id"), nullable=False, index=True)
+    request_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    access_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    buyer_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    buyer_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    buyer_phone: Mapped[str] = mapped_column(String(30), nullable=False)
+    snapshot: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="awaiting_payment")
+    payment_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    reserved_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

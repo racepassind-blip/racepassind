@@ -57,6 +57,8 @@ import NotFound from "./pages/NotFound";
 import PrivacyPolicy from "./pages/TermsAndConditions";
 import TermsOfService from "./pages/TermsOfService";
 import OurStory from "./pages/OurStory";
+import OrganizerProducts from "./pages/OrganizerProducts";
+import ProductStorefront from "./pages/ProductStorefront";
 
 const queryClient = new QueryClient();
 
@@ -80,6 +82,7 @@ const App = () => (
             <Route path="/checkout/:eventId" element={<Checkout />} />
             <Route path="/checkout/:eventId/:tierId" element={<Checkout />} />
             <Route path="/confirmation" element={<Confirmation />} />
+            <Route path="/products/:listingId" element={<ProductStorefront />} />
 
             {/* Participant routes */}
             <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["participant", "user"]}><Dashboard /></ProtectedRoute>} />
@@ -106,6 +109,8 @@ const App = () => (
             <Route path="/organizer/check-in" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerCheckin /></ProtectedRoute>} />
             <Route path="/organizer/registrations" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerRegistrations /></ProtectedRoute>} />
             <Route path="/organizer/events/new" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventCreate /></ProtectedRoute>} />
+            <Route path="/organizer/products" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerProducts /></ProtectedRoute>} />
+            <Route path="/organizer/products/:listingId" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerProducts /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/edit" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventCreate /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/checkpoints" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventCheckpoints /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/check-in" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerCheckinMatrix /></ProtectedRoute>} />

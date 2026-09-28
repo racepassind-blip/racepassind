@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArrowUpRight, Calendar, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, CreditCard, DollarSign, LayoutDashboard, MapPin, Plus, Search, Shield, TrendingUp, Users } from "lucide-react";
+import { Archive, ArrowUpRight, Calendar, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, CreditCard, DollarSign, LayoutDashboard, MapPin, Package, Plus, Search, Shield, TrendingUp, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -152,7 +152,7 @@ const OrganizerDashboard = () => {
             <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Welcome back{firstName ? `, ${firstName}` : ""}</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">See what needs attention, open registrations, and move into event operations without searching through menus.</p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button className="gap-2" onClick={() => navigate("/organizer/events/new")}><Plus className="h-4 w-4" /> Create event</Button>
+              <Button variant="outline" className="gap-2" onClick={() => navigate("/organizer/products")}><Package className="h-4 w-4" /> Sell products</Button><Button className="gap-2" onClick={() => navigate("/organizer/events/new")}><Plus className="h-4 w-4" /> Create event</Button>
               <Button variant="outline" className="gap-2" onClick={() => navigate("/organizer/registrations?status=all")}><ClipboardList className="h-4 w-4" /> View registrations</Button>
             </div>
           </div>

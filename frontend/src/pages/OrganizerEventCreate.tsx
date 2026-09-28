@@ -1067,6 +1067,8 @@ const OrganizerEventCreate = () => {
           </div>
         </div>
 
+        {!eventId && <div className="mb-6 flex flex-col gap-3 rounded-xl border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">What are you selling?</p><p className="mt-1 text-sm text-muted-foreground">Continue here for event tickets and participant registration. Use a product storefront for breakfast, jerseys, or merchandise without tickets.</p></div><Button type="button" variant="outline" className="shrink-0 gap-2" onClick={() => navigate("/organizer/products")}><Shirt className="h-4 w-4" /> Sell products instead</Button></div>}
+
         <div className="mb-8 overflow-x-auto pb-1">
           <div className="grid min-w-[820px] grid-cols-6 gap-2">{wizardSteps.map((step, index) => <button key={step.title} type="button" onClick={() => index < currentStep && setCurrentStep(index)} disabled={index > currentStep} className={cn("rounded-xl border p-3 text-left transition-colors disabled:cursor-default", index === currentStep ? "border-primary bg-primary/5 shadow-sm" : index < currentStep ? "border-primary/30 bg-card hover:bg-muted" : "border-border bg-muted/30")}><div className="flex items-center gap-2"><span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold", index <= currentStep ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{index + 1}</span><span className="text-sm font-semibold">{step.title}</span></div><p className="mt-1 hidden text-xs text-muted-foreground sm:block">{step.description}</p></button>)}</div>
         </div>
