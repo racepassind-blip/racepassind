@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { ArrowRight, Check, Clock3, Minus, Package, Plus, Ruler, ShoppingBag } from "lucide-react";
+import { ArrowRight, Check, Clock3, Minus, Package, PackageCheck, Plus, Ruler, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 
 import { Layout } from "@/components/Layout";
