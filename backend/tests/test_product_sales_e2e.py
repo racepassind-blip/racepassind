@@ -170,6 +170,19 @@ class ProductSalesE2ETests(unittest.TestCase):
             self.assertEqual(error.exception.status_code, 409)
             self.assertEqual(db.get(ProductListing, LISTING_ID).catalog["products"][0]["variants"][0]["stock"], 8)
 
+    def test_only_terminal_orders_can_be_deleted(self):
+        from app.api.v1.products import delete_order
+        order_id = UUID(self.place_test_order()["id"])
+        with self.Session() as db, patch("app.api.v1.products.get_authorized_organization"):
+            with self.assertRaises(HTTPException) as error:
+                delete_order(LISTING_ID, order_id, db=db, user=Mock())
+            self.assertEqual(error.exception.status_code, 409)
+            db.get(ProductOrder, order_id).status = "expired"
+            db.commit()
+            result = delete_order(LISTING_ID, order_id, db=db, user=Mock())
+            self.assertTrue(result["deleted"])
+            self.assertIsNone(db.get(ProductOrder, order_id))
+
     def test_payment_reference_is_required_before_review(self):
         order = self.place_test_order()
         url = f"/api/v1/product-orders/{order['id']}/reference"

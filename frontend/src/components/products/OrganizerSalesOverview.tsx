@@ -70,12 +70,13 @@ export function StorefrontDirectory({ stores, onCreate }: { stores: Store[]; onC
   </section>;
 }
 
-export function OrderDashboard({ orders, onDecision, onRefresh, busy, error }: { orders: MerchandiseOrder[]; onDecision: (order: MerchandiseOrder, decision: "approve" | "reject" | "fulfilled" | "cancel") => Promise<void>; onRefresh: () => Promise<void>; busy: boolean; error: string }) {
+export function OrderDashboard({ orders, onDecision, onDelete, onRefresh, busy, error }: { orders: MerchandiseOrder[]; onDecision: (order: MerchandiseOrder, decision: "approve" | "reject" | "fulfilled" | "cancel") => Promise<void>; onDelete?: (order: MerchandiseOrder) => Promise<void>; onRefresh: () => Promise<void>; busy: boolean; error: string }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
   const [confirmReject, setConfirmReject] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const filtered = orders.filter((order) => (status === "all" || order.status === status) && [order.id, productOrderReference(order.id), `SP-${order.id.replace(/-/g, "").slice(0, 12).toUpperCase()}`, order.buyer_name, order.buyer_email, order.buyer_phone, order.payment_reference, ...order.snapshot.lines.map((line) => `${line.product_name} ${line.variant_label}`)].join(" ").toLowerCase().includes(search.toLowerCase().trim()));
   const count = Math.max(1, Math.ceil(filtered.length / 10));
   const current = Math.min(page, count);
@@ -101,6 +102,7 @@ export function OrderDashboard({ orders, onDecision, onRefresh, busy, error }: {
                 <td className="min-w-[175px] px-4 py-4">
                   {["awaiting_payment", "under_review", "confirmed"].includes(order.status) && <div className="mb-3">{confirmCancel === order.id ? <div className="space-y-2"><p className="text-xs text-slate-600">Cancel this order and return its items to stock? If payment was received, refund the buyer separately. Cancellation does not refund payments or platform fees.</p><Button size="sm" variant="destructive" disabled={busy} onClick={() => { setConfirmCancel(null); void onDecision(order, "cancel"); }}>Confirm cancellation</Button><Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirmCancel(null)}>Keep order</Button></div> : <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirmCancel(order.id)}>Cancel order</Button>}</div>}
                   {order.status === "under_review" ? <div className="space-y-2">{confirmReject === order.id ? <><p className="text-xs text-slate-600">Reject payment and return stock?</p><Button size="sm" disabled={busy} variant="destructive" onClick={() => { setConfirmReject(null); void onDecision(order, "reject"); }}>Confirm rejection</Button><Button size="sm" variant="ghost" onClick={() => setConfirmReject(null)}>Cancel</Button></> : <><Button size="sm" disabled={busy} onClick={() => void onDecision(order, "approve")}>Approve payment</Button><Button size="sm" disabled={busy} variant="ghost" className="block text-slate-500" onClick={() => setConfirmReject(order.id)}>Reject</Button></>}</div> : order.status === "confirmed" ? <Button size="sm" disabled={busy} onClick={() => void onDecision(order, "fulfilled")}>Mark collected</Button> : <span className="text-xs text-slate-400">{order.status === "awaiting_payment" ? "Waiting for UTR" : "No action needed"}</span>}
+                  {onDelete && ["expired", "rejected", "cancelled"].includes(order.status) && <div className="mt-2">{confirmDelete === order.id ? <div className="space-y-2"><p className="text-xs text-slate-600">Delete this order permanently?</p><Button size="sm" variant="destructive" disabled={busy} onClick={() => { setConfirmDelete(null); void onDelete(order); }}>Delete order</Button><Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirmDelete(null)}>Keep order</Button></div> : <Button size="sm" variant="ghost" className="text-red-700" disabled={busy} onClick={() => setConfirmDelete(order.id)}>Delete order</Button>}</div>}
                 </td>
               </tr>)}
               {!filtered.length && <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-500">{orders.length ? "No orders match your filters." : "No orders yet. Orders will appear here when customers check out."}</td></tr>}

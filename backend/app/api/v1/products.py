@@ -374,6 +374,19 @@ def place_order(listing_id: UUID, payload: OrderInput, db: Session = Depends(get
     return serialize_order(order)
 
 
+@router.delete("/organizer/product-listings/{listing_id}/orders/{order_id}", dependencies=[Depends(require_csrf)])
+def delete_order(listing_id: UUID, order_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_roles("organizer", "admin"))):
+    item = listing(db, listing_id, user)
+    order = db.scalar(select(ProductOrder).where(ProductOrder.id == order_id, ProductOrder.listing_id == item.id).with_for_update())
+    if order is None:
+        raise HTTPException(404, "Order not found")
+    if order.status not in {"expired", "rejected", "cancelled"}:
+        raise HTTPException(409, "Only expired, rejected, or cancelled orders can be deleted")
+    db.delete(order)
+    db.commit()
+    return {"deleted": True, "id": str(order_id)}
+
+
 def authorized_order(db, order_id, token):
     candidate = db.get(ProductOrder, order_id)
     if candidate is None or not token or not hmac.compare_digest(candidate.access_hash, digest(token)):
