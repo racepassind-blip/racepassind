@@ -4,10 +4,20 @@ import { afterEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { OrderDashboard, StorefrontDirectory, type MerchandiseOrder } from "@/components/products/OrganizerSalesOverview";
 afterEach(cleanup);
+it("finds merchandise orders by the new number, legacy number, and full ID", () => {
+  const order = { ...orders[0], id: "b899bc76-14f9-4c8e-975e-c0fcacc09dad" };
+  render(<OrderDashboard orders={[order]} onDecision={vi.fn()} onRefresh={vi.fn()} busy={false} error="" />);
+  for (const query of ["SPM-B899BC7614F9", "SP-B899BC7614F9", order.id]) {
+    fireEvent.change(screen.getByLabelText("Search orders"), { target: { value: query } });
+    expect(screen.getByText("SPM-B899BC7614F9")).toBeVisible();
+    expect(screen.getByText(order.buyer_name)).toBeVisible();
+  }
+});
 const orders: MerchandiseOrder[] = Array.from({ length: 12 }, (_, index) => ({ id: `order-${index}`, buyer_name: `Runner ${index}`, buyer_email: `runner${index}@test.com`, buyer_phone: "1234567890", status: index === 0 ? "under_review" : "confirmed", payment_reference: "UTR123", snapshot: { total_paise: 15000, lines: [{ product_name: "Race jersey", variant_label: "M", quantity: 1, customization: "Alex" }] } }));
 it("filters and paginates orders, and confirms rejection before submitting", () => {
   const onDecision = vi.fn().mockResolvedValue(undefined);
   render(<OrderDashboard orders={orders} onDecision={onDecision} onRefresh={vi.fn()} busy={false} error="" />);
+  expect(screen.getByText("SPM-ORDER0")).toBeInTheDocument();
   expect(screen.queryByText("Runner 11")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
   expect(screen.getByText("Runner 11")).toBeInTheDocument();

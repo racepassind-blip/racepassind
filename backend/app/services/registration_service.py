@@ -28,7 +28,7 @@ from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order,
 
 
 def _human_reference() -> str:
-    return f"RP-{secrets.token_hex(5).upper()}"
+    return f"SPE-{secrets.token_hex(5).upper()}"
 
 
 def _claim_code() -> str:

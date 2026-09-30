@@ -15,6 +15,7 @@ from sqlalchemy.pool import StaticPool
 from db import Base, get_db
 from models import Organization, ProductListing, ProductOrder, ProductImage
 from app.api.v1.products import upload_image, serialize_listing, list_listings, update_listing, set_status, ListingInput, StatusInput, inventory_summary, product_fee_preview, ProductFeePreview
+from app.api.v1.products import review, DecisionInput
 from app.api.deps import require_csrf
 from app.infrastructure.storage.factory import get_storage_service
 from main import app
@@ -144,6 +145,26 @@ class ProductSalesE2ETests(unittest.TestCase):
             "fee_bearer": item.fee_bearer,
             "stock_baseline": {str(VARIANT_ID): item.catalog["products"][0]["variants"][0]["stock"]},
         })
+
+    def test_payment_approval_does_not_send_confirmation(self):
+        order_id = UUID(self.place_test_order()["id"])
+        with self.Session() as db, patch("app.api.v1.products.get_authorized_organization"), patch("app.api.v1.products.debit_credits"), patch("app.services.product_order_email.send_email", return_value=Mock(status="SENT")) as send:
+            db.get(ProductOrder, order_id).status = "under_review"
+            db.commit()
+            result = review(LISTING_ID, order_id, DecisionInput(decision="approve"), db=db, user=Mock())
+            self.assertEqual(result["status"], "confirmed")
+            self.assertNotIn("email_status", result)
+            review(LISTING_ID, order_id, DecisionInput(decision="approve"), db=db, user=Mock())
+            review(LISTING_ID, order_id, DecisionInput(decision="fulfilled"), db=db, user=Mock())
+            send.assert_not_called()
+
+    def test_rejection_does_not_send_confirmation(self):
+        order_id = UUID(self.place_test_order()["id"])
+        with self.Session() as db, patch("app.api.v1.products.get_authorized_organization"), patch("app.services.product_order_email.send_email") as send:
+            db.get(ProductOrder, order_id).status = "under_review"
+            db.commit()
+            review(LISTING_ID, order_id, DecisionInput(decision="reject"), db=db, user=Mock())
+            send.assert_not_called()
 
     def test_edit_after_order_preserves_reservations_and_order_snapshot(self):
         with self.Session() as db:

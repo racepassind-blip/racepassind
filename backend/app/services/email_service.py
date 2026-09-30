@@ -36,6 +36,7 @@ from models import CommunicationConfig, EmailLog, Registration
 # Email limits (per 24-hour rolling window)
 EMAIL_WARNING_LIMIT = 470
 EMAIL_HARD_LIMIT = 480
+EMAIL_RETRY_ENABLED = False
 
 # Email types
 EMAIL_TYPE_REGISTRATION_CONFIRMATION = "REGISTRATION_CONFIRMATION"
@@ -378,6 +379,8 @@ def retry_pending_emails(db: Session) -> list[SendEmailResult]:
 
     Returns list of results for each retried email.
     """
+    if not EMAIL_RETRY_ENABLED:
+        return []
     results: list[SendEmailResult] = []
 
     # Get pending_limit emails ordered by created_at (oldest first)
@@ -442,7 +445,20 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
             "If this relates to a registration, your registration is confirmed and safely recorded.\n\n"
             "This email was sent via SportPass India."
         )
-        msg.attach(MIMEText(body, "plain", "utf-8"))
+        if email_log.reference_type == "PRODUCT_ORDER":
+            from models import ProductOrder
+            from app.services.product_order_email import build_product_order_confirmation
+            order = db.get(ProductOrder, UUID(str(email_log.reference_id)))
+            if order is None or order.status not in {"confirmed", "fulfilled"}:
+                raise ValueError("Confirmed merchandise order unavailable")
+            content = build_product_order_confirmation(order)
+            body = content["body"]
+            alternative = MIMEMultipart("alternative")
+            alternative.attach(MIMEText(body, "plain", "utf-8"))
+            alternative.attach(MIMEText(content["html_body"], "html", "utf-8"))
+            msg.attach(alternative)
+        else:
+            msg.attach(MIMEText(body, "plain", "utf-8"))
 
         send_gmail_message(msg)
 

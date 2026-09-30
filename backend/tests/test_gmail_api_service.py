@@ -135,7 +135,7 @@ def test_regular_delivery_preserves_attachments(settings):
 
 def test_retry_uses_api_and_updates_existing_log(settings):
     db = configured_db()
-    log = SimpleNamespace(recipient="recipient@example.com", subject="Delayed email", status="pending_limit")
+    log = SimpleNamespace(recipient="recipient@example.com", subject="Delayed email", status="pending_limit", reference_type=None)
     with patch.object(email_service, "send_gmail_message") as send:
         result = email_service._deliver_existing_log(db, log)
     assert result.success

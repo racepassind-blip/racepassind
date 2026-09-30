@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import unittest
+from unittest.mock import patch
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -14,6 +15,8 @@ from app.services.checkin_service import (
     parse_ticket_credential,
 )
 from app.services.ticket_service import ticket_qr_payload, ticket_token_for_registration
+from app.services.email_service import SendEmailResult, send_registration_confirmation
+from app.services.registration_service import _human_reference
 from db import Base
 from models import AuditLog, Checkin, Event, Organization, OrganizationMember, Participant, Registration, Ticket, User
 
@@ -132,6 +135,33 @@ class CheckinServiceTests(unittest.TestCase):
             self.assertEqual(current.status, "confirmed")
             self.assertFalse(current.checked_in)
             self.assertEqual(db.scalars(select(Checkin)).all(), [])
+
+    def test_new_and_legacy_references_survive_email_pdf_and_checkin(self) -> None:
+        for prefix in ("SPE", "RP"):
+            with self.subTest(prefix=prefix), Session(self.engine) as db:
+                organizer, _, registration = self._fixture(db, suffix=prefix.lower())
+                if prefix == "SPE":
+                    registration.registration_reference = _human_reference()
+                    db.commit()
+                reference = registration.registration_reference
+                with patch("app.services.email_service.send_email", return_value=SendEmailResult(success=True, status="SENT", message="sent")) as send:
+                    for resend in (False, True):
+                        result = send_registration_confirmation(db, registration, is_resend=resend)
+                        self.assertTrue(result.success)
+                        message = send.call_args.kwargs
+                        self.assertIn(reference, message["body"])
+                        self.assertIn(reference, message["html_body"])
+                        self.assertEqual(message["reference_id"], str(registration.id))
+                        self.assertEqual(message["is_resend"], resend)
+                        self.assertEqual(len(message["attachments"]), 1)
+                        filename, pdf = message["attachments"][0]
+                        self.assertEqual(filename, f"SportPass-Ticket-{reference}.pdf")
+                        self.assertTrue(pdf.startswith(b"%PDF-"))
+                first = check_in_registration(db, organizer, registration_reference=f" {reference.lower()} ")
+                self.assertFalse(first["alreadyCheckedIn"])
+                second = check_in_registration(db, organizer, credential=ticket_qr_payload(ticket_token_for_registration(registration)))
+                self.assertTrue(second["alreadyCheckedIn"])
+                self.assertEqual(second["registrationReference"], reference)
 
     def test_unconfirmed_and_rejected_registrations_are_denied(self) -> None:
         with Session(self.engine) as db:

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { productOrderReference } from "@/lib/productOrderReference";
 
 export type MerchandiseOrder = {
   id: string; buyer_name: string; buyer_email: string; buyer_phone: string; status: string; payment_reference: string | null;
@@ -74,7 +75,7 @@ export function OrderDashboard({ orders, onDecision, onRefresh, busy, error }: {
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
   const [confirmReject, setConfirmReject] = useState<string | null>(null);
-  const filtered = orders.filter((order) => (status === "all" || order.status === status) && [order.id, order.buyer_name, order.buyer_email, order.buyer_phone, order.payment_reference, ...order.snapshot.lines.map((line) => `${line.product_name} ${line.variant_label}`)].join(" ").toLowerCase().includes(search.toLowerCase().trim()));
+  const filtered = orders.filter((order) => (status === "all" || order.status === status) && [order.id, productOrderReference(order.id), `SP-${order.id.replace(/-/g, "").slice(0, 12).toUpperCase()}`, order.buyer_name, order.buyer_email, order.buyer_phone, order.payment_reference, ...order.snapshot.lines.map((line) => `${line.product_name} ${line.variant_label}`)].join(" ").toLowerCase().includes(search.toLowerCase().trim()));
   const count = Math.max(1, Math.ceil(filtered.length / 10));
   const current = Math.min(page, count);
   const paid = orders.filter((order) => ["confirmed", "fulfilled"].includes(order.status));
@@ -88,8 +89,8 @@ export function OrderDashboard({ orders, onDecision, onRefresh, busy, error }: {
               {filtered.slice((current - 1) * 10, current * 10).map((order) => <tr key={order.id} className="align-top transition-colors hover:bg-slate-50/70">
                 <th scope="row" className="max-w-[230px] px-4 py-4 font-normal">
                   <p className="break-words font-semibold text-slate-900">{order.buyer_name}</p>
-                  <p className="mt-1 text-xs text-slate-500">#{order.id.slice(0, 8)}</p>
-                  <details className="mt-2 text-xs"><summary className="cursor-pointer text-slate-600">Contact & full order ID</summary><div className="mt-2 space-y-1 break-all text-slate-500"><p>{order.buyer_email}</p><p>{order.buyer_phone}</p><p>{order.id}</p></div></details>
+                  <p className="mt-1 text-xs font-medium text-slate-600">Order number</p><p className="select-all font-mono text-xs font-semibold text-slate-700">{productOrderReference(order.id)}</p>
+                  <details className="mt-2 text-xs"><summary className="cursor-pointer text-slate-600">Contact & full order ID</summary><div className="mt-2 space-y-1 break-all text-slate-500"><p>{order.buyer_email}</p><p>{order.buyer_phone}</p><p className="font-mono">{order.id}</p></div></details>
                 </th>
                 <td className="min-w-[180px] max-w-[260px] px-4 py-4"><div className="space-y-3">{order.snapshot.lines.map((line, index) => <div key={index}><p className="break-words font-medium">{line.product_name}</p><p className="mt-1 text-xs text-slate-500">{line.variant_label} × {line.quantity}</p>{line.customization && <p className="mt-1 break-words text-xs text-slate-500">{line.customization_label || "Customization"}: {line.customization}</p>}</div>)}</div></td>
                 <td className="px-4 py-4 text-right tabular-nums">{order.snapshot.lines.reduce((sum, line) => sum + line.quantity, 0)}</td>

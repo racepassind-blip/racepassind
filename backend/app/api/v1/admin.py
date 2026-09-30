@@ -21,7 +21,7 @@ from app.services.communication_service import (
     send_test_email,
     update_email_settings,
 )
-from app.services.email_service import get_email_limit_status, retry_pending_emails, EMAIL_HARD_LIMIT, EMAIL_WARNING_LIMIT
+from app.services.email_service import get_email_limit_status, retry_pending_emails, EMAIL_HARD_LIMIT, EMAIL_WARNING_LIMIT, EMAIL_RETRY_ENABLED
 from app.services.organization_fee_service import (
     OrganizationFeeValidationError,
     OrganizationNotFoundError,
@@ -918,6 +918,8 @@ def retry_pending_emails_endpoint(
     db: Session = Depends(get_db),
 ) -> dict:
     """Retry pending emails that were queued due to the rate limit."""
+    if not EMAIL_RETRY_ENABLED:
+        raise HTTPException(status_code=409, detail="Email retries are temporarily disabled")
     results = retry_pending_emails(db)
     sent = sum(1 for r in results if r.status == "SENT")
     failed = sum(1 for r in results if r.status == "FAILED")

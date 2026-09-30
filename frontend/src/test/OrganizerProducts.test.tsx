@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import OrganizerProducts from "@/pages/OrganizerProducts";
 import { apiRequest, uploadFile } from "@/lib/api";
 vi.mock("@/components/OrganizerDashboardLayout", () => ({ OrganizerDashboardLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
-vi.mock("react-router-dom", () => ({ useParams: () => ({ listingId: "store" }), useNavigate: () => vi.fn(), Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a> }));
+vi.mock("react-router-dom", () => ({ useParams: () => ({ listingId: "store" }), useNavigate: () => vi.fn(), useLocation: () => ({ state: null }), Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a> }));
 vi.mock("@/lib/api", () => ({ apiRequest: vi.fn(), uploadFile: vi.fn() }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 it.each(["ORGANIZER", "PARTICIPANT"])("shows clear one-item net pricing for %s", async (bearer) => {

@@ -145,6 +145,16 @@ class RegistrationClaimTests(unittest.TestCase):
                 claim_registration(db, user, registration_reference=registration.registration_reference, claim_code=claim_code)
             self.assertIsNone(db.get(Registration, registration.id).user_id)
 
+    def test_spe_registration_can_be_claimed(self) -> None:
+        with Session(self.engine) as db:
+            user = self._user(db, "spe")
+            registration, claim_code = self._registration(db, participant_email="guest-spe@example.test", claim_code="CLAIMSPE")
+            registration.registration_reference = "SPE-A1B2C3D4E5"
+            db.commit()
+            result = claim_registration(db, user, registration_reference=registration.registration_reference, claim_code=claim_code)
+            self.assertEqual(result["registrationReference"], "SPE-A1B2C3D4E5")
+            self.assertEqual(db.get(Registration, registration.id).user_id, user.id)
+
 
 def claim_code_for_test() -> str:
     return "EXPIRED1"

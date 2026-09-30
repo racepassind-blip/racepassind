@@ -57,7 +57,7 @@ const ParticipantRegistrations = () => {
             <form onSubmit={handleClaim} className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
               <div className="space-y-2">
                 <Label htmlFor="registration-reference">Registration reference</Label>
-                <Input id="registration-reference" value={registrationReference} onChange={(event) => setRegistrationReference(event.target.value)} placeholder="RP-…" required maxLength={64} autoComplete="off" />
+                <Input id="registration-reference" value={registrationReference} onChange={(event) => setRegistrationReference(event.target.value)} placeholder="SPE-… or RP-…" required maxLength={64} autoComplete="off" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="claim-code">Claim code</Label>
