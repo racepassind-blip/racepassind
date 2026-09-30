@@ -23,6 +23,7 @@ from app.services.image_validation import ImageValidationError
 from app.services.storage_service import StorageError
 from app.services.payment_service import normalize_upi_id, normalize_payment_reference, build_upi_payment_details
 from app.services.platform_fee_service import compute_product_order_pricing
+from app.services.product_order_email import send_product_order_cancellation
 from app.services.credit_service import debit_credits, CreditValidationError
 
 router = APIRouter()
@@ -385,6 +386,18 @@ def delete_order(listing_id: UUID, order_id: UUID, db: Session = Depends(get_db)
     db.delete(order)
     db.commit()
     return {"deleted": True, "id": str(order_id)}
+
+
+@router.post("/organizer/product-listings/{listing_id}/orders/{order_id}/cancellation-email", dependencies=[Depends(require_csrf)])
+def send_cancellation_email(listing_id: UUID, order_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_roles("organizer", "admin"))):
+    item = listing(db, listing_id, user)
+    order = db.scalar(select(ProductOrder).where(ProductOrder.id == order_id, ProductOrder.listing_id == item.id))
+    if order is None:
+        raise HTTPException(404, "Order not found")
+    if order.status != "cancelled":
+        raise HTTPException(409, "Only cancelled orders can notify the buyer")
+    result = send_product_order_cancellation(db, order)
+    return {"email_status": result.status}
 
 
 def authorized_order(db, order_id, token):

@@ -46,3 +46,13 @@ def send_product_order_confirmation(db, order):
     return send_email(db, **build_product_order_confirmation(order),
                       email_type="PRODUCT_ORDER_CONFIRMATION", reference_type="PRODUCT_ORDER",
                       reference_id=str(order.id))
+
+
+def send_product_order_cancellation(db, order):
+    reference = f"SPM-{str(order.id).replace('-', '')[:12].upper()}"
+    body = (f"Hi {order.buyer_name},\n\nYour merchandise order {reference} has been cancelled by the organizer.\n\n"
+            "Please contact the organizer if you paid for this order and need help with a refund.\n\n"
+            f"Full order ID: {order.id}")
+    return send_email(db, recipient=order.buyer_email, subject=f"Order cancelled — {reference}", body=body,
+                      html_body=f'<div style="font-family:Arial,sans-serif;white-space:pre-wrap;line-height:1.6">{escape(body)}</div>',
+                      email_type="PRODUCT_ORDER_CANCELLATION", reference_type="PRODUCT_ORDER", reference_id=str(order.id))
