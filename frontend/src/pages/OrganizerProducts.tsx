@@ -63,6 +63,7 @@ export default function OrganizerProducts() {
   const [feePreviews, setFeePreviews] = useState<Record<string, FeePreview>>({});
   const [feeError, setFeeError] = useState("");
   const [feeRetry, setFeeRetry] = useState(0);
+  const [numberDrafts, setNumberDrafts] = useState<Record<string, string>>({});
   const pricingKey = JSON.stringify(products.flatMap((product) => product.variants.map((variant) => ({ id: variant.id, amount: variant.price_paise }))));
 
   const load = async () => {
@@ -71,7 +72,7 @@ export default function OrganizerProducts() {
     setOrganizations(orgs); setListings(all); if (!organizationId) setOrganizationId(orgs[0]?.id ?? "");
     const item = listingId ? all.find((entry) => entry.id === listingId) : null;
     if (listingId && !item) throw new Error("Storefront not found.");
-    if (item) { setStockBaseline(Object.fromEntries(item.catalog.products.flatMap((product) => product.variants.map((variant) => [variant.id, variant.stock])))); setHasOrders(item.has_orders); setSavedProductIds(item.catalog.products.map((product) => product.id)); setOrganizationId(item.organization_id); setName(item.name); setDescription(item.description); setMaxUnits(item.catalog.max_units_per_order); setPickup(item.catalog.pickup_instructions); setHomeDelivery(item.catalog.fulfillment === "home_delivery" || Boolean(item.catalog.delivery_address_required)); setFeeBearer(item.fee_bearer); setUpiId(item.upi_id); setPayeeName(item.payee_name); setProducts(item.catalog.products); setImages(item.images); setStatus(item.status); setOrders(await apiRequest<Order[]>(`/organizer/product-listings/${item.id}/orders`)); setInventory(await apiRequest<InventorySummary>(`/organizer/product-listings/${item.id}/inventory-summary`)); }
+    if (item) { setNumberDrafts({}); setStockBaseline(Object.fromEntries(item.catalog.products.flatMap((product) => product.variants.map((variant) => [variant.id, variant.stock])))); setHasOrders(item.has_orders); setSavedProductIds(item.catalog.products.map((product) => product.id)); setOrganizationId(item.organization_id); setName(item.name); setDescription(item.description); setMaxUnits(item.catalog.max_units_per_order); setPickup(item.catalog.pickup_instructions); setHomeDelivery(item.catalog.fulfillment === "home_delivery" || Boolean(item.catalog.delivery_address_required)); setFeeBearer(item.fee_bearer); setUpiId(item.upi_id); setPayeeName(item.payee_name); setProducts(item.catalog.products); setImages(item.images); setStatus(item.status); setOrders(await apiRequest<Order[]>(`/organizer/product-listings/${item.id}/orders`)); setInventory(await apiRequest<InventorySummary>(`/organizer/product-listings/${item.id}/inventory-summary`)); }
   };
   useEffect(() => {
     setSection((location.state as { openProducts?: boolean } | null)?.openProducts ? "products" : "orders"); setCreating(false); setOrderError(""); setInventory(null);
@@ -97,6 +98,12 @@ export default function OrganizerProducts() {
 
   const updateProduct = (id: string, patch: Partial<Product>) => setProducts((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
   const updateVariant = (productId: string, variantId: string, patch: Partial<Variant>) => setProducts((current) => current.map((product) => product.id === productId ? { ...product, variants: product.variants.map((variant) => variant.id === variantId ? { ...variant, ...patch } : variant) } : product));
+  const commitVariantNumber = (productId: string, variantId: string, field: "price_paise" | "stock", raw: string) => {
+    const parsed = Number(raw);
+    const value = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    updateVariant(productId, variantId, field === "price_paise" ? { price_paise: Math.round(value * 100) } : { stock: Math.floor(value) });
+    setNumberDrafts((current) => { const next = { ...current }; delete next[`${field}:${variantId}`]; return next; });
+  };
   const payload = () => ({ ...(listingId ? { stock_baseline: stockBaseline } : {}), organization_id: organizationId, name, description, fee_bearer: feeBearer, upi_id: upiId, payee_name: payeeName, catalog: { listing_type: "products", products, max_units_per_order: maxUnits, fulfillment: homeDelivery ? "home_delivery" : "pickup", delivery_address_required: homeDelivery, pickup_instructions: pickup } });
 
   const save = async () => {
@@ -187,8 +194,8 @@ export default function OrganizerProducts() {
               return <div key={variant.id} className="overflow-hidden rounded-xl border border-slate-200">
                 <div className="grid gap-4 p-4 sm:grid-cols-[1fr_1fr_1fr_auto]">
                   <div><Label htmlFor={`size-${variant.id}`}>Option / size</Label><Input id={`size-${variant.id}`} className="mt-2" placeholder="M / Navy" value={variant.label} onChange={(e) => updateVariant(product.id, variant.id, { label: e.target.value })} /></div>
-                  <div><Label htmlFor={`price-${variant.id}`}>Your selling price (₹)</Label><Input id={`price-${variant.id}`} className="mt-2" type="number" min={0} step="0.01" value={variant.price_paise / 100} onChange={(e) => updateVariant(product.id, variant.id, { price_paise: Math.round(Number(e.target.value) * 100) })} /></div>
-                  <div><Label htmlFor={`stock-${variant.id}`}>Available stock</Label><Input id={`stock-${variant.id}`} className="mt-2" type="number" min={0} step={1} value={variant.stock} onChange={(e) => updateVariant(product.id, variant.id, { stock: Number(e.target.value) })} /><p className="mt-1 text-xs text-slate-500">{variant.stock === 0 ? "Sold out — customers cannot select this option." : "Set to 0 to mark sold out."}</p></div>
+                  <div><Label htmlFor={`price-${variant.id}`}>Your selling price (₹)</Label><Input id={`price-${variant.id}`} className="mt-2" type="number" min={0} step="0.01" value={numberDrafts[`price_paise:${variant.id}`] ?? String(variant.price_paise / 100)} onChange={(e) => { const raw = e.target.value; setNumberDrafts((current) => ({ ...current, [`price_paise:${variant.id}`]: raw })); if (raw !== "") updateVariant(product.id, variant.id, { price_paise: Math.round(Math.max(0, Number(raw)) * 100) }); }} onBlur={(e) => commitVariantNumber(product.id, variant.id, "price_paise", e.target.value)} /></div>
+                  <div><Label htmlFor={`stock-${variant.id}`}>Available stock</Label><Input id={`stock-${variant.id}`} className="mt-2" type="number" min={0} step={1} value={numberDrafts[`stock:${variant.id}`] ?? String(variant.stock)} onChange={(e) => { const raw = e.target.value; setNumberDrafts((current) => ({ ...current, [`stock:${variant.id}`]: raw })); if (raw !== "") updateVariant(product.id, variant.id, { stock: Math.floor(Math.max(0, Number(raw))) }); }} onBlur={(e) => commitVariantNumber(product.id, variant.id, "stock", e.target.value)} /><p className="mt-1 text-xs text-slate-500">{variant.stock === 0 ? "Sold out — customers cannot select this option." : "Set to 0 to mark sold out."}</p></div>
                   <Button className="sm:mt-7" variant="ghost" aria-label={`Remove size ${variant.label}`} disabled={hasOrders || product.variants.length === 1} onClick={() => updateProduct(product.id, { variants: product.variants.filter((item) => item.id !== variant.id) })}>Remove</Button>
                 </div>
                 <div className="border-t bg-slate-50/70 px-4 py-3">

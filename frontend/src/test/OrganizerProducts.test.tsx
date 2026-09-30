@@ -26,9 +26,15 @@ it.each(["ORGANIZER", "PARTICIPANT"])("shows clear one-item net pricing for %s",
   expect(screen.queryByText("Organizer cost")).not.toBeInTheDocument();
   expect(screen.getByText("Customer pays to your UPI")).toBeInTheDocument();
   expect(screen.getByText("SportPass deducts from credits")).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("Your selling price (₹)"), { target: { value: "2000" } });
+  const price = screen.getByLabelText("Your selling price (₹)");
+  fireEvent.change(price, { target: { value: "" } });
+  expect(price).toHaveValue(null);
+  fireEvent.change(price, { target: { value: "2000" } });
   expect(await screen.findByText("₹80.00")).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("Available stock"), { target: { value: "0" } });
+  const stock = screen.getByLabelText("Available stock");
+  fireEvent.change(stock, { target: { value: "" } });
+  expect(stock).toHaveValue(null);
+  fireEvent.change(stock, { target: { value: "0" } });
   expect(screen.getByText("Sold out — customers cannot select this option.")).toBeInTheDocument();
   expect(screen.getByText("Store details")).not.toBeVisible();
   fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
