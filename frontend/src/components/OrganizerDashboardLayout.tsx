@@ -53,7 +53,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const supportsRaceResults = eventId ? currentSportConfig.result_type === "race_time" : false;
 
   const availableItems: NavItem[] = [
-    ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: "Events", icon: CalendarDays, to: "/organizer" }, { label: "SportPass Credits", icon: CreditCard, to: "/organizer/credits" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }]),
+    ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: "Events", icon: CalendarDays, to: "/organizer" }, { label: "Merchandise", icon: Package, to: "/organizer/products" }, { label: "SportPass Credits", icon: CreditCard, to: "/organizer/credits" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }]),
     { label: "Registrations", icon: ClipboardList, to: `/organizer/registrations${eventQuery}` },
     ...(!eventId ? [{ label: "Product sales", icon: Package, to: "/organizer/products" }] : []),
     ...(eventId && supportsTournamentUnlocked ? [

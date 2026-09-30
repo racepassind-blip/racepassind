@@ -59,6 +59,7 @@ import TermsOfService from "./pages/TermsOfService";
 import OurStory from "./pages/OurStory";
 import OrganizerProducts from "./pages/OrganizerProducts";
 import ProductStorefront from "./pages/ProductStorefront";
+import Merchandise from "./pages/Merchandise";
 
 const queryClient = new QueryClient();
 
@@ -73,6 +74,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/events" element={<Events />} />
+            <Route path="/merchandise" element={<Merchandise />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/organizers" element={<OrganizerInfo />} />

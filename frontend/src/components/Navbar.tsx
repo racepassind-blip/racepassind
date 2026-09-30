@@ -22,6 +22,7 @@ export function Navbar() {
   const dashboardPath = isAdmin ? "/admin" : isStaff ? "/organizer" : "/dashboard";
   const links: Array<{ to: string; label: string; comingSoon?: boolean }> = [
     { to: "/events", label: "Browse Events" },
+    { to: "/merchandise", label: "Merchandise" },
     { to: "/organizers", label: "For Organizers" },
     { to: "/federations-associations", label: "Federations & Associations", comingSoon: true },
     ...(user && isAdmin ? [{ to: "/admin", label: "Admin workspace" }] : []),
