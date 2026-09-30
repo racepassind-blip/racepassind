@@ -63,11 +63,12 @@ class StatusInput(BaseModel):
 
 
 class ReferenceInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
     reference: str = Field(min_length=4, max_length=120)
 
 
 class DecisionInput(BaseModel):
-    decision: Literal["approve", "reject", "fulfilled"]
+    decision: Literal["approve", "reject", "fulfilled", "cancel"]
 
 
 class ProductFeePreview(BaseModel):
@@ -399,6 +400,8 @@ def submit_reference(order_id: UUID, payload: ReferenceInput, x_order_token: str
         reference = normalize_payment_reference(payload.reference)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
+    if not reference:
+        raise HTTPException(422, "UTR / transaction reference is required to submit payment")
     order.payment_reference = reference
     order.status = "under_review"
     order.reserved_until = None
@@ -453,10 +456,13 @@ def review(listing_id: UUID, order_id: UUID, payload: DecisionInput, db: Session
     order = db.scalar(select(ProductOrder).where(ProductOrder.id == order_id, ProductOrder.listing_id == item.id).with_for_update())
     if order is None:
         raise HTTPException(404, "Order not found")
-    target = {"approve": "confirmed", "reject": "rejected", "fulfilled": "fulfilled"}[payload.decision]
+    target = {"approve": "confirmed", "reject": "rejected", "fulfilled": "fulfilled", "cancel": "cancelled"}[payload.decision]
     if order.status == target:
         return serialize_order(order)
-    if payload.decision == "fulfilled":
+    if payload.decision == "cancel":
+        if order.status not in {"awaiting_payment", "under_review", "confirmed"}:
+            raise HTTPException(409, "Only unfulfilled active orders can be cancelled")
+    elif payload.decision == "fulfilled":
         if order.status != "confirmed":
             raise HTTPException(409, "Only confirmed orders can be fulfilled")
     elif order.status != "under_review":
@@ -466,8 +472,9 @@ def review(listing_id: UUID, order_id: UUID, payload: DecisionInput, db: Session
             debit_credits(db, organization_id=item.organization_id, amount=order.snapshot["platform_fee_paise"], transaction_type="REGISTRATION_DEBIT", description="SportPass fee for product order", source_type="PRODUCT_ORDER", source_id=str(order.id), created_by=user.id)
         except CreditValidationError as exc:
             raise HTTPException(422, str(exc))
-    if payload.decision == "reject":
+    if payload.decision in {"reject", "cancel"}:
         restore_stock(item, order)
+        order.reserved_until = None
     order.status = target
     db.commit()
     return serialize_order(order)

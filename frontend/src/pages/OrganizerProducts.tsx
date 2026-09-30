@@ -133,7 +133,7 @@ export default function OrganizerProducts() {
     catch (error) { setOrderError(error instanceof Error ? error.message : "Could not refresh orders."); }
     finally { setOrderBusy(false); }
   };
-  const decide = async (order: Order, decision: "approve" | "reject" | "fulfilled") => {
+  const decide = async (order: Order, decision: "approve" | "reject" | "fulfilled" | "cancel") => {
     setOrderBusy(true); setOrderError("");
     try {
       const updated = await apiRequest<Pick<Order, "status" | "snapshot" | "payment_reference">>(`/organizer/product-listings/${listingId}/orders/${order.id}`, { method: "POST", body: JSON.stringify({ decision }) });

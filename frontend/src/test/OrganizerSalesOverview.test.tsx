@@ -4,6 +4,16 @@ import { afterEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { OrderDashboard, StorefrontDirectory, type MerchandiseOrder } from "@/components/products/OrganizerSalesOverview";
 afterEach(cleanup);
+it("requires confirmation to cancel an awaiting-payment order", () => {
+  const order = { ...orders[0], status: "awaiting_payment" };
+  const decide = vi.fn().mockResolvedValue(undefined);
+  render(<OrderDashboard orders={[order]} onDecision={decide} onRefresh={vi.fn()} busy={false} error="" />);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
+  expect(decide).not.toHaveBeenCalled();
+  expect(screen.getByText(/refund the buyer separately/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
+  expect(decide).toHaveBeenCalledWith(order, "cancel");
+});
 it("finds merchandise orders by the new number, legacy number, and full ID", () => {
   const order = { ...orders[0], id: "b899bc76-14f9-4c8e-975e-c0fcacc09dad" };
   render(<OrderDashboard orders={[order]} onDecision={vi.fn()} onRefresh={vi.fn()} busy={false} error="" />);

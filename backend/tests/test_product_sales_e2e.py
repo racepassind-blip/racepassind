@@ -146,6 +146,46 @@ class ProductSalesE2ETests(unittest.TestCase):
             "stock_baseline": {str(VARIANT_ID): item.catalog["products"][0]["variants"][0]["stock"]},
         })
 
+    def test_cancel_active_order_restores_stock_once(self):
+        for status in ("awaiting_payment", "under_review", "confirmed"):
+            with self.subTest(status=status):
+                order_id = UUID(self.place_test_order()["id"])
+                with self.Session() as db, patch("app.api.v1.products.get_authorized_organization"):
+                    db.get(ProductOrder, order_id).status = status
+                    db.commit()
+                    result = review(LISTING_ID, order_id, DecisionInput(decision="cancel"), db=db, user=Mock())
+                    self.assertEqual(result["status"], "cancelled")
+                    review(LISTING_ID, order_id, DecisionInput(decision="cancel"), db=db, user=Mock())
+                    self.assertEqual(db.get(ProductListing, LISTING_ID).catalog["products"][0]["variants"][0]["stock"], 10)
+                    with self.assertRaises(HTTPException):
+                        review(LISTING_ID, order_id, DecisionInput(decision="approve"), db=db, user=Mock())
+
+    def test_collected_order_cannot_be_cancelled(self):
+        order_id = UUID(self.place_test_order()["id"])
+        with self.Session() as db, patch("app.api.v1.products.get_authorized_organization"):
+            db.get(ProductOrder, order_id).status = "fulfilled"
+            db.commit()
+            with self.assertRaises(HTTPException) as error:
+                review(LISTING_ID, order_id, DecisionInput(decision="cancel"), db=db, user=Mock())
+            self.assertEqual(error.exception.status_code, 409)
+            self.assertEqual(db.get(ProductListing, LISTING_ID).catalog["products"][0]["variants"][0]["stock"], 8)
+
+    def test_payment_reference_is_required_before_review(self):
+        order = self.place_test_order()
+        url = f"/api/v1/product-orders/{order['id']}/reference"
+        for body in ({}, {"reference": ""}, {"reference": "    "}, {"reference": " 12 "}):
+            with self.subTest(body=body):
+                response = self.client.post(url, headers={"X-Order-Token": "a" * 64}, json=body)
+                self.assertEqual(response.status_code, 422)
+        with self.Session() as db:
+            stored = db.get(ProductOrder, UUID(order["id"]))
+            self.assertEqual(stored.status, "awaiting_payment")
+            self.assertIsNone(stored.payment_reference)
+        response = self.client.post(url, headers={"X-Order-Token": "a" * 64}, json={"reference": "  UTR12345678  "})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "under_review")
+        self.assertEqual(response.json()["payment_reference"], "UTR12345678")
+
     def test_payment_approval_does_not_send_confirmation(self):
         order_id = UUID(self.place_test_order()["id"])
         with self.Session() as db, patch("app.api.v1.products.get_authorized_organization"), patch("app.api.v1.products.debit_credits"), patch("app.services.product_order_email.send_email", return_value=Mock(status="SENT")) as send:
