@@ -34,6 +34,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// These queries only use public endpoints. Keep them (including in-flight
+// requests) when a guest bootstrap or an expired session returns 401.
+const publicQueryKeys = new Set([
+  "events", "event-search", "public-product-listings", "public-event-results",
+  "public-standings", "public-number-list",
+]);
+
+function clearAccountCache(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.removeQueries({ predicate: (query) => !publicQueryKeys.has(String(query.queryKey[0])) });
+  queryClient.getMutationCache().clear();
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -44,10 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearSession = useCallback(() => {
     setUser(null);
     clearCsrfToken();
-    // Account-scoped organizer/admin data must never survive a logout or an
-    // expired session. Clearing the full cache also prevents a newly signed-in
-    // admin from briefly seeing the previous organizer's events or Credits.
-    queryClient.clear();
+    // Clear private data without detaching active public query observers.
+    clearAccountCache(queryClient);
   }, [queryClient]);
 
   const bootstrap = useCallback(async () => {
@@ -81,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: "POST",
         body: JSON.stringify({ email, password, ...(mfaCode ? { mfa_code: mfaCode } : {}) }),
       });
-      queryClient.clear();
+      clearAccountCache(queryClient);
       setUser(response.user);
       setIsInitialized(true);
       return response.user;
