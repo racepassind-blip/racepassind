@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { ArrowRight, Building2, CheckCircle2, ImagePlus, ShieldCheck } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 
 import { OrganizerOnboardingLayout } from "@/components/OrganizerOnboardingLayout";
@@ -44,6 +45,7 @@ interface OrganizerSetupProps {
 
 const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [section, setSection] = useState<"profile" | "verification">(window.location.hash === "#paid-verification" ? "verification" : "profile");
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -123,6 +125,7 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
         website: updatedProfile.website ?? "",
       });
       setSaved(true);
+      await queryClient.invalidateQueries({ queryKey: ["organizer-organizations"] });
       if (!embedded) navigate("/organizer");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not save your organization profile.");
