@@ -38,18 +38,28 @@ class ListingInput(BaseModel):
     stock_baseline: dict[UUID, int] | None = None
     fee_bearer: Literal["ORGANIZER", "PARTICIPANT"] = "ORGANIZER"
     upi_id: str = Field(max_length=320)
-    payee_name: str = Field(min_length=2, max_length=200)
+    payee_name: str = Field(default="", max_length=200)
+
+    @field_validator("payee_name", mode="before")
+    @classmethod
+    def _normalize_payee_name(cls, value):
+        return value.strip() if isinstance(value, str) else "" if value is None else value
 
 
 class OrderInput(ProductCart):
     buyer_name: str = Field(min_length=2, max_length=160)
-    buyer_email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$", max_length=320)
+    buyer_email: str = Field(default="", pattern=r"^$|^[^@\s]+@[^@\s]+\.[^@\s]+$", max_length=320)
     buyer_phone: str = Field(min_length=10, max_length=20)
     delivery_address: str | None = Field(default=None, max_length=500)
     delivery_state: str | None = Field(default=None, max_length=100)
     delivery_district: str | None = Field(default=None, max_length=100)
     delivery_city: str | None = Field(default=None, max_length=100)
     delivery_pincode: str | None = Field(default=None, pattern=r"^[1-9][0-9]{5}$")
+
+    @field_validator("buyer_email", mode="before")
+    @classmethod
+    def _normalize_buyer_email(cls, value):
+        return value.strip() if isinstance(value, str) else "" if value is None else value
 
     @field_validator("buyer_phone")
     @classmethod
@@ -368,7 +378,7 @@ def place_order(listing_id: UUID, payload: OrderInput, db: Session = Depends(get
             "pincode": payload.delivery_pincode,
         }
     if result["total_paise"]:
-        settings = SimpleNamespace(method="manual_upi", is_active=True, upi_id=item.upi_id, payee_name=item.payee_name, instructions="Pay the exact total, then submit your payment reference for organizer review.", qr_image_url=None)
+        settings = SimpleNamespace(method="manual_upi", is_active=True, upi_id=item.upi_id, payee_name=(item.payee_name or "").strip() or item.name, instructions="Pay the exact total, then submit your payment reference for organizer review.", qr_image_url=None)
         result["payment"] = build_upi_payment_details(settings, amount_paise=result["total_paise"], registration_reference=str(order.id), merchandise_order=True)
     order.snapshot = result
     db.commit()
@@ -396,6 +406,8 @@ def send_cancellation_email(listing_id: UUID, order_id: UUID, db: Session = Depe
         raise HTTPException(404, "Order not found")
     if order.status != "cancelled":
         raise HTTPException(409, "Only cancelled orders can notify the buyer")
+    if not order.buyer_email:
+        raise HTTPException(409, "No email address was provided for this order")
     result = send_product_order_cancellation(db, order)
     return {"email_status": result.status}
 

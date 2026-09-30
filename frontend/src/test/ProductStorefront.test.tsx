@@ -89,8 +89,12 @@ it("shows the generated order ID and asks the buyer to save it", async () => {
   render(<ProductStorefront />);
   fireEvent.click(await screen.findByRole("button", { name: "Add Race jersey M" }));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Test Buyer" } });
-  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "buyer@example.com" } });
-  fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "9876543210" } });
+  expect(screen.getByLabelText("Email (optional)")).not.toBeRequired();
+  expect(screen.getByRole("button", { name: /Continue to payment/ })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Phone (required)"), { target: { value: "9876543210" } });
+  fireEvent.change(screen.getByLabelText("Email (optional)"), { target: { value: "invalid" } });
+  expect(screen.getByRole("button", { name: /Continue to payment/ })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Email (optional)"), { target: { value: "" } });
   await waitFor(() => expect(screen.getByRole("button", { name: /Continue to payment/ })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: /Continue to payment/ }));
   expect(await screen.findByText(orderId)).toBeInTheDocument();

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowRight, HeartHandshake, Package, Search, ShieldCheck, Sparkles, X } from "lucide-react";
+import { ArrowRight, HeartHandshake, Package, Search, ShieldCheck, X } from "lucide-react";
 import { Layout } from "@/components/Layout";
 import { EventCard } from "@/components/EventCard";
 import { CategoriesSection } from "@/components/CategoriesSection";
@@ -32,8 +32,7 @@ const Index = () => {
     const searchable = [event.title, event.location, event.locationDetails?.city, event.locationDetails?.state, event.category].filter(Boolean).join(" ").toLowerCase();
     return !query || searchable.includes(query);
   });
-  const featured = query ? [] : orderedEvents.slice(0, 3);
-  const calendarEvents = query ? filtered : orderedEvents.slice(3);
+  const featured = query ? filtered : orderedEvents.slice(0, 3);
 
   return (
     <Layout>
@@ -107,7 +106,7 @@ const Index = () => {
           </Link>
         </div>
 
-        {featured.length > 0 ? <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{featured.map((event) => <EventCard key={event.id} event={event} />)}</div> : <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">{isLoading ? "Loading events…" : isError ? "Failed to load events." : query ? "Search results are shown below." : "No upcoming events right now. Check back soon."}</div>}
+        {featured.length > 0 ? <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{featured.map((event) => <EventCard key={event.id} event={event} />)}</div> : <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">{isLoading ? "Loading events…" : isError ? "Failed to load events." : query ? `No events found for “${search.trim()}”.` : "No upcoming events right now. Check back soon."}</div>}
       </section>
 
       {productListings.length > 0 && <section className="border-y bg-card"><div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div className="mb-8"><p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-primary">Shop from organizers</p><h2 className="text-3xl font-black tracking-tight sm:text-4xl">Products for event day</h2><p className="mt-2 text-muted-foreground">Order meals, jerseys, and merchandise directly from verified organizers.</p></div><div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{productListings.map((listing) => { const product = listing.catalog.products[0]; const imageId = product?.image_ids[0]; const prices = listing.catalog.products.flatMap((item) => item.variants).filter((variant) => variant.stock > 0).map((variant) => variant.price_paise); const fromPrice = prices.length ? Math.min(...prices) : null; return <Link key={listing.id} to={`/products/${listing.id}`} className="group overflow-hidden rounded-2xl border bg-background shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">{imageId && listing.images[imageId] ? <img src={listing.images[imageId]} alt="" className="aspect-[16/9] w-full object-cover" /> : <div className="flex aspect-[16/9] items-center justify-center bg-primary/5 text-primary"><Package className="h-10 w-10" /></div>}<div className="p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold group-hover:text-primary">{listing.name}</h3><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{listing.description}</p></div>{fromPrice !== null && <span className="shrink-0 text-sm font-bold text-primary">From ₹{(fromPrice / 100).toFixed(0)}</span>}</div><p className="mt-4 text-sm font-semibold text-primary">Shop products <ArrowRight className="ml-1 inline h-4 w-4" /></p></div></Link>; })}</div></div></section>}
@@ -115,29 +114,6 @@ const Index = () => {
       <div className="border-y bg-card">
         <CategoriesSection />
       </div>
-
-      <section id="all-events" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
-        <div className="mb-8 flex items-end justify-between gap-4">
-          <div>
-            <p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-primary">The sports calendar</p>
-            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">{query ? `Results for “${search.trim()}”` : "More events across India"}</h2>
-            <p className="mt-2 text-muted-foreground">{query ? `${filtered.length} event${filtered.length === 1 ? "" : "s"} found` : "Choose something near you and make a day of it."}</p>
-          </div>
-          <Sparkles className="hidden h-7 w-7 text-[#ff9933] sm:block" />
-        </div>
-
-        {isLoading ? (
-          <p className="py-16 text-center text-muted-foreground">Loading events…</p>
-        ) : isError ? (
-          <p className="py-16 text-center text-muted-foreground">Failed to load events.</p>
-        ) : query && filtered.length === 0 ? (
-          <p className="py-16 text-center text-muted-foreground">No events found for &quot;{search}&quot;</p>
-        ) : (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {calendarEvents.map((event) => <EventCard key={event.id} event={event} />)}
-          </div>
-        )}
-      </section>
 
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
         <div className="mb-10 text-center">
