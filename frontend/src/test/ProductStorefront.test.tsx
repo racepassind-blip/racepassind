@@ -101,11 +101,11 @@ it("shows the generated order ID and asks the buyer to save it", async () => {
   expect(screen.getByText("SPM-A931E32DB644")).toBeInTheDocument();
   const paymentReference = screen.getByLabelText("UTR / transaction reference (required)");
   expect(paymentReference).toBeRequired();
-  expect(screen.getByRole("button", { name: "I’ve paid — submit reference" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Submit payment details" })).toBeDisabled();
   fireEvent.change(paymentReference, { target: { value: "    " } });
-  expect(screen.getByRole("button", { name: "I’ve paid — submit reference" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Submit payment details" })).toBeDisabled();
   fireEvent.change(paymentReference, { target: { value: "UTR12345678" } });
-  expect(screen.getByRole("button", { name: "I’ve paid — submit reference" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Submit payment details" })).toBeEnabled();
   expect(screen.getByText(/Save this number for order help or collection/)).toBeInTheDocument();
   const orderCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path?.endsWith("/orders"));
   expect(orderCall).toBeDefined();
