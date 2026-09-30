@@ -4,6 +4,7 @@ import base64
 import datetime as dt
 import hashlib
 import hmac
+import re
 import secrets
 
 from sqlalchemy import select
@@ -31,13 +32,18 @@ def normalize_phone(value: str | None) -> str | None:
     if value is None:
         return None
     digits = "".join(character for character in value if character.isdigit())
-    return digits or None
+    if not digits:
+        return None
+    if digits.startswith("0091"):
+        digits = digits[4:]
+    elif digits.startswith("91") and len(digits) == 12:
+        digits = digits[2:]
+    elif digits.startswith("0") and len(digits) == 11:
+        digits = digits[1:]
+    return f"91{digits}" if len(digits) == 10 else digits
 
 
-# Minimum / maximum number of digits accepted for a mandatory contact phone.
-# 8 covers short national formats; 15 is the E.164 maximum.
-_MIN_PHONE_DIGITS = 8
-_MAX_PHONE_DIGITS = 15
+_INDIAN_MOBILE_PATTERN = re.compile(r"^(?:91|0)?[6-9]\d{9}$")
 
 
 def validate_required_phone(value: str | None) -> str:
@@ -50,8 +56,8 @@ def validate_required_phone(value: str | None) -> str:
     if value is None or not value.strip():
         raise ValueError("Phone number is required")
     digits = "".join(character for character in value if character.isdigit())
-    if len(digits) < _MIN_PHONE_DIGITS or len(digits) > _MAX_PHONE_DIGITS:
-        raise ValueError("Enter a valid phone number")
+    if not _INDIAN_MOBILE_PATTERN.fullmatch(digits):
+        raise ValueError("Enter a valid Indian mobile number (10 digits starting with 6–9)")
     return value.strip()
 
 

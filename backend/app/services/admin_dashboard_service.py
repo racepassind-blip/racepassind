@@ -73,7 +73,6 @@ def _published_races(db: Session, start: dt.datetime | None = None, end: dt.date
 
 def _incomplete_onboarding_condition():
     return or_(
-        Organization.onboarding_completed_at.is_(None),
         Organization.organization_type.is_(None),
         Organization.city.is_(None),
         Organization.state.is_(None),

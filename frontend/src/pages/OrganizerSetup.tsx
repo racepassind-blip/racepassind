@@ -183,9 +183,13 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
                     <SelectContent>{ORGANIZATION_TYPES.map((type) => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
+                <div>
+                  <p className="text-sm font-semibold">Primary location</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Where your organization is based.</p>
+                </div>
                 <div className="grid gap-5 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="organization-city">Primary city</Label>
+                    <Label htmlFor="organization-city">City</Label>
                     <Input id="organization-city" value={form.city} onChange={(event) => setForm((current) => ({ ...current, city: event.target.value }))} required minLength={2} maxLength={120} placeholder="e.g. Mysuru" />
                   </div>
                   <div className="space-y-2">

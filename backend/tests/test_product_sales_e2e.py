@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 
 from db import Base, get_db
 from models import Organization, ProductListing, ProductOrder, ProductImage
-from app.api.v1.products import upload_image, serialize_listing, update_listing, ListingInput, inventory_summary, product_fee_preview, ProductFeePreview
+from app.api.v1.products import upload_image, serialize_listing, list_listings, update_listing, set_status, ListingInput, StatusInput, inventory_summary, product_fee_preview, ProductFeePreview
 from app.api.deps import require_csrf
 from app.infrastructure.storage.factory import get_storage_service
 from main import app
@@ -99,6 +99,33 @@ class ProductSalesE2ETests(unittest.TestCase):
                 self.assertEqual(len(product["image_ids"]), 2)
                 self.assertEqual(result["images"][product["size_chart_image_id"]], "https://media.test/chart.png?signed=fresh")
                 self.assertTrue(all(result["images"][image_id] for image_id in product["image_ids"]))
+
+    def test_draft_can_have_no_products_but_cannot_be_published(self):
+        with self.Session() as db, patch("app.api.v1.products.get_authorized_organization"):
+            item = db.get(ProductListing, LISTING_ID)
+            item.catalog = {**item.catalog, "products": []}
+            item.status = "draft"
+            db.commit()
+            self.assertEqual(serialize_listing(db, item, None, private=True)["catalog"]["products"], [])
+            with self.assertRaises(HTTPException) as error:
+                set_status(LISTING_ID, StatusInput(status="published"), db=db, user=Mock())
+            self.assertEqual(error.exception.status_code, 422)
+
+    def test_published_store_cannot_remove_every_product(self):
+        with self.Session() as db, patch("app.api.v1.products.get_authorized_organization"):
+            payload = self.editor_payload(db)
+            payload.catalog.products = []
+            with self.assertRaises(HTTPException) as error:
+                update_listing(LISTING_ID, payload, db=db, user=Mock(), storage=None)
+            self.assertEqual(error.exception.status_code, 422)
+
+    def test_directory_reports_actionable_order_counts(self):
+        order = self.place_test_order()
+        with self.Session() as db:
+            db.get(ProductOrder, UUID(order["id"])).status = "under_review"
+            db.commit()
+            listings = list_listings(db=db, user=Mock(role="admin"), storage=None)
+            self.assertEqual(listings[0]["order_summary"], {"payment_review": 1, "ready_for_pickup": 0})
 
     def place_test_order(self):
         response = self.client.post(f"/api/v1/products/{LISTING_ID}/orders", json={

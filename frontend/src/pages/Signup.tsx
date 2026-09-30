@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiRequest } from "@/lib/api";
+import { isValidIndianMobile } from "@/lib/phone";
 
 type SignupMode = "participant" | "organizer";
 
@@ -38,7 +39,7 @@ const Signup = () => {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (mode === "organizer" && form.phone.replace(/\D/g, "").length < 8) {
+    if (mode === "organizer" && !isValidIndianMobile(form.phone)) {
       setSubmitted(true);
       toast.error("A valid phone number is required to onboard as an organizer.");
       return;
@@ -69,9 +70,8 @@ const Signup = () => {
             password: form.password,
           }),
         });
-        await login(form.email.trim(), form.password);
-        toast.success("Your organizer account is ready.");
-        navigate("/organizer", { replace: true });
+        setSubmitted(true);
+        toast.success("Your organizer application is awaiting approval.");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not complete signup.");
@@ -126,7 +126,7 @@ const Signup = () => {
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Get started</p>
                   <h2 className="mt-2 text-2xl font-black tracking-tight">{isParticipant ? "Create your participant account" : "Apply as an organizer"}</h2>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{isParticipant ? "It takes less than a minute. You can also register as a guest later." : "Sign up and start creating events right away. Paid events need a one-time verification before publishing."}</p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{isParticipant ? "It takes less than a minute. You can also register as a guest later." : "Apply for organizer access. Once an admin approves your application, you can create events. Paid events also need verification before publishing."}</p>
                 </div>
                 <KeyRound className="mt-1 hidden h-5 w-5 text-primary sm:block" />
               </div>
@@ -143,7 +143,7 @@ const Signup = () => {
                     <CardDescription>Your application is waiting for admin approval.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
-                    <p className="text-sm leading-6 text-muted-foreground">You will be able to sign in as an organizer after approval. Your plan is calculated automatically per event from confirmed registrations.</p>
+                    <p className="text-sm leading-6 text-muted-foreground">An admin will review your application. You can sign in and create events after approval.</p>
                     <div className="flex flex-wrap gap-3"><Button onClick={() => navigate("/login")}>Sign in after approval <ArrowRight className="h-4 w-4" /></Button><Button variant="outline" onClick={() => navigate("/")}>Browse events</Button></div>
                   </CardContent>
                 </Card>
@@ -154,11 +154,11 @@ const Signup = () => {
                       {mode === "organizer" && <div className="space-y-2"><Label htmlFor="organization-name">Organization name</Label><Input id="organization-name" value={form.organizationName} onChange={(event) => updateForm("organizationName", event.target.value)} required minLength={2} maxLength={160} placeholder="Your race organization" /></div>}
                       <div className="grid gap-5 sm:grid-cols-2">
                         <div className="space-y-2"><Label htmlFor="signup-name">Your name</Label><Input id="signup-name" value={form.name} onChange={(event) => updateForm("name", event.target.value)} required minLength={2} maxLength={120} autoComplete="name" placeholder="Your full name" /></div>
-                        <div className="space-y-2"><Label htmlFor="signup-phone">Phone {isParticipant ? <span className="font-normal text-muted-foreground">(optional)</span> : null}</Label><Input id="signup-phone" value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} required={!isParticipant} minLength={!isParticipant ? 8 : undefined} maxLength={32} autoComplete="tel" placeholder="+91 98765 43210" /></div>
+                        <div className="space-y-2"><Label htmlFor="signup-phone">Phone {isParticipant ? <span className="font-normal text-muted-foreground">(optional)</span> : null}</Label><Input id="signup-phone" type="tel" inputMode="numeric" value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} required={!isParticipant} maxLength={20} autoComplete="tel" placeholder="+91 98765 43210" /><p className="text-xs text-muted-foreground">Indian mobile number only.</p></div>
                       </div>
                       <div className="space-y-2"><Label htmlFor="signup-email">Email address</Label><Input id="signup-email" type="email" value={form.email} onChange={(event) => updateForm("email", event.target.value)} required maxLength={320} autoComplete="email" placeholder="you@example.com" /></div>
                       <div className="space-y-2"><Label htmlFor="signup-password">Password</Label><div className="relative"><Input id="signup-password" type={showPassword ? "text" : "password"} value={form.password} onChange={(event) => updateForm("password", event.target.value)} required minLength={8} maxLength={256} autoComplete="new-password" placeholder="At least 8 characters" className="pr-10" /><button type="button" onClick={() => setShowPassword((visible) => !visible)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div><p className="text-xs text-muted-foreground">Use at least 8 characters. A longer passphrase is even better.</p></div>
-                      <Button type="submit" className="w-full gap-2" size="lg" disabled={loading}>{loading ? "Submitting…" : mode === "participant" ? "Create participant account" : "Create organizer account"}<ArrowRight className="h-4 w-4" /></Button>
+                      <Button type="submit" className="w-full gap-2" size="lg" disabled={loading}>{loading ? "Submitting…" : mode === "participant" ? "Create participant account" : "Submit organizer application"}<ArrowRight className="h-4 w-4" /></Button>
                     </form>
                   </CardContent>
                 </Card>

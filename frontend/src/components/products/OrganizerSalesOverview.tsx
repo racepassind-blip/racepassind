@@ -7,7 +7,13 @@ export type MerchandiseOrder = {
   id: string; buyer_name: string; buyer_email: string; buyer_phone: string; status: string; payment_reference: string | null;
   snapshot: { total_paise: number; lines: Array<{ product_name: string; variant_label: string; quantity: number; customization?: string | null; customization_label?: string | null }> };
 };
-type Store = { id: string; name: string; status: string; catalog: { products: Array<{ variants: Array<{ stock: number }> }> } };
+type Store = {
+  id: string;
+  name: string;
+  status: string;
+  catalog: { products: Array<{ variants: Array<{ stock: number }> }> };
+  order_summary?: { payment_review: number; ready_for_pickup: number };
+};
 const money = (amount: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(amount / 100);
 const labels: Record<string, string> = { published: "Live", draft: "Draft", closed: "Closed", awaiting_payment: "Awaiting payment", under_review: "Payment review", confirmed: "Ready for pickup", fulfilled: "Collected", rejected: "Rejected", expired: "Expired" };
 function Status({ value }: { value: string }) {
@@ -25,7 +31,42 @@ export function StorefrontDirectory({ stores, onCreate }: { stores: Store[]; onC
   const filtered = stores.filter((store) => (status === "all" || store.status === status) && store.name.toLowerCase().includes(search.toLowerCase().trim()));
   const count = Math.max(1, Math.ceil(filtered.length / 8));
   const current = Math.min(page, count);
-  return <section className="space-y-5 rounded-2xl border bg-white p-5 sm:p-6"><div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="text-2xl font-semibold">Your storefronts</h2><p className="mt-1 text-sm text-slate-500">{stores.length} stores · {stores.filter((store) => store.status === "published").length} live</p></div><Button onClick={onCreate}>Create storefront</Button></div><div className="flex flex-col gap-3 sm:flex-row"><Input aria-label="Search storefronts" placeholder="Search storefronts…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} /><select aria-label="Storefront status" className={selectClass} value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="all">All statuses</option>{["published", "draft", "closed"].map((value) => <option key={value} value={value}>{labels[value]}</option>)}</select></div><div className="divide-y">{filtered.slice((current - 1) * 8, current * 8).map((store) => <div key={store.id} className="flex flex-col justify-between gap-4 py-5 sm:flex-row sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><Link to={`/organizer/products/${store.id}`} className="break-words font-semibold hover:underline">{store.name}</Link><Status value={store.status} /></div><p className="mt-2 text-sm text-slate-500">{store.catalog.products.length} products · {store.catalog.products.reduce((total, product) => total + product.variants.reduce((sum, variant) => sum + variant.stock, 0), 0)} units available</p></div><Button asChild variant="outline" className="shrink-0"><Link to={`/organizer/products/${store.id}`}>Manage store →</Link></Button></div>)}</div>{filtered.length === 0 && <p className="py-8 text-center text-sm text-slate-500">{stores.length ? "No storefronts match your search." : "Create your first race merchandise storefront."}</p>}<Pages page={current} count={count} setPage={setPage} /></section>;
+  return <section className="space-y-5 rounded-2xl border bg-white p-5 sm:p-6">
+    <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="text-2xl font-semibold">Your storefronts</h2><p className="mt-1 text-sm text-slate-500">{stores.length} stores · {stores.filter((store) => store.status === "published").length} live</p></div><Button onClick={onCreate}>Create storefront</Button></div>
+    <div className="flex flex-col gap-3 sm:flex-row"><Input aria-label="Search storefronts" placeholder="Search storefronts…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} /><select aria-label="Storefront status" className={selectClass} value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="all">All statuses</option>{["published", "draft", "closed"].map((value) => <option key={value} value={value}>{labels[value]}</option>)}</select></div>
+    <div className="divide-y">{filtered.slice((current - 1) * 8, current * 8).map((store) => {
+      const productCount = store.catalog.products.length;
+      const availableUnits = store.catalog.products.reduce((total, product) => total + product.variants.reduce((sum, variant) => sum + variant.stock, 0), 0);
+      const reviewCount = store.order_summary?.payment_review ?? 0;
+      const pickupCount = store.order_summary?.ready_for_pickup ?? 0;
+      const manageState = productCount === 0 ? { openProducts: true } : undefined;
+      const attention = reviewCount > 0
+        ? `${reviewCount} ${reviewCount === 1 ? "payment" : "payments"} to review`
+        : pickupCount > 0
+          ? `${pickupCount} ${pickupCount === 1 ? "order" : "orders"} ready for pickup`
+          : productCount === 0
+            ? "Add products to finish setting up this store"
+            : store.status === "draft"
+              ? "Ready to review and publish"
+              : store.status === "closed"
+                ? "Sales are closed"
+                : availableUnits === 0
+                  ? "Out of stock — add inventory to keep selling"
+                  : "Live and accepting orders";
+      return <div key={store.id} className="flex flex-col justify-between gap-4 py-5 sm:flex-row sm:items-center">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-3"><Link to={`/organizer/products/${store.id}`} state={manageState} className="break-words font-semibold hover:underline">{store.name}</Link><Status value={store.status} /></div>
+          <div className={`mt-3 rounded-lg px-3 py-2 text-sm ${reviewCount > 0 ? "bg-amber-50 text-amber-900" : productCount === 0 || availableUnits === 0 ? "bg-orange-50 text-orange-900" : "bg-slate-50 text-slate-700"}`}>
+            <span className="font-medium">{attention}</span>
+            <span className="ml-2 text-xs opacity-75">· {productCount} {productCount === 1 ? "product" : "products"} · {availableUnits} units available{pickupCount > 0 && reviewCount > 0 ? ` · ${pickupCount} ready for pickup` : ""}</span>
+          </div>
+        </div>
+        <Button asChild variant="outline" className="shrink-0"><Link to={`/organizer/products/${store.id}`} state={manageState}>Manage store →</Link></Button>
+      </div>;
+    })}</div>
+    {filtered.length === 0 && <p className="py-8 text-center text-sm text-slate-500">{stores.length ? "No storefronts match your search." : "Create your first race merchandise storefront."}</p>}
+    <Pages page={current} count={count} setPage={setPage} />
+  </section>;
 }
 
 export function OrderDashboard({ orders, onDecision, onRefresh, busy, error }: { orders: MerchandiseOrder[]; onDecision: (order: MerchandiseOrder, decision: "approve" | "reject" | "fulfilled") => Promise<void>; onRefresh: () => Promise<void>; busy: boolean; error: string }) {

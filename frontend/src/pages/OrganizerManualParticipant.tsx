@@ -100,7 +100,7 @@ const OrganizerManualParticipant = () => {
       const selectValue = value === undefined ? "" : field.type === "yes_no" ? value === true ? "Yes" : "No" : String(value);
       return <Select value={selectValue} onValueChange={(next) => updateResponse(memberIndex, field, field.type === "yes_no" ? next === "Yes" : next)}><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>;
     }
-    return <Input type={field.type === "email" ? "email" : field.type === "date" ? "date" : field.type === "number" ? "number" : "text"} value={value === undefined ? "" : String(value)} onChange={(event) => updateResponse(memberIndex, field, event.target.value)} placeholder={field.type === "phone" ? "+91 98765 43210" : undefined} />;
+    return <Input type={field.type === "email" ? "email" : field.type === "date" ? "date" : field.type === "number" ? "number" : field.type === "phone" ? "tel" : "text"} inputMode={field.type === "phone" ? "numeric" : undefined} value={value === undefined ? "" : String(value)} onChange={(event) => updateResponse(memberIndex, field, event.target.value)} placeholder={field.type === "phone" ? "+91 98765 43210" : undefined} />;
   };
 
   const submit = async () => {

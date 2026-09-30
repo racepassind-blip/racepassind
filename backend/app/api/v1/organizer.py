@@ -94,12 +94,10 @@ class OrganizationProfileIn(BaseModel):
 
 
 def _serialize_organization(organization: Organization, storage=None) -> dict:
-    onboarding_complete = bool(
-        organization.onboarding_completed_at
-        and organization.organization_type
-        and organization.city
-        and organization.state
-    )
+    # Treat legacy profiles as complete when their required fields are present.
+    # The completion timestamp was added later and may be null for organizations
+    # that finished setup before that migration.
+    onboarding_complete = bool(organization.organization_type and organization.city and organization.state)
     return {
         "id": str(organization.id),
         "name": organization.name,

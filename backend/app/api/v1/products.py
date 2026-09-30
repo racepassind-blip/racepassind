@@ -7,8 +7,8 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from db import get_db
@@ -17,7 +17,7 @@ from app.api.deps import get_authorized_organization, require_csrf, require_role
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
 from app.listings.products import ProductCatalog, ProductCart, price_product_order
-from app.services.auth_service import utc_now
+from app.services.auth_service import utc_now, validate_required_phone
 from app.services.media_service import upload_media, resolve_media_url
 from app.services.image_validation import ImageValidationError
 from app.services.storage_service import StorageError
@@ -43,7 +43,17 @@ class ListingInput(BaseModel):
 class OrderInput(ProductCart):
     buyer_name: str = Field(min_length=2, max_length=160)
     buyer_email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$", max_length=320)
-    buyer_phone: str = Field(pattern=r"^\+?[0-9 ()-]{7,25}$")
+    buyer_phone: str = Field(min_length=10, max_length=20)
+    delivery_address: str | None = Field(default=None, max_length=500)
+    delivery_state: str | None = Field(default=None, max_length=100)
+    delivery_district: str | None = Field(default=None, max_length=100)
+    delivery_city: str | None = Field(default=None, max_length=100)
+    delivery_pincode: str | None = Field(default=None, pattern=r"^[1-9][0-9]{5}$")
+
+    @field_validator("buyer_phone")
+    @classmethod
+    def _validate_buyer_phone(cls, value: str) -> str:
+        return validate_required_phone(value)
     request_key: UUID
     access_token: str = Field(min_length=32, max_length=128)
 
@@ -159,7 +169,22 @@ def list_listings(db: Session = Depends(get_db), user: User = Depends(require_ro
     else:
         organization_ids = select(OrganizationMember.organization_id).where(OrganizationMember.user_id == user.id)
         items = db.scalars(select(ProductListing).where(ProductListing.organization_id.in_(organization_ids)).order_by(ProductListing.created_at.desc())).all()
-    return [serialize_listing(db, item, storage, True) for item in items]
+    order_counts: dict[str, dict[str, int]] = {}
+    if items:
+        counts = db.execute(
+            select(ProductOrder.listing_id, ProductOrder.status, func.count(ProductOrder.id))
+            .where(ProductOrder.listing_id.in_([item.id for item in items]))
+            .group_by(ProductOrder.listing_id, ProductOrder.status)
+        ).all()
+        for listing_id, order_status, count in counts:
+            order_counts.setdefault(str(listing_id), {})[order_status] = count
+    return [
+        {**serialize_listing(db, item, storage, True), "order_summary": {
+            "payment_review": order_counts.get(str(item.id), {}).get("under_review", 0),
+            "ready_for_pickup": order_counts.get(str(item.id), {}).get("confirmed", 0),
+        }}
+        for item in items
+    ]
 
 
 @router.get("/organizer/product-listings/{listing_id}")
@@ -175,6 +200,8 @@ def update_listing(listing_id: UUID, payload: ListingInput, db: Session = Depend
     item = listing(db, listing_id, user)
     if payload.organization_id != item.organization_id:
         raise HTTPException(422, "A listing cannot be transferred to another organization")
+    if item.status == "published" and not any(product.active for product in payload.catalog.products):
+        raise HTTPException(422, "Close sales before removing every active product")
     expire_orders(db, item)
     current = ProductCatalog.model_validate(item.catalog)
     has_orders = db.scalar(select(ProductOrder.id).where(ProductOrder.listing_id == item.id).limit(1)) is not None
@@ -247,11 +274,14 @@ def set_status(listing_id: UUID, payload: StatusInput, db: Session = Depends(get
     item = listing(db, listing_id, user)
     org = db.get(Organization, item.organization_id)
     if payload.status == "published":
+        catalog = ProductCatalog.model_validate(item.catalog)
+        if not any(product.active for product in catalog.products):
+            raise HTTPException(422, "Add at least one active product before publishing")
         if not org.allow_direct_upi:
             raise HTTPException(422, "Product sales currently require Direct UPI access")
         if org.credit_deduction_mode == "MANUAL_EVENT_SETTLEMENT":
             raise HTTPException(422, "Product sales require automatic SportPass credit settlement")
-        if any(v.price_paise > 0 for p in ProductCatalog.model_validate(item.catalog).products for v in p.variants) and org.paid_verification_status != "VERIFIED":
+        if any(v.price_paise > 0 for p in catalog.products for v in p.variants) and org.paid_verification_status != "VERIFIED":
             raise HTTPException(422, "Complete paid organizer verification before publishing")
     item.status = payload.status
     db.commit()
@@ -304,6 +334,16 @@ def place_order(listing_id: UUID, payload: OrderInput, db: Session = Depends(get
         raise HTTPException(422, "Sales are closed")
     expire_orders(db, item)
     catalog = ProductCatalog.model_validate(item.catalog)
+    if catalog.fulfillment == "home_delivery" or catalog.delivery_address_required:
+        required_delivery = {
+            "address": payload.delivery_address,
+            "state": payload.delivery_state,
+            "district": payload.delivery_district,
+            "city": payload.delivery_city,
+            "pincode": payload.delivery_pincode,
+        }
+        if any(not value or not value.strip() for value in required_delivery.values()):
+            raise HTTPException(422, "Complete the delivery address, state, district, city, and pincode")
     try:
         result = price_product_order(db, catalog=catalog, cart=payload, organization=db.get(Organization, item.organization_id), fee_bearer=item.fee_bearer)
     except ValueError as exc:
@@ -316,7 +356,15 @@ def place_order(listing_id: UUID, payload: OrderInput, db: Session = Depends(get
     order = ProductOrder(listing_id=item.id, request_key=str(payload.request_key), access_hash=digest(payload.access_token), buyer_name=payload.buyer_name, buyer_email=str(payload.buyer_email), buyer_phone=payload.buyer_phone, snapshot=result, status="awaiting_payment" if result["total_paise"] else "confirmed", reserved_until=utc_now() + dt.timedelta(minutes=30) if result["total_paise"] else None)
     db.add(order)
     db.flush()
-    result = {**result, "pickup_instructions": catalog.pickup_instructions, "listing_name": item.name}
+    result = {**result, "fulfillment": catalog.fulfillment, "pickup_instructions": catalog.pickup_instructions, "listing_name": item.name}
+    if catalog.fulfillment == "home_delivery" or catalog.delivery_address_required:
+        result["delivery_address"] = {
+            "address": payload.delivery_address.strip(),
+            "state": payload.delivery_state.strip(),
+            "district": payload.delivery_district.strip(),
+            "city": payload.delivery_city.strip(),
+            "pincode": payload.delivery_pincode,
+        }
     if result["total_paise"]:
         settings = SimpleNamespace(method="manual_upi", is_active=True, upi_id=item.upi_id, payee_name=item.payee_name, instructions="Pay the exact total, then submit your payment reference for organizer review.", qr_image_url=None)
         result["payment"] = build_upi_payment_details(settings, amount_paise=result["total_paise"], registration_reference=str(order.id), merchandise_order=True)

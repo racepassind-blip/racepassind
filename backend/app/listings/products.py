@@ -51,9 +51,10 @@ class ProductCatalog(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     listing_type: Literal["products"] = "products"
-    products: list[Product] = Field(min_length=1, max_length=100)
+    products: list[Product] = Field(default_factory=list, max_length=100)
     max_units_per_order: int = Field(default=10, strict=True, ge=1, le=100)
-    fulfillment: Literal["pickup"] = "pickup"
+    fulfillment: Literal["pickup", "home_delivery"] = "pickup"
+    delivery_address_required: bool = False
     pickup_instructions: str = Field(min_length=1, max_length=2000)
 
     @model_validator(mode="after")

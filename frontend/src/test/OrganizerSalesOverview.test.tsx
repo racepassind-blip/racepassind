@@ -34,3 +34,14 @@ it("searches and paginates many storefronts", () => {
   fireEvent.click(screen.getByRole("button", { name: "Create storefront" }));
   expect(onCreate).toHaveBeenCalledOnce();
 });
+
+it("shows the next action and inventory for each storefront", () => {
+  const stores = [
+    { id: "draft", name: "New store", status: "draft", catalog: { products: [] } },
+    { id: "orders", name: "Race shop", status: "published", catalog: { products: [{ variants: [{ stock: 8 }] }] }, order_summary: { payment_review: 2, ready_for_pickup: 1 } },
+  ];
+  render(<MemoryRouter><StorefrontDirectory stores={stores} onCreate={vi.fn()} /></MemoryRouter>);
+  expect(screen.getByText("Add products to finish setting up this store")).toBeInTheDocument();
+  expect(screen.getByText("2 payments to review")).toBeInTheDocument();
+  expect(screen.getByText(/8 units available · 1 ready for pickup/)).toBeInTheDocument();
+});
