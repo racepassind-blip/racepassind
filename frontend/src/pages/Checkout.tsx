@@ -135,6 +135,7 @@ const Checkout = () => {
   const [utrReference, setUtrReference] = useState("");
   const [registrationMode, setRegistrationMode] = useState<RegistrationMode | null>(null);
   const [qrDownloaded, setQrDownloaded] = useState(false);
+  const [responsibilityAcknowledged, setResponsibilityAcknowledged] = useState(false);
 
   // Advancing a checkout step (or switching participant) can leave mobile users
   // scrolled at the bottom of the previous section. Reset to the top so the new
@@ -384,6 +385,10 @@ const Checkout = () => {
   if (cart.reduce((sum, line) => sum + line.quantity, 0) > MAX_TICKETS_PER_TRANSACTION) return <Layout><div className="mx-auto max-w-2xl px-4 py-20 text-center"><h1 className="text-2xl font-extrabold">Maximum {MAX_TICKETS_PER_TRANSACTION} tickets per transaction</h1><p className="mt-3 text-muted-foreground">Your selection exceeds the limit. Reduce your selection before entering participant details.</p><Button className="mt-6" onClick={() => navigate(`/event/${event.id}`)}>Change ticket selection</Button></div></Layout>;
 
   const createRegistration = async () => {
+    if (totalPaise > 0 && !responsibilityAcknowledged) {
+      toast.error("Please review and acknowledge the booking details before continuing.");
+      return;
+    }
     if (!participantReady || !eventId) {
       toast.error(`Complete all required ${participantLabel.toLowerCase()} fields before continuing.`);
       return;
@@ -855,10 +860,19 @@ const Checkout = () => {
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
                     ) : (
-                      <Button type="button" onClick={createRegistration} disabled={!participantReady || loading}>
+                      <>
+                      {totalPaise > 0 && <div className="mb-4 rounded-xl border border-primary/15 bg-primary/[0.035] p-4 text-sm text-muted-foreground">
+                        <p className="font-semibold text-foreground">About this booking</p>
+                        <p className="mt-1 leading-5">This event is organized and conducted by <span className="font-semibold text-foreground">{event.organizer}</span>. SportPass India provides the registration, ticketing and event-management platform.</p>
+                        <p className="mt-2 leading-5">The organizer is responsible for the event, including its conduct, venue, permissions, safety, cancellations and refunds as per the displayed refund policy.</p>
+                        {event.paymentSettings?.method === "DIRECT_UPI" && <p className="mt-2 leading-5">The registration amount is paid directly to <span className="font-semibold text-foreground">{event.paymentSettings.payeeName || event.organizer}</span> and is not held by SportPass India.</p>}
+                        <label className="mt-3 flex items-start gap-2 text-sm font-medium text-foreground"><input type="checkbox" checked={responsibilityAcknowledged} onChange={(e) => setResponsibilityAcknowledged(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-input accent-primary" /> <span>I have reviewed the event, organizer and refund details.</span></label>
+                      </div>}
+                      <Button type="button" onClick={createRegistration} disabled={!participantReady || loading || (totalPaise > 0 && !responsibilityAcknowledged)}>
                         {loading ? "Creating registrations…" : totalPaise === 0 ? "Complete free registrations" : "Continue to payment"}
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
+                      </>
                     )}
                   </div>
                   {!participantReady && activeRiderIndex === totalParticipants - 1 && (
