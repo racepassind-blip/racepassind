@@ -25,6 +25,7 @@ from app.services.payment_service import normalize_upi_id, normalize_payment_ref
 from app.services.platform_fee_service import compute_product_order_pricing
 from app.services.product_order_email import send_product_order_cancellation
 from app.services.credit_service import debit_credits, CreditValidationError
+from app.services.checkout_payments import fingerprint, sync_product_payment
 
 router = APIRouter()
 
@@ -135,6 +136,7 @@ def expire_orders(db, item):
         restore_stock(item, order)
         order.status = "expired"
         order.reserved_until = None
+        sync_product_payment(db, order)
 
 
 def serialize_listing(db, item, storage, private=False):
@@ -337,10 +339,16 @@ def serialize_order(order):
 @router.post("/products/{listing_id}/orders", dependencies=[Depends(require_csrf)])
 def place_order(listing_id: UUID, payload: OrderInput, db: Session = Depends(get_db)):
     item = listing(db, listing_id)
+    request_fingerprint = fingerprint(payload.model_dump(mode="json", exclude={"request_key", "access_token"}))
     existing = db.scalar(select(ProductOrder).where(ProductOrder.request_key == str(payload.request_key)))
     if existing:
         if existing.listing_id != item.id or not hmac.compare_digest(existing.access_hash, digest(payload.access_token)):
             raise HTTPException(409, "Order request already used")
+        try:
+            sync_product_payment(db, existing, request_fingerprint=request_fingerprint)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        db.commit()
         return serialize_order(existing)
     if item.status != "published":
         raise HTTPException(422, "Sales are closed")
@@ -381,6 +389,7 @@ def place_order(listing_id: UUID, payload: OrderInput, db: Session = Depends(get
         settings = SimpleNamespace(method="manual_upi", is_active=True, upi_id=item.upi_id, payee_name=(item.payee_name or "").strip() or item.name, instructions="Pay the exact total, then submit your payment reference for organizer review.", qr_image_url=None)
         result["payment"] = build_upi_payment_details(settings, amount_paise=result["total_paise"], registration_reference=str(order.id), merchandise_order=True)
     order.snapshot = result
+    sync_product_payment(db, order, request_fingerprint=request_fingerprint)
     db.commit()
     return serialize_order(order)
 
@@ -392,10 +401,11 @@ def delete_order(listing_id: UUID, order_id: UUID, db: Session = Depends(get_db)
     if order is None:
         raise HTTPException(404, "Order not found")
     if order.status not in {"expired", "rejected", "cancelled"}:
-        raise HTTPException(409, "Only expired, rejected, or cancelled orders can be deleted")
-    db.delete(order)
+        raise HTTPException(409, "Only expired, rejected, or cancelled orders can be archived")
+    # Preserve payment history and request keys for delayed retries/reconciliation.
+    order.archived_at = utc_now()
     db.commit()
-    return {"deleted": True, "id": str(order_id)}
+    return {"deleted": True, "archived": True, "id": str(order_id)}
 
 
 @router.post("/organizer/product-listings/{listing_id}/orders/{order_id}/cancellation-email", dependencies=[Depends(require_csrf)])
@@ -443,6 +453,7 @@ def submit_reference(order_id: UUID, payload: ReferenceInput, x_order_token: str
     order.payment_reference = reference
     order.status = "under_review"
     order.reserved_until = None
+    sync_product_payment(db, order)
     db.commit()
     return serialize_order(order)
 
@@ -485,7 +496,7 @@ def orders(listing_id: UUID, db: Session = Depends(get_db), user: User = Depends
     item = listing(db, listing_id, user)
     expire_orders(db, item)
     db.commit()
-    return [{**serialize_order(order), "buyer_name": order.buyer_name, "buyer_email": order.buyer_email, "buyer_phone": order.buyer_phone} for order in db.scalars(select(ProductOrder).where(ProductOrder.listing_id == item.id).order_by(ProductOrder.created_at.desc()).limit(500)).all()]
+    return [{**serialize_order(order), "buyer_name": order.buyer_name, "buyer_email": order.buyer_email, "buyer_phone": order.buyer_phone} for order in db.scalars(select(ProductOrder).where(ProductOrder.listing_id == item.id, ProductOrder.archived_at.is_(None)).order_by(ProductOrder.created_at.desc()).limit(500)).all()]
 
 
 @router.post("/organizer/product-listings/{listing_id}/orders/{order_id}", dependencies=[Depends(require_csrf)])
@@ -514,5 +525,6 @@ def review(listing_id: UUID, order_id: UUID, payload: DecisionInput, db: Session
         restore_stock(item, order)
         order.reserved_until = None
     order.status = target
+    sync_product_payment(db, order)
     db.commit()
     return serialize_order(order)

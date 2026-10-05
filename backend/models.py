@@ -1372,5 +1372,48 @@ class ProductOrder(Base):
     snapshot: Mapped[dict] = mapped_column(JSON_CONFIG, nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="awaiting_payment")
     payment_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    archived_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reserved_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CheckoutPayment(Base):
+    """Shared payment identity; existing domain orders remain authoritative."""
+    __tablename__ = "checkout_payments"
+    __table_args__ = (
+        CheckConstraint("(product_order_id IS NULL) <> (event_order_id IS NULL)", name="ck_checkout_one_owner"),
+        CheckConstraint("amount_paise >= 0 AND fee_paise >= 0 AND fee_paise <= amount_paise", name="ck_checkout_amounts"),
+        CheckConstraint("mode IN ('DIRECT_UPI', 'MANUAL_OFFLINE', 'CASHFREE_PLATFORM', 'CASHFREE_SPLIT')", name="ck_checkout_mode"),
+        UniqueConstraint("provider_account", "provider_environment", "provider_order_id", name="uq_checkout_provider_order"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    product_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("product_orders.id"), unique=True)
+    event_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("orders.id"), unique=True)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    fee_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
+    fee_funding: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="awaiting")
+    settlement_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_applicable")
+    vendor_id: Mapped[str | None] = mapped_column(String(120))
+    provider_account: Mapped[str | None] = mapped_column(String(120))
+    provider_environment: Mapped[str | None] = mapped_column(String(16))
+    provider_order_id: Mapped[str | None] = mapped_column(String(120))
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CheckoutReceipt(Base):
+    """Immutable success evidence and its disposition; not a browser input."""
+    __tablename__ = "checkout_receipts"
+    __table_args__ = (UniqueConstraint("provider", "account", "environment", "payment_id", name="uq_checkout_receipt"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    checkout_payment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("checkout_payments.id"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    account: Mapped[str] = mapped_column(String(120), nullable=False)
+    environment: Mapped[str] = mapped_column(String(16), nullable=False)
+    payment_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    disposition: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

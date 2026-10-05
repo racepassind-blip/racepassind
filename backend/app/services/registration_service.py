@@ -19,6 +19,7 @@ from app.services.auth_service import hash_opaque_token, normalize_email, normal
 from app.services.checkpoint_service import ensure_default_checkpoint
 from app.services.audit_service import record_audit
 from app.services.payment_service import normalize_payment_reference, validate_manual_upi_settings
+from app.services.checkout_payments import sync_event_payment
 from app.services.registration_config_service import calculate_registration_total, normalize_event_configs
 from app.services.platform_fee_service import compute_participant_pricing
 from app.services.credit_service import CREDIT_CHARGEABLE_PAYMENT_GATEWAYS, CreditValidationError, debit_credits, CREDIT_REGISTRATION_DEBIT
@@ -365,6 +366,7 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
         )
     )
     record_audit(db, actor_user_id=user_id, action="registration_created", resource_type="registration", resource_id=registration.id)
+    sync_event_payment(db, order)
     db.commit()
     saved = db.scalar(registration_query().where(Registration.id == registration.id))
     return saved, confirmation_token, claim_code
@@ -416,6 +418,8 @@ def update_payment_reference(db: Session, confirmation_token: str, utr_reference
             resource_id=child.id,
             metadata={"submission_mode": "confirmation_token", "reference_present": True},
         )
+    if order is not None:
+        sync_event_payment(db, order)
     db.commit()
     return db.scalar(registration_query().where(Registration.id == registration.id))
 
@@ -1114,6 +1118,7 @@ def decide_registration_payment(
         )
     if order is not None:
         order.status = "paid" if decision == "approve" else "cancelled"
+        sync_event_payment(db, order)
     db.commit()
     reloaded = _reload_organizer_registration(db, registration.id)
 
@@ -1556,6 +1561,7 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
             paid_at=now if base_paise == 0 else None,
         ))
         record_audit(db, actor_user_id=user_id, action="registration_created", resource_type="registration", resource_id=registration.id)
+    sync_event_payment(db, order)
     db.commit()
     saved = _registrations_for_order(db, order.id)
     return saved, confirmation_tokens, claim_codes
@@ -1719,6 +1725,7 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
             "expected_amount_paise": amount_paise,
         },
     )
+    sync_event_payment(db, order)
     db.commit()
     return _reload_organizer_registration(db, registration.id)
 

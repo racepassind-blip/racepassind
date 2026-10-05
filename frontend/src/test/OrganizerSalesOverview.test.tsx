@@ -14,13 +14,13 @@ it("requires confirmation to cancel an awaiting-payment order", () => {
   fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
   expect(decide).toHaveBeenCalledWith(order, "cancel");
 });
-it("allows an organizer to delete an expired order after confirmation", () => {
+it("allows an organizer to archive an expired order after confirmation", () => {
   const order = { ...orders[0], status: "expired" };
   const onDelete = vi.fn().mockResolvedValue(undefined);
   render(<OrderDashboard orders={[order]} onDecision={vi.fn()} onDelete={onDelete} onRefresh={vi.fn()} busy={false} error="" />);
-  fireEvent.click(screen.getByRole("button", { name: "Delete order" }));
+  fireEvent.click(screen.getByRole("button", { name: "Archive order" }));
   expect(onDelete).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Delete order" }));
+  fireEvent.click(screen.getByRole("button", { name: "Archive order" }));
   expect(onDelete).toHaveBeenCalledWith(order);
 });
 it("finds merchandise orders by the new number, legacy number, and full ID", () => {

@@ -152,8 +152,8 @@ export default function OrganizerProducts() {
   };
   const removeOrder = async (order: Order) => {
     setOrderBusy(true); setOrderError("");
-    try { await apiRequest(`/organizer/product-listings/${listingId}/orders/${order.id}`, { method: "DELETE" }); setOrders((current) => current.filter((item) => item.id !== order.id)); toast.success("Order deleted."); }
-    catch (error) { setOrderError(error instanceof Error ? error.message : "Could not delete order."); }
+    try { await apiRequest(`/organizer/product-listings/${listingId}/orders/${order.id}`, { method: "DELETE" }); setOrders((current) => current.filter((item) => item.id !== order.id)); toast.success("Order archived. Payment history preserved."); }
+    catch (error) { setOrderError(error instanceof Error ? error.message : "Could not archive order."); }
     finally { setOrderBusy(false); }
   };
   const notifyCancellation = async (order: Order) => {

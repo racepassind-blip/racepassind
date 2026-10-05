@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from db import Base, get_db
-from models import Organization, ProductListing, ProductOrder, ProductImage
+from models import Organization, ProductListing, ProductOrder, ProductImage, CheckoutPayment, CheckoutReceipt
 from app.api.v1.products import upload_image, serialize_listing, list_listings, update_listing, set_status, ListingInput, StatusInput, inventory_summary, product_fee_preview, ProductFeePreview
 from app.api.v1.products import review, DecisionInput
 from app.api.deps import require_csrf
@@ -52,6 +52,8 @@ class ProductSalesE2ETests(unittest.TestCase):
 
     def setUp(self):
         db = self.Session()
+        db.query(CheckoutReceipt).delete()
+        db.query(CheckoutPayment).delete()
         db.query(ProductImage).delete()
         db.query(ProductOrder).delete()
         db.query(ProductListing).delete()
@@ -136,6 +138,20 @@ class ProductSalesE2ETests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         return response.json()
 
+    def test_checkout_retries_preserve_stock_and_reject_changed_payload(self):
+        payload = {**self.cart(1), "buyer_name": "Test Buyer", "buyer_phone": "9999999999",
+                   "request_key": str(uuid4()), "access_token": "b" * 64}
+        url = f"/api/v1/products/{LISTING_ID}/orders"
+        first = self.client.post(url, json=payload)
+        self.assertEqual(first.status_code, 200)
+        second = self.client.post(url, json=payload)
+        self.assertEqual(second.json()["id"], first.json()["id"])
+        changed = self.client.post(url, json={**payload, "buyer_name": "Different Buyer"})
+        self.assertEqual(changed.status_code, 409)
+        with self.Session() as db:
+            self.assertEqual(db.query(CheckoutPayment).count(), 1)
+            self.assertEqual(db.get(ProductListing, LISTING_ID).catalog["products"][0]["variants"][0]["stock"], 9)
+
     def editor_payload(self, db):
         item = db.get(ProductListing, LISTING_ID)
         return ListingInput.model_validate({
@@ -181,7 +197,7 @@ class ProductSalesE2ETests(unittest.TestCase):
             db.commit()
             result = delete_order(LISTING_ID, order_id, db=db, user=Mock())
             self.assertTrue(result["deleted"])
-            self.assertIsNone(db.get(ProductOrder, order_id))
+            self.assertIsNotNone(db.get(ProductOrder, order_id).archived_at)
 
     def test_payment_reference_is_required_before_review(self):
         order = self.place_test_order()

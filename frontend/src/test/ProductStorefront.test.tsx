@@ -7,7 +7,7 @@ vi.mock("@/components/Layout", () => ({ Layout: ({ children }: { children: React
 vi.mock("react-router-dom", () => ({ useParams: () => ({ listingId: "store" }) }));
 vi.mock("@/lib/api", () => ({ apiRequest: vi.fn() }));
 const listing = { name: "Race store", status: "published", catalog: { max_units_per_order: 5, pickup_instructions: "Race village", products: [{ id: "jersey", name: "Race jersey", image_ids: ["front", "back"], size_chart_image_id: "chart", variants: [{ id: "s", label: "S", stock: 0, price_paise: 10000 }, { id: "m", label: "M", stock: 1, price_paise: 12000 }] }] }, images: { front: "/front.png", back: "/back.png", chart: "/actual-chart.png" } };
-beforeEach(() => vi.mocked(apiRequest).mockResolvedValue(listing));
+beforeEach(() => { vi.mocked(apiRequest).mockResolvedValue(listing); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 it.each(["ORGANIZER", "PARTICIPANT"])("shows a separate product fee only when the buyer pays (%s)", async (bearer) => {
   vi.mocked(apiRequest).mockResolvedValue({ ...listing, fee_bearer: bearer, price_previews: { m: { platformFeePaise: 2000, participantTotalPaise: bearer === "PARTICIPANT" ? 14000 : 12000 } } });
@@ -78,6 +78,29 @@ it("prevents purchases from a closed store", async () => {
   vi.mocked(apiRequest).mockResolvedValue({ ...listing, status: "closed" });
   render(<ProductStorefront />);
   expect(await screen.findByRole("button", { name: "Add Race jersey M" })).toBeDisabled();
+});
+it("reuses the order key and access token when checkout times out", async () => {
+  const requests: string[] = [];
+  vi.mocked(apiRequest).mockImplementation(async (path, options) => {
+    if (path.endsWith("/quote")) return { subtotal_paise: 12000, platform_fee_paise: 0, total_paise: 12000, fee_bearer: "organizer" };
+    if (path.endsWith("/orders")) {
+      requests.push(String(options?.body));
+      throw new Error("Request timed out");
+    }
+    return listing;
+  });
+  render(<ProductStorefront />);
+  fireEvent.click(await screen.findByRole("button", { name: "Add Race jersey M" }));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Test Buyer" } });
+  fireEvent.change(screen.getByLabelText("Phone (required)"), { target: { value: "9876543210" } });
+  const pay = screen.getByRole("button", { name: /Continue to payment/ });
+  await waitFor(() => expect(pay).toBeEnabled());
+  fireEvent.click(pay);
+  await waitFor(() => expect(requests).toHaveLength(1));
+  await waitFor(() => expect(pay).toBeEnabled());
+  fireEvent.click(pay);
+  await waitFor(() => expect(requests).toHaveLength(2));
+  expect(JSON.parse(requests[1])).toEqual(JSON.parse(requests[0]));
 });
 it("shows the generated order ID and asks the buyer to save it", async () => {
   const orderId = "a931e32d-b644-4dde-b992-5e10426a9f48";

@@ -41,6 +41,8 @@ export default function ProductStorefront() {
   const [token, setToken] = useState("");
   const [reference, setReference] = useState("");
   const [placing, setPlacing] = useState(false);
+  const checkoutBusy = useRef(false);
+  const checkoutRequest = useRef<{ signature: string; key: string; token: string } | null>(null);
   const [sizeChart, setSizeChart] = useState<{ name: string; url: string } | null>(null);
   const lines = useMemo(() => Object.entries(cart).filter(([, item]) => item.quantity > 0).map(([key, item]) => { const [product_id, variant_id] = key.split(":"); return { product_id, variant_id, quantity: item.quantity, customization: item.customization || null }; }), [cart]);
   const units = lines.reduce((sum, line) => sum + line.quantity, 0);
@@ -68,7 +70,30 @@ export default function ProductStorefront() {
   const deliveryRequired = listing.catalog.fulfillment === "home_delivery" || listing.catalog.delivery_address_required;
   const deliveryComplete = !deliveryRequired || Boolean(address.address.trim() && address.state && address.district && address.city && /^[1-9][0-9]{5}$/.test(address.pincode));
   const canCheckout = Boolean(quote && buyer.name.trim().length >= 2 && (!buyer.email.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(buyer.email.trim())) && isValidIndianMobile(buyer.phone) && deliveryComplete && !placing);
-  const place = async () => { if (!listingId || !quote) return; setPlacing(true); const nextToken = Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join(""); try { const result = await apiRequest<Order>(`/products/${listingId}/orders`, { method: "POST", body: JSON.stringify({ lines, buyer_name: buyer.name, buyer_email: buyer.email.trim(), buyer_phone: buyer.phone, ...(deliveryRequired ? { delivery_address: address.address, delivery_state: address.state, delivery_district: address.district, delivery_city: address.city, delivery_pincode: address.pincode } : {}), request_key: crypto.randomUUID(), access_token: nextToken }) }); setToken(nextToken); setOrder(result); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not place order."); } finally { setPlacing(false); } };
+  const place = async () => {
+    if (!listingId || !canCheckout || checkoutBusy.current) return;
+    checkoutBusy.current = true;
+    setPlacing(true);
+    try {
+      const details = { lines, buyer_name: buyer.name, buyer_email: buyer.email.trim(), buyer_phone: buyer.phone,
+        ...(deliveryRequired ? { delivery_address: address.address, delivery_state: address.state, delivery_district: address.district, delivery_city: address.city, delivery_pincode: address.pincode } : {}) };
+      const signature = JSON.stringify([listingId, details]);
+      if (checkoutRequest.current?.signature !== signature) {
+        checkoutRequest.current = { signature, key: crypto.randomUUID(),
+          token: Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("") };
+      }
+      const request = checkoutRequest.current;
+      const result = await apiRequest<Order>(`/products/${listingId}/orders`, { method: "POST",
+        body: JSON.stringify({ ...details, request_key: request.key, access_token: request.token }) });
+      setToken(request.token);
+      setOrder(result);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not place order. Try again to recover your order.");
+    } finally {
+      checkoutBusy.current = false;
+      setPlacing(false);
+    }
+  };
   const submitReference = async () => { if (!order || reference.trim().length < 4 || reference.trim().length > 120) return; try { const updated = await apiRequest<Order>(`/product-orders/${order.id}/reference`, { method: "POST", headers: { "X-Order-Token": token }, body: JSON.stringify({ reference: reference.trim() }) }); setOrder(updated); toast.success("Payment reference submitted for review."); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not submit payment reference."); } };
   const initials = (listing.organizer?.name || listing.name).split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
   const activeProducts = listing.catalog.products.filter((product) => product.active !== false);
