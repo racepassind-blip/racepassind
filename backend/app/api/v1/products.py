@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from db import get_db
-from models import Organization, OrganizationMember, ProductListing, ProductImage, ProductOrder, User
+from models import Organization, OrganizationMember, OrganizationPaymentDestination, ProductListing, ProductImage, ProductOrder, User
 from app.api.deps import get_authorized_organization, require_csrf, require_roles
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
@@ -22,6 +22,7 @@ from app.services.media_service import upload_media, resolve_media_url
 from app.services.image_validation import ImageValidationError
 from app.services.storage_service import StorageError
 from app.services.payment_service import normalize_upi_id, normalize_payment_reference, build_upi_payment_details
+from app.services.organizer_payment_security import assert_product_sales_available, submit_destination, USABLE_DESTINATION_STATUSES
 from app.services.platform_fee_service import compute_product_order_pricing
 from app.services.product_order_email import send_product_order_cancellation
 from app.services.credit_service import debit_credits, CreditValidationError
@@ -161,14 +162,15 @@ def validate_images(db, item_id, catalog):
 
 @router.post("/organizer/product-listings", dependencies=[Depends(require_csrf)])
 def create_listing(payload: ListingInput, db: Session = Depends(get_db), user: User = Depends(require_roles("organizer", "admin")), storage=Depends(get_storage_service)):
-    get_authorized_organization(db, user, payload.organization_id)
+    organization = get_authorized_organization(db, user, payload.organization_id)
     try:
         upi_id = normalize_upi_id(payload.upi_id)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
     if any(product.image_ids or product.size_chart_image_id for product in payload.catalog.products):
         raise HTTPException(422, "Save the listing before uploading images")
-    item = ProductListing(organization_id=payload.organization_id, name=payload.name, description=payload.description, catalog=payload.catalog.model_dump(mode="json"), upi_id=upi_id, payee_name=payload.payee_name, fee_bearer=payload.fee_bearer, status="draft")
+    destination = submit_destination(db, organization_id=organization.id, upi_id=upi_id, payee_name=payload.payee_name, actor_user_id=user.id)
+    item = ProductListing(organization_id=payload.organization_id, name=payload.name, description=payload.description, catalog=payload.catalog.model_dump(mode="json"), upi_id=upi_id, payee_name=payload.payee_name, payment_destination_id=destination.id, fee_bearer=payload.fee_bearer, status="draft")
     db.add(item)
     db.commit()
     return serialize_listing(db, item, storage, True)
@@ -247,7 +249,9 @@ def update_listing(listing_id: UUID, payload: ListingInput, db: Session = Depend
         item.upi_id = normalize_upi_id(payload.upi_id)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
-    item.name, item.description, item.payee_name, item.fee_bearer = payload.name, payload.description, payload.payee_name, payload.fee_bearer
+    upi_id = normalize_upi_id(payload.upi_id)
+    destination = submit_destination(db, organization_id=item.organization_id, upi_id=upi_id, payee_name=payload.payee_name, actor_user_id=user.id)
+    item.name, item.description, item.upi_id, item.payee_name, item.payment_destination_id, item.fee_bearer = payload.name, payload.description, upi_id, payload.payee_name, destination.id, payload.fee_bearer
     item.catalog = payload.catalog.model_dump(mode="json")
     db.commit()
     return serialize_listing(db, item, storage, True)
@@ -289,12 +293,18 @@ def set_status(listing_id: UUID, payload: StatusInput, db: Session = Depends(get
         catalog = ProductCatalog.model_validate(item.catalog)
         if not any(product.active for product in catalog.products):
             raise HTTPException(422, "Add at least one active product before publishing")
-        if not org.allow_direct_upi:
+        if org.status != "active" or not org.allow_direct_upi:
             raise HTTPException(422, "Product sales currently require Direct UPI access")
         if org.credit_deduction_mode == "MANUAL_EVENT_SETTLEMENT":
             raise HTTPException(422, "Product sales require automatic SportPass credit settlement")
         if any(v.price_paise > 0 for p in catalog.products for v in p.variants) and org.paid_verification_status != "VERIFIED":
             raise HTTPException(422, "Complete paid organizer verification before publishing")
+        if any(v.price_paise > 0 for p in catalog.products for v in p.variants):
+            destination = db.get(OrganizationPaymentDestination, item.payment_destination_id)
+            if (destination is None or destination.organization_id != item.organization_id
+                    or destination.status not in USABLE_DESTINATION_STATUSES
+                    or destination.upi_id != item.upi_id or destination.payee_name != item.payee_name):
+                raise HTTPException(422, "Approve the Direct UPI payment destination before publishing")
     item.status = payload.status
     db.commit()
     return {"status": item.status}
@@ -360,6 +370,11 @@ def place_order(listing_id: UUID, payload: OrderInput, db: Session = Depends(get
         result = price_product_order(db, catalog=catalog, cart=payload, organization=db.get(Organization, item.organization_id), fee_bearer=item.fee_bearer)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
+    if result["total_paise"]:
+        try:
+            assert_product_sales_available(db, item)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
     for line in payload.lines:
         product = next(p for p in catalog.products if p.id == line.product_id)
         variant = next(v for v in product.variants if v.id == line.variant_id)

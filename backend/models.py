@@ -116,6 +116,9 @@ class Organization(Base):
     paid_verification_reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paid_verification_reviewed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
     paid_verification_rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    paid_verification_suspended_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_verification_suspended_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    paid_verification_suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Payment access control: admin controls whether this org may use Direct UPI.
     # Direct UPI sends participant money straight to the organizer; SportPass carries
@@ -999,11 +1002,65 @@ class OrganizationMember(Base):
     user: Mapped[User] = relationship(back_populates="memberships")
 
 
+class OrganizationVerificationSubmission(Base):
+    __tablename__ = "organization_verification_submissions"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    organization_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    pan_number: Mapped[str] = mapped_column(String(10), nullable=False)
+    name_as_per_pan: Mapped[str] = mapped_column(String(200), nullable=False)
+    gst_registered: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    gst_number: Mapped[str | None] = mapped_column(String(15), nullable=True)
+    billing_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    billing_address: Mapped[str] = mapped_column(Text, nullable=False)
+    billing_city: Mapped[str] = mapped_column(String(120), nullable=False)
+    billing_state: Mapped[str] = mapped_column(String(120), nullable=False)
+    billing_pincode: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="UNDER_REVIEW")
+    submitted_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    terms_accepted_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    terms_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class OrganizationPaymentDestination(Base):
+    __tablename__ = "organization_payment_destinations"
+    __table_args__ = (Index("ix_payment_destination_org_created", "organization_id", "created_at"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    upi_id: Mapped[str] = mapped_column(String(320), nullable=False)
+    payee_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="UNDER_REVIEW")
+    submitted_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class OrganizationVerificationDocument(Base):
+    __tablename__ = "organization_verification_documents"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    document_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    object_key: Mapped[str] = mapped_column(String(500), nullable=False, unique=True)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class EventPaymentSettings(Base):
     __tablename__ = "event_payment_settings"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, unique=True, index=True)
+    payment_destination_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("organization_payment_destinations.id"), nullable=True, index=True)
     method: Mapped[str] = mapped_column(String, nullable=False, server_default="manual_upi")
     upi_id: Mapped[str] = mapped_column(String, nullable=False)
     payee_name: Mapped[str] = mapped_column(String, nullable=False)
@@ -1022,6 +1079,7 @@ class EventPaymentSettings(Base):
     )
 
     event: Mapped[Event] = relationship(back_populates="payment_settings")
+    payment_destination: Mapped[OrganizationPaymentDestination | None] = relationship()
 
 
 class AuthSession(Base):
@@ -1324,6 +1382,9 @@ __all__ = [
     "DiscountCode",
     "RaceResult",
     "OrganizationMember",
+    "OrganizationVerificationSubmission",
+    "OrganizationPaymentDestination",
+    "OrganizationVerificationDocument",
     "EventPaymentSettings",
     "AuthSession",
     "AuditLog",
@@ -1350,6 +1411,7 @@ class ProductListing(Base):
     fee_bearer: Mapped[str] = mapped_column(String(20), nullable=False, default="ORGANIZER")
     upi_id: Mapped[str] = mapped_column(String(320), nullable=False)
     payee_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    payment_destination_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("organization_payment_destinations.id"), nullable=True, index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

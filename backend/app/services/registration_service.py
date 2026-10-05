@@ -19,6 +19,7 @@ from app.services.auth_service import hash_opaque_token, normalize_email, normal
 from app.services.checkpoint_service import ensure_default_checkpoint
 from app.services.audit_service import record_audit
 from app.services.payment_service import normalize_payment_reference, validate_manual_upi_settings
+from app.services.organizer_payment_security import assert_paid_event_available
 from app.services.registration_config_service import calculate_registration_total, normalize_event_configs
 from app.services.platform_fee_service import compute_participant_pricing
 from app.services.credit_service import CREDIT_CHARGEABLE_PAYMENT_GATEWAYS, CreditValidationError, debit_credits, CREDIT_REGISTRATION_DEBIT
@@ -262,6 +263,7 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
         raise
     amount_paise = computed_total["totalPaise"]
     if amount_paise > 0:
+        assert_paid_event_available(db, event)
         if event.payment_settings is None:
             raise ValueError("Manual UPI payment settings are not configured")
         validate_manual_upi_settings(event.payment_settings)
@@ -1479,6 +1481,7 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
     # Participant pays the sum of participant totals (base + fee when they bear it).
     total_amount_paise = sum(item["pricing"]["participantTotalPaise"] for item in prepared)
     if total_amount_paise > 0:
+        assert_paid_event_available(db, event)
         validate_manual_upi_settings(event.payment_settings)
     confirmation_tokens: list[str] = []
     claim_codes: list[str | None] = []

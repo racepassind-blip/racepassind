@@ -30,12 +30,18 @@ type UploadedLogo = {
 };
 
 const ORGANIZATION_TYPES = [
-  { value: "running_club", label: "Running club" },
-  { value: "cycling_club", label: "Cycling club" },
+  { value: "sports_club", label: "Sports club" },
+  { value: "individual_organizer", label: "Individual organizer" },
   { value: "school_college", label: "School / college" },
   { value: "company", label: "Company" },
+  { value: "sole_proprietorship", label: "Sole proprietorship" },
+  { value: "partnership", label: "Partnership" },
+  { value: "llp", label: "LLP" },
+  { value: "association", label: "Association" },
+  { value: "federation", label: "Federation" },
   { value: "ngo_trust", label: "NGO / trust" },
-  { value: "individual_organizer", label: "Individual organizer" },
+  { value: "running_club", label: "Running club" },
+  { value: "cycling_club", label: "Cycling club" },
   { value: "other", label: "Other" },
 ];
 

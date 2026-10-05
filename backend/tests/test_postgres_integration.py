@@ -121,9 +121,18 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         )
         db.add(event)
         db.flush()
+        from models import OrganizationPaymentDestination
+        organization.status = "active"
+        organization.paid_verification_status = "VERIFIED"
+        organization.allow_direct_upi = True
+        event.payment_collection_method = "DIRECT_UPI"
+        destination = OrganizationPaymentDestination(organization_id=organization.id, upi_id="sportpass@example", payee_name="SportPass India", status="APPROVED")
+        db.add(destination)
+        db.flush()
         db.add(
             EventPaymentSettings(
                 event_id=event.id,
+                payment_destination_id=destination.id,
                 method="manual_upi",
                 upi_id="sportpass@example",
                 payee_name="SportPass India",

@@ -14,6 +14,7 @@ from app.api.deps import get_authorized_event, get_authorized_organization, requ
 from app.infrastructure.storage.factory import get_storage_service
 from app.schemas.events import OrganizerEventCreateV1, OrganizerEventUpdateV1, PaymentSettingsIn, RegistrationStatusIn, TournamentFormatIn, rupees_to_paise
 from app.services.audit_service import record_audit
+from app.services.organizer_payment_security import USABLE_DESTINATION_STATUSES, submit_destination
 from app.services.auth_service import utc_now
 from app.services.event_archive_service import restore_event_record
 from app.services.image_validation import ImageValidationError
@@ -56,7 +57,11 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
         # Only expose payment settings if Direct UPI is enabled for this organizer.
         # Use the already-loaded organization relationship to avoid a free-variable db reference.
         org = event.organization
-        if org and org.allow_direct_upi:
+        destination = event.payment_settings.payment_destination
+        if (org and org.status == "active" and org.paid_verification_status == "VERIFIED" and org.allow_direct_upi
+                and destination and destination.status in {"APPROVED", "LEGACY_APPROVED"}
+                and destination.upi_id == event.payment_settings.upi_id
+                and destination.payee_name == event.payment_settings.payee_name):
             payment_settings = {
                 "method": event.payment_settings.method,
                 "upiId": event.payment_settings.upi_id,
@@ -730,6 +735,27 @@ def update_event(
     return _event_response(updated, storage, get_settings().storage_signed_url_ttl_seconds, get_event_visibility(db, user, updated.id))
 
 
+@router.get("/events/{event_id}/payment-settings")
+def get_payment_settings(
+    event_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage_service),
+) -> dict:
+    event = get_authorized_event(db, user, event_id)
+    settings = event.payment_settings
+    if settings is None:
+        return {"eventId": str(event.id), "paymentDestinationStatus": "NOT_SUBMITTED"}
+    destination = settings.payment_destination
+    return {
+        "eventId": str(event.id), "method": settings.method,
+        "upiId": settings.upi_id, "payeeName": settings.payee_name,
+        "instructions": settings.instructions,
+        "paymentDestinationStatus": destination.status if destination else "NOT_SUBMITTED",
+        **qr_image_response(settings, storage, get_settings().storage_signed_url_ttl_seconds),
+    }
+
+
 @router.put("/events/{event_id}/payment-settings")
 def update_payment_settings(
     event_id: UUID,
@@ -740,6 +766,16 @@ def update_payment_settings(
     storage: StorageService = Depends(get_storage_service),
 ) -> dict:
     event = get_authorized_event(db, user, event_id)
+    organization = db.scalar(select(Organization).where(Organization.id == event.organization_id).with_for_update())
+    previous_upi = event.payment_settings.upi_id if event.payment_settings else None
+    previous_payee = event.payment_settings.payee_name if event.payment_settings else None
+    previous_destination_status = (
+        event.payment_settings.payment_destination.status
+        if event.payment_settings and event.payment_settings.payment_destination
+        else "NOT_SUBMITTED"
+    )
+    destination = submit_destination(db, organization_id=organization.id, upi_id=payload.upi_id,
+        payee_name=payload.payee_name, actor_user_id=user.id, event_id=event.id)
     settings = event.payment_settings
     if settings is None:
         settings = EventPaymentSettings(event_id=event.id)
@@ -748,15 +784,23 @@ def update_payment_settings(
     settings.upi_id = payload.upi_id.strip()
     settings.payee_name = payload.payee_name.strip()
     settings.instructions = payload.instructions.strip()
+    settings.payment_destination_id = destination.id
     settings.qr_image_url = None
     settings.is_active = True
-    record_audit(db, actor_user_id=user.id, action="payment_settings_updated", resource_type="event", resource_id=event.id)
+    record_audit(db, actor_user_id=user.id, action="payment_settings_updated", resource_type="event", resource_id=event.id,
+        metadata={"organization_id": str(organization.id), "destination_id": str(destination.id),
+                  "previous_status": previous_destination_status,
+                  "new_status": destination.status, "upi_changed": previous_upi != settings.upi_id,
+                  "payee_changed": previous_payee != settings.payee_name, "previous_upi_id": previous_upi,
+                  "new_upi_id": settings.upi_id, "previous_payee_name": previous_payee,
+                  "new_payee_name": settings.payee_name})
     db.commit()
     return {
         "eventId": str(event.id),
         "method": settings.method,
         "upiId": settings.upi_id,
         "payeeName": settings.payee_name,
+        "paymentDestinationStatus": destination.status,
         **qr_image_response(settings, storage, get_settings().storage_signed_url_ttl_seconds),
     }
 
@@ -871,6 +915,19 @@ def publish_event(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Direct UPI payments are not enabled for this organizer. Contact SportPass to request access.",
             )
+
+        if event.payment_collection_method == "DIRECT_UPI":
+            destination = event.payment_settings.payment_destination if event.payment_settings else None
+            if (
+                destination is None
+                or destination.status not in USABLE_DESTINATION_STATUSES
+                or destination.upi_id != event.payment_settings.upi_id
+                or destination.payee_name != event.payment_settings.payee_name
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="The Direct UPI destination must be approved before this paid event can be published.",
+                )
     
     event.status = "published"
     record_audit(db, actor_user_id=user.id, action="event_published", resource_type="event", resource_id=event.id)

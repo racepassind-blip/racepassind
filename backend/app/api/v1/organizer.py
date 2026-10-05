@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from html import escape as escape_html
+import io
+import re
 from urllib.parse import urlparse
 from uuid import UUID
 from typing import Literal
@@ -38,12 +40,23 @@ from app.services.registration_service import (
 )
 from app.services.image_validation import ImageValidationError
 from app.services.media_service import resolve_media_url, upload_media
-from app.services.storage_service import StorageError
+from app.services.storage_service import StorageError, StorageMetadata
 from app.services.audit_service import record_audit
 from db import get_db
-from models import CreditTopupRequest, CreditTransaction, Event, Organization, OrganizationMember, Registration, User
+from models import CreditTopupRequest, CreditTransaction, Event, Organization, OrganizationMember, OrganizationVerificationDocument, OrganizationVerificationSubmission, Registration, User
 
 router = APIRouter()
+
+VERIFICATION_DOCUMENT_TYPES = {
+    "BUSINESS_REGISTRATION", "GST_CERTIFICATE", "UDYAM_CERTIFICATE",
+    "ASSOCIATION_PROOF", "BANK_OR_UPI_PROOF", "OTHER",
+}
+VERIFICATION_DOCUMENT_MIME = {
+    "application/pdf": ("pdf", lambda data: data.startswith(b"%PDF-")),
+    "image/png": ("png", lambda data: data.startswith(b"\x89PNG\r\n\x1a\n")),
+    "image/jpeg": ("jpg", lambda data: data.startswith(b"\xff\xd8\xff")),
+    "image/webp": ("webp", lambda data: len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"),
+}
 
 class CreditTopupIn(BaseModel):
     organization_id: UUID
@@ -183,13 +196,25 @@ class PaidVerificationIn(BaseModel):
     billing_pincode: str = Field(min_length=6, max_length=10)
     accept_terms: bool = Field(...)
     terms_accepted_at: str | None = Field(default=None, description="ISO format timestamp when terms were accepted")
+    terms_version: str = Field(default="2026-10-05", min_length=1, max_length=40)
+
+    @field_validator("pan_number")
+    @classmethod
+    def _valid_pan(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", normalized):
+            raise ValueError("Enter a valid PAN")
+        return normalized
 
     @field_validator("gst_number")
     @classmethod
     def _require_gst_when_registered(cls, value: str | None, info) -> str | None:
-        if info.data.get("gst_registered") and not (value and value.strip()):
-            raise ValueError("GSTIN is required when GST registered is Yes")
-        return value
+        if not info.data.get("gst_registered"):
+            return None
+        normalized = value.strip().upper() if value else ""
+        if not re.fullmatch(r"[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]", normalized):
+            raise ValueError("Enter a valid GSTIN")
+        return normalized
 
 
 @router.get("/organizations/{organization_id}/paid-verification")
@@ -202,6 +227,10 @@ def get_paid_verification_status(
     organization = get_authorized_organization(db, user, organization_id)
     return {
         "organizationId": str(organization.id),
+        "organizationName": organization.name,
+        "organizationType": organization.organization_type,
+        "city": organization.city,
+        "state": organization.state,
         "paidVerificationStatus": organization.paid_verification_status,
         "panNumber": organization.pan_number,
         "nameAsPerPan": organization.name_as_per_pan,
@@ -215,6 +244,8 @@ def get_paid_verification_status(
         "submittedAt": organization.paid_verification_submitted_at.isoformat() if organization.paid_verification_submitted_at else None,
         "reviewedAt": organization.paid_verification_reviewed_at.isoformat() if organization.paid_verification_reviewed_at else None,
         "rejectionReason": organization.paid_verification_rejection_reason,
+        "suspensionReason": organization.paid_verification_suspension_reason,
+        "suspendedAt": organization.paid_verification_suspended_at.isoformat() if organization.paid_verification_suspended_at else None,
     }
 
 
@@ -240,10 +271,10 @@ def submit_paid_verification(
         )
     
     # Update organization with verification details
-    organization.pan_number = payload.pan_number.upper()
+    organization.pan_number = payload.pan_number
     organization.name_as_per_pan = payload.name_as_per_pan.strip()
     organization.gst_registered = payload.gst_registered
-    organization.gst_number = payload.gst_number.upper() if (payload.gst_registered and payload.gst_number) else None
+    organization.gst_number = payload.gst_number if payload.gst_registered else None
     organization.billing_name = payload.billing_name.strip()
     organization.billing_address = payload.billing_address.strip()
     organization.billing_city = payload.billing_city.strip()
@@ -251,14 +282,30 @@ def submit_paid_verification(
     organization.billing_pincode = payload.billing_pincode.strip()
     organization.paid_verification_status = "UNDER_REVIEW"
     organization.paid_verification_submitted_at = utc_now()
+    # The server records the acceptance event; a client-provided timestamp is not
+    # trusted as legal/audit evidence.
+    accepted_at = utc_now()
+    submission = OrganizationVerificationSubmission(
+        organization_id=organization.id, organization_type=organization.organization_type,
+        pan_number=organization.pan_number, name_as_per_pan=organization.name_as_per_pan,
+        gst_registered=organization.gst_registered, gst_number=organization.gst_number,
+        billing_name=organization.billing_name, billing_address=organization.billing_address,
+        billing_city=organization.billing_city, billing_state=organization.billing_state,
+        billing_pincode=organization.billing_pincode, status="UNDER_REVIEW",
+        submitted_at=organization.paid_verification_submitted_at, terms_accepted_at=accepted_at,
+        terms_version=payload.terms_version,
+    )
+    db.add(submission)
+    db.flush()
     
     record_audit(
         db,
         actor_user_id=user.id,
         action="paid_verification_submitted",
         resource_type="organization",
-        resource_id=organization.id,
+        resource_id=submission.id,
         metadata={
+            "organization_id": str(organization.id),
             "status": "UNDER_REVIEW",
             "terms_accepted": payload.accept_terms,
         },
@@ -270,6 +317,126 @@ def submit_paid_verification(
         "paidVerificationStatus": organization.paid_verification_status,
         "submittedAt": organization.paid_verification_submitted_at.isoformat(),
     }
+
+
+@router.get("/organizations/{organization_id}/paid-verification/history")
+def get_paid_verification_history(
+    organization_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    get_authorized_organization(db, user, organization_id)
+    submissions = db.scalars(
+        select(OrganizationVerificationSubmission)
+        .where(OrganizationVerificationSubmission.organization_id == organization_id)
+        .order_by(OrganizationVerificationSubmission.submitted_at.desc())
+    ).all()
+    return [{
+        "id": str(item.id),
+        "status": item.status,
+        "submittedAt": item.submitted_at.isoformat(),
+        "reviewedAt": item.reviewed_at.isoformat() if item.reviewed_at else None,
+        "rejectionReason": item.rejection_reason,
+        "termsAcceptedAt": item.terms_accepted_at.isoformat(),
+        "termsVersion": item.terms_version,
+    } for item in submissions]
+
+
+@router.get("/organizations/{organization_id}/paid-verification/documents")
+def list_verification_documents(
+    organization_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+    storage=Depends(get_storage_service),
+) -> list[dict]:
+    get_authorized_organization(db, user, organization_id)
+    settings = get_settings()
+    rows = db.scalars(select(OrganizationVerificationDocument).where(
+        OrganizationVerificationDocument.organization_id == organization_id
+    ).order_by(OrganizationVerificationDocument.created_at.desc())).all()
+    return [{
+        "id": str(row.id), "documentType": row.document_type,
+        "filename": row.original_filename, "contentType": row.content_type,
+        "sizeBytes": row.size_bytes, "createdAt": row.created_at.isoformat(),
+        "readUrl": storage.get_read_url(row.object_key, settings.storage_signed_url_ttl_seconds),
+    } for row in rows]
+
+
+@router.post("/organizations/{organization_id}/paid-verification/documents", status_code=201)
+def upload_verification_document(
+    organization_id: UUID,
+    document_type: str,
+    file: UploadFile = File(...),
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+    storage=Depends(get_storage_service),
+) -> dict:
+    organization = get_authorized_organization(db, user, organization_id)
+    normalized_type = document_type.strip().upper()
+    if normalized_type not in VERIFICATION_DOCUMENT_TYPES:
+        raise HTTPException(422, "Unsupported verification document type")
+    settings = get_settings()
+    payload = file.file.read(settings.storage_max_upload_bytes + 1)
+    if not payload or len(payload) > settings.storage_max_upload_bytes:
+        raise HTTPException(422, "Document must be non-empty and within the upload size limit")
+    declared_type = (file.content_type or "").lower()
+    rule = VERIFICATION_DOCUMENT_MIME.get(declared_type)
+    if rule is None or not rule[1](payload):
+        raise HTTPException(422, "Upload a valid PDF, PNG, JPEG, or WebP document")
+    metadata = StorageMetadata(content_type=declared_type, extension=rule[0], size_bytes=len(payload),
+        width=0, height=0, purpose="verification")
+    try:
+        object_key = storage.put_private(io.BytesIO(payload), metadata)
+    except Exception as exc:
+        raise HTTPException(503, "Document storage is temporarily unavailable") from exc
+    document = OrganizationVerificationDocument(
+        organization_id=organization.id, document_type=normalized_type,
+        original_filename=(file.filename or "document")[:255], object_key=object_key,
+        content_type=declared_type, size_bytes=len(payload), uploaded_by=user.id,
+    )
+    try:
+        db.add(document)
+        db.flush()
+        record_audit(db, actor_user_id=user.id, action="verification_document_uploaded",
+            resource_type="organization_verification_document", resource_id=document.id,
+            metadata={"organization_id": str(organization.id), "document_type": normalized_type,
+                      "content_type": declared_type, "size_bytes": len(payload)})
+        db.commit()
+    except Exception:
+        db.rollback()
+        storage.remove(object_key)
+        raise
+    return {"id": str(document.id), "documentType": document.document_type, "filename": document.original_filename}
+
+
+@router.delete("/organizations/{organization_id}/paid-verification/documents/{document_id}")
+def delete_verification_document(
+    organization_id: UUID,
+    document_id: UUID,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+    storage=Depends(get_storage_service),
+) -> dict:
+    get_authorized_organization(db, user, organization_id)
+    document = db.scalar(select(OrganizationVerificationDocument).where(
+        OrganizationVerificationDocument.id == document_id,
+        OrganizationVerificationDocument.organization_id == organization_id,
+    ).with_for_update())
+    if document is None:
+        raise HTTPException(404, "Verification document not found")
+    object_key = document.object_key
+    record_audit(db, actor_user_id=user.id, action="verification_document_deleted",
+        resource_type="organization_verification_document", resource_id=document.id,
+        metadata={"organization_id": str(organization_id), "document_type": document.document_type})
+    db.delete(document)
+    db.commit()
+    try:
+        storage.remove(object_key)
+    except Exception:
+        pass
+    return {"removed": True}
 
 
 @router.get("/me")

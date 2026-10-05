@@ -37,7 +37,7 @@ from app.services.platform_fee_service import (
 )
 from db import get_db
 from app.services.event_archive_service import restore_event_record
-from models import CreditTopupRequest, CreditTransaction, Event, OrganizerApplication, Organization, OrganizationMember, Registration, User
+from models import CreditTopupRequest, CreditTransaction, Event, OrganizerApplication, Organization, OrganizationMember, OrganizationPaymentDestination, OrganizationVerificationSubmission, Registration, User
 
 router = APIRouter()
 
@@ -420,7 +420,7 @@ class PaidVerificationReviewIn(BaseModel):
 
 @router.get("/paid-verifications")
 def list_paid_verifications(
-    status: Literal["UNDER_REVIEW", "VERIFIED", "REJECTED"] | None = Query(default=None, alias="status"),
+    status: Literal["UNDER_REVIEW", "VERIFIED", "REJECTED", "SUSPENDED"] | None = Query(default=None, alias="status"),
     _: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
 ) -> list[dict]:
@@ -436,10 +436,10 @@ def list_paid_verifications(
             "organizationId": str(org.id),
             "organizationName": org.name,
             "paidVerificationStatus": org.paid_verification_status,
-            "panNumber": org.pan_number,
+            "panNumber": f"{org.pan_number[:5]}••••{org.pan_number[-1:]}" if org.pan_number else None,
             "nameAsPerPan": org.name_as_per_pan,
             "gstRegistered": org.gst_registered,
-            "gstNumber": org.gst_number,
+            "gstNumber": f"{org.gst_number[:4]}•••••••{org.gst_number[-4:]}" if org.gst_number else None,
             "billingName": org.billing_name,
             "billingAddress": org.billing_address,
             "billingCity": org.billing_city,
@@ -476,6 +476,14 @@ def review_paid_verification(
             detail=f"Paid verification is not under review (current status: {organization.paid_verification_status})"
         )
     
+    if payload.status == "REJECTED" and not (payload.rejection_reason and payload.rejection_reason.strip()):
+        raise HTTPException(status_code=422, detail="A rejection reason is required")
+    submission = db.scalar(select(OrganizationVerificationSubmission).where(
+        OrganizationVerificationSubmission.organization_id == organization.id,
+        OrganizationVerificationSubmission.status == "UNDER_REVIEW",
+    ).order_by(OrganizationVerificationSubmission.submitted_at.desc()).with_for_update())
+    if submission is None:
+        raise HTTPException(status_code=409, detail="Verification submission snapshot is missing")
     organization.paid_verification_status = payload.status
     organization.paid_verification_reviewed_at = utc_now()
     organization.paid_verification_reviewed_by = admin.id
@@ -484,6 +492,10 @@ def review_paid_verification(
         organization.paid_verification_rejection_reason = payload.rejection_reason.strip() if payload.rejection_reason else None
     else:
         organization.paid_verification_rejection_reason = None
+    submission.status = payload.status
+    submission.reviewed_at = organization.paid_verification_reviewed_at
+    submission.reviewed_by = admin.id
+    submission.rejection_reason = organization.paid_verification_rejection_reason
     
     record_audit(
         db,
@@ -515,7 +527,7 @@ def organizers_overview(
     db: Session = Depends(get_db),
 ) -> dict:
     """Per-organizer rollup: events, participants, revenue, verification, billing."""
-    if verification_status and verification_status not in {"NOT_SUBMITTED", "UNDER_REVIEW", "VERIFIED", "REJECTED"}:
+    if verification_status and verification_status not in {"NOT_SUBMITTED", "UNDER_REVIEW", "VERIFIED", "REJECTED", "SUSPENDED"}:
         raise HTTPException(status_code=422, detail="Unsupported verification status")
     return get_admin_organizers_overview(db, page=page, page_size=page_size, search=q, verification_status=verification_status)
 
@@ -543,6 +555,8 @@ def update_direct_upi_access(
     )
     if organization is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    if payload.allow and organization.paid_verification_status != "VERIFIED":
+        raise HTTPException(status_code=409, detail="Paid verification must be verified before enabling Direct UPI")
 
     # Warn before disabling if there are active Direct UPI events.
     active_direct_upi_events = []
@@ -581,6 +595,102 @@ def update_direct_upi_access(
         "allowDirectUpi": organization.allow_direct_upi,
         "activeDirectUpiEvents": active_direct_upi_events,
     }
+
+
+class SuspensionIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+@router.post("/organizations/{organization_id}/paid-verification/suspend")
+def suspend_paid_verification(organization_id: UUID, payload: SuspensionIn,
+    admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    organization = db.scalar(select(Organization).where(Organization.id == organization_id).with_for_update())
+    if organization is None:
+        raise HTTPException(404, "Organization not found")
+    if organization.paid_verification_status != "VERIFIED":
+        raise HTTPException(409, "Only verified organizations can be suspended")
+    organization.paid_verification_status = "SUSPENDED"
+    organization.paid_verification_suspended_at = utc_now()
+    organization.paid_verification_suspended_by = admin.id
+    organization.paid_verification_suspension_reason = payload.reason.strip()
+    record_audit(db, actor_user_id=admin.id, action="paid_verification_suspended",
+        resource_type="organization", resource_id=organization.id, metadata={"reason": payload.reason.strip()})
+    db.commit()
+    return {"organizationId": str(organization.id), "paidVerificationStatus": "SUSPENDED"}
+
+
+class DestinationReviewIn(BaseModel):
+    status: Literal["APPROVED", "REJECTED"]
+    rejection_reason: str | None = Field(default=None, max_length=2000)
+
+
+@router.get("/organizations/{organization_id}/payment-destinations")
+def list_payment_destinations(organization_id: UUID, _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> list[dict]:
+    organization = db.get(Organization, organization_id)
+    if organization is None:
+        raise HTTPException(404, "Organization not found")
+    rows = db.scalars(select(OrganizationPaymentDestination).where(
+        OrganizationPaymentDestination.organization_id == organization_id
+    ).order_by(OrganizationPaymentDestination.created_at.desc())).all()
+    return [{"id": str(row.id), "upiId": row.upi_id, "payeeName": row.payee_name, "status": row.status,
+             "submittedAt": row.submitted_at.isoformat(), "reviewedAt": row.reviewed_at.isoformat() if row.reviewed_at else None,
+             "rejectionReason": row.rejection_reason} for row in rows]
+
+
+@router.post("/organizations/{organization_id}/payment-destinations/{destination_id}/review")
+def review_payment_destination(organization_id: UUID, destination_id: UUID, payload: DestinationReviewIn,
+    admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    organization = db.scalar(select(Organization).where(Organization.id == organization_id).with_for_update())
+    destination = db.scalar(select(OrganizationPaymentDestination).where(
+        OrganizationPaymentDestination.id == destination_id,
+        OrganizationPaymentDestination.organization_id == organization_id,
+    ).with_for_update())
+    if organization is None or destination is None:
+        raise HTTPException(404, "Payment destination not found")
+    if organization.paid_verification_status != "VERIFIED":
+        raise HTTPException(409, "Paid verification must be verified before approving a destination")
+    if destination.status not in {"UNDER_REVIEW", "LEGACY_APPROVED"}:
+        raise HTTPException(409, "Payment destination is not awaiting review")
+    if payload.status == "REJECTED" and not (payload.rejection_reason and payload.rejection_reason.strip()):
+        raise HTTPException(422, "A rejection reason is required")
+    previous = destination.status
+    destination.status = payload.status
+    destination.reviewed_at = utc_now()
+    destination.reviewed_by = admin.id
+    destination.rejection_reason = payload.rejection_reason.strip() if payload.status == "REJECTED" else None
+    record_audit(db, actor_user_id=admin.id, action="payment_destination_reviewed",
+        resource_type="organization_payment_destination", resource_id=destination.id,
+        metadata={"organization_id": str(organization.id), "previous_status": previous,
+                  "new_status": destination.status, "reason": destination.rejection_reason})
+    db.commit()
+    return {"id": str(destination.id), "status": destination.status, "reviewedAt": destination.reviewed_at.isoformat()}
+
+
+@router.get("/organizations/{organization_id}/payment-destinations/audit")
+def get_payment_destination_audit(
+    organization_id: UUID,
+    _: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Internal exact-value history for investigating sensitive payment changes."""
+    from models import AuditLog
+    rows = db.scalars(select(AuditLog).where(AuditLog.action.in_({
+        "payment_settings_updated", "payment_destination_submitted", "payment_destination_reviewed",
+    })).order_by(AuditLog.created_at.desc()).limit(500)).all()
+    result = []
+    for row in rows:
+        metadata = row.metadata_json or {}
+        if metadata.get("organization_id") != str(organization_id):
+            continue
+        result.append({
+            "id": str(row.id), "action": row.action, "actorUserId": str(row.actor_user_id) if row.actor_user_id else None,
+            "eventId": metadata.get("event_id") or (row.resource_id if row.resource_type == "event" else None),
+            "previousUpiId": metadata.get("previous_upi_id"), "newUpiId": metadata.get("new_upi_id"),
+            "previousPayeeName": metadata.get("previous_payee_name"), "newPayeeName": metadata.get("new_payee_name"),
+            "previousStatus": metadata.get("previous_status"), "newStatus": metadata.get("new_status") or metadata.get("status"),
+            "reason": metadata.get("reason"), "createdAt": row.created_at.isoformat(),
+        })
+    return result
 
 
 @router.get("/organizations/{organization_id}/direct-upi/audit")

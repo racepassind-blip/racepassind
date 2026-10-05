@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from db import Base, get_db
-from models import Organization, ProductListing, ProductOrder, ProductImage
+from models import Organization, OrganizationPaymentDestination, ProductListing, ProductOrder, ProductImage
 from app.api.v1.products import upload_image, serialize_listing, list_listings, update_listing, set_status, ListingInput, StatusInput, inventory_summary, product_fee_preview, ProductFeePreview
 from app.api.v1.products import review, DecisionInput
 from app.api.deps import require_csrf
@@ -55,9 +55,18 @@ class ProductSalesE2ETests(unittest.TestCase):
         db.query(ProductImage).delete()
         db.query(ProductOrder).delete()
         db.query(ProductListing).delete()
+        db.query(OrganizationPaymentDestination).delete()
         db.query(Organization).delete()
         organization = Organization(name="E2E Sports", status="active", allow_direct_upi=True, paid_verification_status="VERIFIED")
         db.add(organization)
+        db.flush()
+        destination = OrganizationPaymentDestination(
+            organization_id=organization.id,
+            upi_id="seller@upi",
+            payee_name="E2E Sports",
+            status="APPROVED",
+        )
+        db.add(destination)
         db.flush()
         db.add(ProductListing(
             id=LISTING_ID,
@@ -75,6 +84,7 @@ class ProductSalesE2ETests(unittest.TestCase):
                 "max_units_per_order": 3, "fulfillment": "pickup", "pickup_instructions": "Collect at Gate 1",
             },
             status="published", fee_bearer="PARTICIPANT", upi_id="seller@upi", payee_name="E2E Sports",
+            payment_destination_id=destination.id,
         ))
         db.commit()
         db.close()
