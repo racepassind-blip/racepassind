@@ -60,6 +60,8 @@ import OurStory from "./pages/OurStory";
 import OrganizerProducts from "./pages/OrganizerProducts";
 import ProductStorefront from "./pages/ProductStorefront";
 import Merchandise from "./pages/Merchandise";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -79,6 +81,8 @@ const App = () => (
                 /login/client-trust and /signup/verify-email-address. */}
             <Route path="/login/*" element={<Login />} />
             <Route path="/signup/*" element={<Signup />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/organizers" element={<OrganizerInfo />} />
             <Route path="/federations-associations" element={<FederationsAssociationsComingSoon />} />
             <Route path="/event/:id" element={<EventDetail />} />

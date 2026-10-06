@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import secrets
+import datetime as dt
+import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
@@ -31,7 +33,8 @@ from app.services.mfa_service import (
 from app.services.payment_service import generate_qr_data_url
 from app.services.rate_limit_service import RateLimitExceeded, enforce_account_registration_limit, enforce_login_limit
 from db import get_db
-from models import OrganizerApplication, User
+from models import AuthSession, OrganizerApplication, PasswordResetToken, User
+from app.services.email_service import send_email
 
 router = APIRouter()
 
@@ -81,6 +84,13 @@ class LoginIn(BaseModel):
 
 class MfaCodeIn(BaseModel):
     code: str = Field(min_length=6, max_length=6)
+
+class ForgotPasswordIn(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+class ResetPasswordIn(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str = Field(min_length=8, max_length=256)
 
 
 class OrganizerApplicationIn(BaseModel):
@@ -286,6 +296,37 @@ def login(
     db.commit()
     _set_session_cookies(response, raw_session, csrf_token)
     return {"user": public_user(user), "csrfToken": csrf_token}
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordIn, request: Request, _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict[str, str]:
+    email = normalize_email(payload.email)
+    user = db.scalar(select(User).where(User.normalized_email == email, User.is_active.is_(True)))
+    if user is not None:
+        raw = secrets.token_urlsafe(48)
+        db.add(PasswordResetToken(user_id=user.id, token_hash=hashlib.sha256(raw.encode()).hexdigest(), expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=30)))
+        db.commit()
+        base = str(request.base_url).rstrip("/")
+        frontend = get_settings().frontend_origins[0] if get_settings().frontend_origins else base
+        send_email(db, recipient=user.email, subject="Reset your SportPass password", body=f"Use this link within 30 minutes to reset your password: {frontend}/reset-password?token={raw}", email_type="PASSWORD_RESET")
+    return {"message": "If an account exists for this email, you will receive a reset link shortly."}
+
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordIn, response: Response, db: Session = Depends(get_db)) -> dict[str, str]:
+    now = dt.datetime.now(dt.timezone.utc)
+    token = db.scalar(select(PasswordResetToken).where(PasswordResetToken.token_hash == hashlib.sha256(payload.token.encode()).hexdigest(), PasswordResetToken.used_at.is_(None)).with_for_update())
+    if token is None or token.expires_at <= now:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or expired")
+    user = db.get(User, token.user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or expired")
+    user.password_hash = hash_password(payload.password)
+    token.used_at = now
+    for session in db.scalars(select(AuthSession).where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))).all():
+        session.revoked_at = now
+    db.commit()
+    return {"message": "Password reset successfully. Please sign in again."}
 
 
 @router.post("/admin/mfa/setup")
