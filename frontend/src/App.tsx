@@ -75,8 +75,10 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/events" element={<Events />} />
             <Route path="/merchandise" element={<Merchandise />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
+            {/* Clerk's path-based flow uses internal subpaths such as
+                /login/client-trust and /signup/verify-email-address. */}
+            <Route path="/login/*" element={<Login />} />
+            <Route path="/signup/*" element={<Signup />} />
             <Route path="/organizers" element={<OrganizerInfo />} />
             <Route path="/federations-associations" element={<FederationsAssociationsComingSoon />} />
             <Route path="/event/:id" element={<EventDetail />} />
