@@ -53,6 +53,7 @@ class Settings:
     environment: str = "development"
     database_url: str = field(default="", repr=False)
     auto_migrate: bool = True
+    allow_startup_migrations: bool = False
     frontend_origins: tuple[str, ...] = _DEFAULT_FRONTEND_ORIGINS
     frontend_origins_configured: bool = True
     session_secret: str | None = field(default=None, repr=False)
@@ -93,6 +94,7 @@ class Settings:
             environment=os.getenv("ENVIRONMENT", "development").strip().lower(),
             database_url=_required_database_url(),
             auto_migrate=_as_bool(os.getenv("AUTO_MIGRATE"), default=True),
+            allow_startup_migrations=_as_bool(os.getenv("ALLOW_STARTUP_MIGRATIONS"), default=False),
             frontend_origins=_origins(raw_origins),
             frontend_origins_configured=bool(raw_origins and _origins(raw_origins)),
             session_secret=os.getenv("SESSION_SECRET"),
@@ -182,7 +184,7 @@ class Settings:
             raise RuntimeError("Production must use PostgreSQL; SQLite is development-only")
         if self.storage_mode != "s3":
             raise RuntimeError("Production must use S3-compatible object storage")
-        if self.auto_migrate:
+        if self.auto_migrate and not self.allow_startup_migrations:
             raise RuntimeError("Production migrations must run as an explicit release command")
 
         if not self.is_production:
