@@ -140,6 +140,16 @@ function ClerkAuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const getClerkToken = useCallback(async () => {
+    if (!isLoaded || !isSignedIn) return null;
+    // Never let a stalled Clerk network request leave the whole application in
+    // an endless auth-bootstrap state. Clerk will retry on the next request.
+    return Promise.race([
+      getToken(),
+      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
+    ]);
+  }, [getToken, isLoaded, isSignedIn]);
+
   const clearSession = useCallback(() => {
     setUser(null);
     setAuthTokenProvider(null);
@@ -155,7 +165,7 @@ function ClerkAuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
       return;
     }
-    setAuthTokenProvider(getToken);
+    setAuthTokenProvider(getClerkToken);
     try {
       const response = await apiRequest<AuthResponse>("/auth/me");
       setUser(response.user);
@@ -165,7 +175,7 @@ function ClerkAuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [clearSession, getToken, isLoaded, isSignedIn]);
+  }, [clearSession, getClerkToken, isLoaded, isSignedIn]);
 
   useEffect(() => {
     setUnauthorizedHandler(clearSession);
