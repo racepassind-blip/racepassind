@@ -105,7 +105,6 @@ const Login = () => {
                     required
                   />
                 </div>
-                <div className="text-right"><button type="button" className="text-sm text-primary hover:underline" onClick={() => navigate("/forgot-password")}>Forgot password?</button></div>
                 {needsMfa && <div className="space-y-2">
                   <Label htmlFor="mfa-code">Authenticator code</Label>
                   <Input id="mfa-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" placeholder="123456" value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, ""))} required />
@@ -134,6 +133,9 @@ const Login = () => {
                   {isLoading ? "Signing in…" : "Sign in"}
                   {!isLoading && <ArrowRight className="h-4 w-4" />}
                 </Button>
+                <div className="text-center">
+                  <button type="button" className="text-sm text-primary hover:underline" onClick={() => navigate("/forgot-password")}>Forgot password?</button>
+                </div>
               </form>
 
               <div className="mt-8 border-t pt-6 text-center text-sm">
