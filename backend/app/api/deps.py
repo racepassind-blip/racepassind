@@ -13,15 +13,24 @@ from app.services.auth_service import hash_opaque_token, utc_now
 from app.config import get_settings
 from db import get_db
 from models import AuthSession, Organization, OrganizationMember, User
+from app.services.clerk_auth import ClerkAuthenticationError, ClerkIdentityConflict, resolve_local_user, verify_clerk_request
 
 SESSION_COOKIE = "racepass_session"
 CSRF_COOKIE = "racepass_csrf"
 
 
 def get_current_user(
+    request: Request,
     db: Session = Depends(get_db),
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> User:
+    if get_settings().clerk_auth_required:
+        try:
+            identity = verify_clerk_request(request)
+            return resolve_local_user(db, identity)
+        except (ClerkAuthenticationError, ClerkIdentityConflict) as exc:
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     if not session_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
@@ -52,9 +61,16 @@ def get_current_user(
 
 
 def get_optional_current_user(
+    request: Request,
     db: Session = Depends(get_db),
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> User | None:
+    if get_settings().clerk_auth_required:
+        try:
+            return resolve_local_user(db, verify_clerk_request(request))
+        except (ClerkAuthenticationError, ClerkIdentityConflict):
+            db.rollback()
+            return None
     if not session_token:
         return None
 

@@ -28,6 +28,7 @@ from app.api.v1.tournament_rounds import router as tournament_rounds_router
 from app.api.v1.registrations import router as registrations_router
 from app.api.v1.refunds import router as refunds_router
 from app.api.v1.race_results import router as race_results_router
+from app.api.v1.webhooks import router as webhooks_router
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
 from db import engine, get_db
@@ -52,13 +53,14 @@ app.include_router(events_router, prefix="/api/v1/organizer", tags=["organizer-e
 app.include_router(allocations_router, prefix="/api/v1/organizer", tags=["organizer-allocation"])
 app.include_router(refunds_router, prefix="/api/v1", tags=["refunds"])
 app.include_router(race_results_router, prefix="/api/v1", tags=["organizer-race-results", "public-race-results"])
+app.include_router(webhooks_router, prefix="/api/v1/webhooks", tags=["webhooks"])
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.frontend_origins),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Accept", "Content-Type", "X-CSRF-Token", "X-Request-ID", "Idempotency-Key", "X-Order-Token"],
+    allow_headers=["Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Request-ID", "Idempotency-Key", "X-Order-Token"],
 )
 
 

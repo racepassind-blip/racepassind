@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Eye, EyeOff, LogIn, ShieldCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import { SignIn } from "@clerk/react";
 
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,10 @@ const Login = () => {
   const [error, setError] = useState<string | null>(null);
 
   const from = getSafeRedirectPath((location.state as { from?: unknown })?.from);
+
+  if (import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) {
+    return <Layout><div className="mx-auto flex justify-center px-4 py-10"><SignIn routing="path" path="/login" forceRedirectUrl={from ?? "/dashboard"} /></div></Layout>;
+  }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

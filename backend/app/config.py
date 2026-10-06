@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -31,6 +32,10 @@ def _required_database_url() -> str:
     value = os.getenv("DATABASE_URL", "").strip()
     if not value:
         raise RuntimeError("DATABASE_URL must be set; the local SQLite fallback is disabled")
+    if any("pytest" in arg for arg in sys.argv) and not os.getenv("RACEPASS_ALLOW_REMOTE_TEST_DB"):
+        lowered = value.lower()
+        if not lowered.startswith(("sqlite:", "postgresql://localhost", "postgresql+psycopg://localhost", "postgresql://127.0.0.1", "postgresql+psycopg://127.0.0.1")):
+            raise RuntimeError("Tests require an explicit isolated DATABASE_URL (SQLite or localhost PostgreSQL)")
     return value
 
 
@@ -75,6 +80,11 @@ class Settings:
     communication_encryption_key: str | None = field(default=None, repr=False)
     # MFA remains available but is opt-in until the rollout is complete.
     admin_mfa_enabled: bool = False
+    clerk_secret_key: str | None = field(default=None, repr=False)
+    clerk_jwt_key: str | None = field(default=None, repr=False)
+    clerk_webhook_signing_secret: str | None = field(default=None, repr=False)
+    clerk_authorized_parties: tuple[str, ...] = ()
+    clerk_auth_required: bool = False
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -107,6 +117,11 @@ class Settings:
             storage_max_dimension=int(os.getenv("STORAGE_MAX_DIMENSION", "4096")),
             communication_encryption_key=os.getenv("COMMUNICATION_ENCRYPTION_KEY"),
             admin_mfa_enabled=_as_bool(os.getenv("ADMIN_MFA_ENABLED"), default=False),
+            clerk_secret_key=os.getenv("CLERK_SECRET_KEY"),
+            clerk_jwt_key=os.getenv("CLERK_JWT_KEY"),
+            clerk_webhook_signing_secret=os.getenv("CLERK_WEBHOOK_SIGNING_SECRET"),
+            clerk_authorized_parties=_origins(os.getenv("CLERK_AUTHORIZED_PARTIES")) if os.getenv("CLERK_AUTHORIZED_PARTIES") else (),
+            clerk_auth_required=_as_bool(os.getenv("CLERK_AUTH_REQUIRED"), default=False),
         )
 
     @property
@@ -139,6 +154,11 @@ class Settings:
 
         if not self.is_production:
             return
+
+        if self.clerk_auth_required and not (self.clerk_secret_key or self.clerk_jwt_key):
+            raise RuntimeError("CLERK_SECRET_KEY or CLERK_JWT_KEY must be set when Clerk authentication is required")
+        if self.clerk_auth_required and not self.clerk_webhook_signing_secret:
+            raise RuntimeError("CLERK_WEBHOOK_SIGNING_SECRET must be set when Clerk authentication is required")
 
         missing = [
             name

@@ -22,6 +22,8 @@ class User(Base):
     normalized_email: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
     normalized_phone: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
+    clerk_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    clerk_deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     email_verified_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     phone_verified_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
@@ -1096,6 +1098,16 @@ class AuthSession(Base):
     ip_hash: Mapped[str | None] = mapped_column(String, nullable=True)
 
     user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class ClerkWebhookEvent(Base):
+    __tablename__ = "clerk_webhook_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    processed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class AuditLog(Base):
