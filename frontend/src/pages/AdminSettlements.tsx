@@ -1,10 +1,11 @@
-import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+import { ComponentType, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/api";
+import { ArrowLeft, ArrowRight, Banknote, CalendarRange, IndianRupee, RefreshCw, Search, Users } from "lucide-react";
 
 type Summary = {
   eventId: string; recoverablePaise: number; reservationShortfallPaise: number;
@@ -35,17 +36,58 @@ export default function AdminSettlements() {
   const [events, setEvents] = useState<Summary[]>([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     let active = true;
+    setLoading(true); setError("");
     apiRequest<{ items: Summary[]; total: number }>(`/admin/settlement-events?search=${encodeURIComponent(search)}&page=${page}`)
-      .then(r => { if (active) { setEvents(r.items); setTotal(r.total); } }).catch(e => { if (active) setError(e.message); });
+      .then(r => { if (active) { setEvents(r.items); setTotal(r.total); } }).catch(e => { if (active) setError(e.message); })
+      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [search, page, selected]);
-  if (selected) return <><Button className="m-4" onClick={() => setSelected("")}>Back to events</Button><EventLedger key={selected} selectedEventId={selected} /></>;
-  return <AdminDashboardLayout><main className="space-y-6 p-6"><h1 className="text-3xl font-bold">Organizer settlements</h1><p>Record manual bank transfers and UPI payments. Recording a settlement does not send money.</p><Input aria-label="Search events or organizers" placeholder="Search events or organizers" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />{error && <p role="alert">{error}</p>}<div className="overflow-x-auto"><table className="w-full text-left"><thead><tr><th>Event / organizer</th><th>Paid registrations</th><th>Settled</th><th>Pending</th><th>Outstanding</th><th /></tr></thead><tbody>{events.map(e => <tr className="border-b" key={e.eventId}><td className="py-4">{e.eventName}<p>{e.organizerName}</p><small>{e.paymentMode}</small></td><td>{e.paidRegistrationCount}</td><td>{money(e.settledAmountPaise)}</td><td>{money(e.pendingSettlementPaise)}</td><td>{money(e.outstandingAmountPaise)}</td><td><Button onClick={() => setSelected(e.eventId)}>Open ledger</Button></td></tr>)}</tbody></table></div><div className="flex gap-4"><Button disabled={page === 1} onClick={() => setPage(p => p - 1)}>Previous</Button><span>Page {page} · {total} events</span><Button disabled={page * 20 >= total} onClick={() => setPage(p => p + 1)}>Next</Button></div></main></AdminDashboardLayout>;
+  if (selected) return <EventLedger key={selected} selectedEventId={selected} onBack={() => setSelected("")} />;
+
+  const outstanding = events.reduce((sum, event) => sum + event.outstandingAmountPaise, 0);
+  const managed = events.filter(event => event.paymentMode === "CASHFREE_MANAGED").length;
+  return <AdminDashboardLayout><div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Finance workspace</p><h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">Organizer settlements</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">Review event balances and record manual transfers to organizers. No money is moved from this screen.</p></div>
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900"><span className="font-semibold">Manual ledger</span><br />Always verify the bank or UPI receipt before marking paid.</div>
+    </div>
+
+    <div className="grid gap-3 sm:grid-cols-3">
+      <OverviewMetric icon={CalendarRange} label="Events" value={String(total)} />
+      <OverviewMetric icon={Banknote} label="Managed on this page" value={String(managed)} />
+      <OverviewMetric icon={IndianRupee} label="Outstanding on this page" value={money(outstanding)} accent />
+    </div>
+
+    <Card className="overflow-hidden border-slate-200 shadow-sm">
+      <div className="flex flex-col gap-3 border-b bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div><h2 className="font-semibold">Event balances</h2><p className="text-sm text-muted-foreground">Open an event to review collections, corrections and transfer history.</p></div>
+        <div className="relative w-full sm:w-80"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" aria-label="Search events or organizers" placeholder="Search event or organizer" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} /></div>
+      </div>
+      {error && <div role="alert" className="m-4 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">Event</th><th className="px-4 py-3 font-semibold">Registrations</th><th className="px-4 py-3 font-semibold">Settled</th><th className="px-4 py-3 font-semibold">Pending</th><th className="px-4 py-3 font-semibold">Outstanding</th><th className="px-5 py-3" /></tr></thead>
+          <tbody className="divide-y divide-slate-100">{events.map(event => <tr className="group bg-white transition-colors hover:bg-orange-50/35" key={event.eventId}>
+            <td className="px-5 py-4"><p className="font-semibold text-slate-950">{event.eventName}</p><p className="mt-0.5 text-sm text-muted-foreground">{event.organizerName || "Organizer unavailable"}</p><span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${event.paymentMode === "CASHFREE_MANAGED" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{event.paymentMode === "CASHFREE_MANAGED" ? "Managed payments" : "Direct UPI"}</span></td>
+            <td className="px-4 py-4"><p className="font-semibold">{event.paidRegistrationCount}</p><p className="text-xs text-muted-foreground">{event.paidParticipantCount} participants</p></td>
+            <td className="px-4 py-4 font-medium tabular-nums">{money(event.settledAmountPaise)}</td>
+            <td className="px-4 py-4 tabular-nums text-amber-700">{money(event.pendingSettlementPaise)}</td>
+            <td className="px-4 py-4"><p className={`font-bold tabular-nums ${event.outstandingAmountPaise > 0 ? "text-orange-700" : "text-slate-700"}`}>{money(event.outstandingAmountPaise)}</p><p className="text-xs text-muted-foreground">{money(event.availableToSettlePaise)} available</p></td>
+            <td className="px-5 py-4 text-right"><Button variant="outline" className="gap-2 border-slate-300 bg-white group-hover:border-primary group-hover:text-primary" onClick={() => setSelected(event.eventId)}>Open ledger <ArrowRight className="h-4 w-4" /></Button></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      {loading && <div className="py-14 text-center text-sm text-muted-foreground">Loading settlement balances…</div>}
+      {!loading && !events.length && !error && <div className="py-14 text-center"><Banknote className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 font-medium">No events found</p><p className="mt-1 text-sm text-muted-foreground">Try a different event or organizer name.</p></div>}
+      <div className="flex items-center justify-between border-t bg-slate-50/70 px-4 py-3"><p className="text-sm text-muted-foreground">Page {page} of {Math.max(1, Math.ceil(total / 20))} · {total} events</p><div className="flex gap-2"><Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Previous</Button><Button size="sm" variant="outline" disabled={page * 20 >= total} onClick={() => setPage(p => p + 1)}>Next</Button></div></div>
+    </Card>
+  </div></AdminDashboardLayout>;
 }
 
-function EventLedger({ selectedEventId }: { selectedEventId: string }) {
+function EventLedger({ selectedEventId, onBack }: { selectedEventId: string; onBack: () => void }) {
   const eventId = selectedEventId;
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
@@ -133,15 +175,18 @@ function EventLedger({ selectedEventId }: { selectedEventId: string }) {
     finally { saving.current = false; setBusy(false); }
   };
 
-  return <AdminDashboardLayout><div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
-    <div><p className="text-sm font-medium text-primary">Finance workspace</p><h1 className="text-3xl font-bold tracking-tight">Organizer settlements</h1><p className="mt-1 text-muted-foreground">Reconcile managed registrations and record partial organizer transfers.</p></div>
-    <Button onClick={() => void load()} disabled={loading || busy}>{loading ? "Loading…" : "Refresh ledger"}</Button>
+  return <AdminDashboardLayout><div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div><Button variant="ghost" className="-ml-3 mb-2 h-8 gap-2 text-muted-foreground hover:text-foreground" onClick={onBack}><ArrowLeft className="h-4 w-4" /> Back to events</Button><p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Settlement ledger</p><h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">{summary?.eventName || "Organizer settlement"}</h1><p className="mt-2 text-muted-foreground">{summary ? `${summary.organizerName || "Organizer"} · ${summary.paymentMode === "CASHFREE_MANAGED" ? "Managed payments" : "Direct UPI"}` : "Loading event ledger…"}</p></div>
+      <Button variant="outline" className="gap-2 self-start bg-white sm:self-auto" onClick={() => void load()} disabled={loading || busy}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />{loading ? "Refreshing…" : "Refresh ledger"}</Button>
+    </div>
     {summary && <>
       {summary.recoverablePaise > 0 && <p role="alert" className="text-destructive">Recoverable from organizer: {money(summary.recoverablePaise)}</p>}
       {summary.reservationShortfallPaise > 0 && <p role="alert" className="text-destructive">Pending transfers exceed available funds by {money(summary.reservationShortfallPaise)}. Reduce or cancel them.</p>}
-      <Card><CardHeader><CardTitle>{summary.eventName}</CardTitle><CardDescription>{summary.organizerName} · {summary.paymentMode}</CardDescription></CardHeader><CardContent>
-        <div className="grid gap-4 sm:grid-cols-3"><Metric label="Paid registrations" value={String(summary.paidRegistrationCount)} /><Metric label="Participants" value={String(summary.paidParticipantCount)} /><Metric label="Refunded registrations" value={String(summary.refundedRegistrationCount)} /></div>
-        <div className="mt-6 grid gap-4 sm:grid-cols-3"><Metric label="Gross collected" value={money(summary.grossCollectionsPaise)} /><Metric label="Gross organizer payable" value={money(summary.grossOrganizerPayablePaise)} /><Metric label="Refund deductions" value={money(summary.refundsPaise)} /><Metric label="Adjustments" value={money(summary.adjustmentsPaise)} /><Metric label="Already settled" value={money(summary.settledAmountPaise)} /><Metric label="Pending transfers" value={money(summary.pendingSettlementPaise)} /><Metric label="Outstanding" value={money(summary.outstandingAmountPaise)} strong /><Metric label="Available to settle" value={money(summary.availableToSettlePaise)} strong /></div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Available to settle" value={money(summary.availableToSettlePaise)} strong tone="orange" /><Metric label="Outstanding" value={money(summary.outstandingAmountPaise)} strong /><Metric label="Already settled" value={money(summary.settledAmountPaise)} /><Metric label="Pending transfers" value={money(summary.pendingSettlementPaise)} tone="amber" /></div>
+      <Card className="border-slate-200 shadow-sm"><CardHeader className="border-b bg-slate-50/60"><CardTitle className="text-lg">Reconciliation snapshot</CardTitle><CardDescription>Verified collection and organizer payable breakdown for this event.</CardDescription></CardHeader><CardContent className="pt-6">
+        <div className="grid gap-4 sm:grid-cols-3"><Metric label="Paid registrations" value={String(summary.paidRegistrationCount)} icon={CalendarRange} /><Metric label="Participants" value={String(summary.paidParticipantCount)} icon={Users} /><Metric label="Refunded registrations" value={String(summary.refundedRegistrationCount)} /></div>
+        <div className="mt-6 grid gap-4 border-t pt-6 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Gross collected" value={money(summary.grossCollectionsPaise)} /><Metric label="Gross organizer payable" value={money(summary.grossOrganizerPayablePaise)} /><Metric label="Refund deductions" value={money(summary.refundsPaise)} /><Metric label="Adjustments" value={money(summary.adjustmentsPaise)} /></div>
       </CardContent></Card>
       <Card><CardHeader><CardTitle>{editingId ? "Edit pending settlement" : "Record settlement"}</CardTitle><CardDescription>Paid settlements are immutable. Correct them with an adjustment entry.</CardDescription></CardHeader><CardContent><form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
         <Field label="Amount (₹)"><Input inputMode="decimal" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required /></Field>
@@ -161,5 +206,10 @@ function EventLedger({ selectedEventId }: { selectedEventId: string }) {
   </div></AdminDashboardLayout>;
 }
 
-function Metric({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) { return <div><p className="text-xs text-muted-foreground">{label}</p><p className={strong ? "text-2xl font-bold" : "text-xl font-semibold"}>{value}</p></div>; }
+function OverviewMetric({ icon: Icon, label, value, accent = false }: { icon: ComponentType<{ className?: string }>; label: string; value: string; accent?: boolean }) {
+  return <div className={`flex items-center gap-3 rounded-xl border bg-white p-4 shadow-sm ${accent ? "border-orange-200" : "border-slate-200"}`}><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${accent ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-600"}`}><Icon className="h-5 w-5" /></span><div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="truncate text-xl font-bold tabular-nums">{value}</p></div></div>;
+}
+function Metric({ label, value, strong = false, tone, icon: Icon }: { label: string; value: string; strong?: boolean; tone?: "orange" | "amber"; icon?: ComponentType<{ className?: string }> }) {
+  return <div className={`rounded-xl border p-4 ${tone === "orange" ? "border-orange-200 bg-orange-50" : tone === "amber" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}><div className="flex items-center gap-2"><p className="text-xs font-medium text-muted-foreground">{label}</p>{Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />}</div><p className={`${strong ? "text-2xl" : "text-xl"} mt-1 font-bold tabular-nums`}>{value}</p></div>;
+}
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="block space-y-2"><span className="text-sm font-medium">{label}</span>{children}</label>; }
