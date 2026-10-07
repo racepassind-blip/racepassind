@@ -19,6 +19,7 @@ Set these server environment variables in the target environment:
 ```text
 CASHFREE_ENABLED=true
 CASHFREE_ENVIRONMENT=sandbox
+CASHFREE_ALLOW_SANDBOX_IN_PRODUCTION=false
 CASHFREE_CLIENT_ID=<sandbox app ID>
 CASHFREE_CLIENT_SECRET=<sandbox secret>
 CASHFREE_WEBHOOK_URL=https://<public backend>/api/v1/webhooks/cashfree
@@ -30,6 +31,11 @@ success events enabled. The server includes it as `order_meta.notify_url` for
 each order. Use separate production credentials and
 `CASHFREE_ENVIRONMENT=production` only with a production application. Secrets
 belong in the deployment secret store, never the repository or browser.
+
+For a temporary pre-launch test on the production-hosted service, keep
+`ENVIRONMENT=production` and explicitly set
+`CASHFREE_ALLOW_SANDBOX_IN_PRODUCTION=true`. This override permits only the
+Cashfree sandbox. Remove it after acceptance testing.
 
 When configured, organizers can choose Cashfree Managed for paid events. A
 10-digit participant phone is required for a paid gateway registration. The

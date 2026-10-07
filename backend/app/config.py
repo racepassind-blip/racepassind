@@ -85,6 +85,7 @@ class Settings:
     cashfree_client_id: str | None = field(default=None, repr=False)
     cashfree_client_secret: str | None = field(default=None, repr=False)
     cashfree_enabled: bool = False
+    cashfree_allow_sandbox_in_production: bool = False
     cashfree_webhook_url: str | None = None
     clerk_secret_key: str | None = field(default=None, repr=False)
     clerk_jwt_key: str | None = field(default=None, repr=False)
@@ -128,6 +129,7 @@ class Settings:
             cashfree_client_id=os.getenv("CASHFREE_CLIENT_ID"),
             cashfree_client_secret=os.getenv("CASHFREE_CLIENT_SECRET"),
             cashfree_enabled=_as_bool(os.getenv("CASHFREE_ENABLED"), default=False),
+            cashfree_allow_sandbox_in_production=_as_bool(os.getenv("CASHFREE_ALLOW_SANDBOX_IN_PRODUCTION"), default=False),
             cashfree_webhook_url=os.getenv("CASHFREE_WEBHOOK_URL"),
             clerk_secret_key=os.getenv("CLERK_SECRET_KEY"),
             clerk_jwt_key=os.getenv("CLERK_JWT_KEY"),
@@ -152,8 +154,9 @@ class Settings:
             raise RuntimeError("CASHFREE_ENVIRONMENT must be sandbox or production")
         if self.cashfree_enabled and not self.cashfree_ready:
             raise RuntimeError("Cashfree requires credentials and an HTTPS CASHFREE_WEBHOOK_URL")
-        if self.cashfree_enabled and self.is_production and self.cashfree_environment != "production":
-            raise RuntimeError("Production application requires production Cashfree configuration")
+        if (self.cashfree_enabled and self.is_production and self.cashfree_environment != "production"
+                and not self.cashfree_allow_sandbox_in_production):
+            raise RuntimeError("Production application requires production Cashfree configuration unless the explicit sandbox-testing override is enabled")
         if self.storage_mode not in {"local", "s3"}:
             raise RuntimeError("STORAGE_MODE must be either local or s3")
         if self.storage_signed_url_ttl_seconds < 60 or self.storage_signed_url_ttl_seconds > 86400:
