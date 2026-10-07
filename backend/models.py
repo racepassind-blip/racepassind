@@ -1417,3 +1417,78 @@ class CheckoutReceipt(Base):
     amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
     disposition: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ManagedRegistrationCollection(Base):
+    """Frozen allocation of a verified production receipt to one registration."""
+    __tablename__ = "managed_registration_collections"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    registration_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("registrations.id"), nullable=False, unique=True)
+    receipt_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("checkout_receipts.id"), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False, index=True)
+    organizer_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    registration_amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    platform_fee_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_paid_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    organizer_payable_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    participant_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    __table_args__ = (CheckConstraint("registration_amount_paise >= 0 AND platform_fee_paise >= 0 AND total_paid_paise >= 0 AND organizer_payable_paise = total_paid_paise - platform_fee_paise AND organizer_payable_paise >= 0", name="ck_managed_collection_amounts"),)
+
+
+class OrganizerSettlement(Base):
+    """An auditable transfer from SportPass to an event organizer."""
+    __tablename__ = "organizer_settlements"
+    __table_args__ = (
+        UniqueConstraint("reference_number", name="uq_manual_settlement_reference"),
+        CheckConstraint("amount_paise >= 100", name="ck_settlement_minimum"),
+        CheckConstraint("status <> 'PAID' OR (reference_number IS NOT NULL AND length(trim(reference_number)) > 0)", name="ck_paid_reference"),
+        CheckConstraint("amount_paise > 0", name="ck_organizer_settlement_positive_amount"),
+        CheckConstraint("method IN ('BANK_TRANSFER', 'UPI', 'OTHER')", name="ck_organizer_settlement_method"),
+        CheckConstraint("status IN ('PENDING', 'PAID', 'FAILED', 'CANCELLED')", name="ck_organizer_settlement_status"),
+        UniqueConstraint("event_id", "idempotency_key", name="uq_organizer_settlement_event_idempotency"),
+        Index("ix_organizer_settlements_event_status", "event_id", "status"),
+        Index("ix_organizer_settlements_organizer_event", "organizer_id", "event_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organizer_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False)
+    amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    method: Mapped[str] = mapped_column(String(24), nullable=False)
+    reference_number: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    settlement_date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="PENDING")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, server_default="MANUAL")
+    provider_transfer_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    provider_status: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    created_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class OrganizerPayableAdjustment(Base):
+    """Append-only admin correction to an organizer's payable position."""
+    __tablename__ = "organizer_payable_adjustments"
+    __table_args__ = (
+        UniqueConstraint("event_id", "idempotency_key", name="uq_adjustment_request"),
+        CheckConstraint("(kind = 'PAYABLE' AND settlement_id IS NULL) OR (kind = 'SETTLEMENT_REVERSAL' AND settlement_id IS NOT NULL AND amount_paise > 0)", name="ck_adjustment_kind"),
+        CheckConstraint("amount_paise <> 0", name="ck_organizer_adjustment_nonzero"),
+        Index("ix_organizer_adjustments_event", "event_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organizer_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=False)
+    amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    settlement_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizer_settlements.id"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="PAYABLE", server_default="PAYABLE")
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

@@ -476,7 +476,7 @@ export function useRegistrationRefund(registrationId: string | undefined) {
     queryKey: ["registration-refund", registrationId],
     enabled: Boolean(registrationId),
     staleTime: 30_000,
-    queryFn: () => apiRequest<{ refund: RegistrationRefundInfo | null }>(
+    queryFn: () => apiRequest<RegistrationRefundInfo>(
       `/organizer/registrations/${registrationId}/refund`
     ),
   });

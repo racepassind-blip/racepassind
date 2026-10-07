@@ -26,6 +26,7 @@ from app.api.v1.public_events import _fee_config_values, _public_event, router a
 from app.api.v1.storage import router as storage_router
 from app.api.v1.tournament_rounds import router as tournament_rounds_router
 from app.api.v1.registrations import router as registrations_router
+from app.api.v1.cashfree import router as cashfree_router
 from app.api.v1.refunds import router as refunds_router
 from app.api.v1.race_results import router as race_results_router
 from app.config import get_settings
@@ -43,6 +44,7 @@ app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(public_events_router, prefix="/api/v1", tags=["public-events"])
 app.include_router(storage_router, prefix="/api/v1/storage", tags=["storage"])
 app.include_router(registrations_router, prefix="/api/v1", tags=["registrations"])
+app.include_router(cashfree_router, prefix="/api/v1", tags=["cashfree"])
 app.include_router(checkins_router, prefix="/api/v1/organizer/checkins", tags=["organizer-checkins"])
 app.include_router(courts_router, prefix="/api/v1/organizer", tags=["organizer-courts"])
 app.include_router(matches_router, prefix="/api/v1/organizer", tags=["organizer-matches"])

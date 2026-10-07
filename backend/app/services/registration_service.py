@@ -19,7 +19,8 @@ from app.services.auth_service import hash_opaque_token, normalize_email, normal
 from app.services.checkpoint_service import ensure_default_checkpoint
 from app.services.audit_service import record_audit
 from app.services.payment_service import normalize_payment_reference, validate_manual_upi_settings
-from app.services.checkout_payments import sync_event_payment
+from app.services.checkout_payments import PaymentMode, PaymentPlan, ensure_payment, sync_event_payment
+from app.config import get_settings
 from app.services.registration_config_service import calculate_registration_total, normalize_event_configs
 from app.services.platform_fee_service import compute_participant_pricing
 from app.services.credit_service import CREDIT_CHARGEABLE_PAYMENT_GATEWAYS, CreditValidationError, debit_credits, CREDIT_REGISTRATION_DEBIT
@@ -262,7 +263,12 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
     except ValueError:
         raise
     amount_paise = computed_total["totalPaise"]
-    if amount_paise > 0:
+    managed_payment = event.payment_collection_method == "CASHFREE_MANAGED" and amount_paise > 0
+    if managed_payment and not get_settings().cashfree_ready:
+        raise ValueError("Online payments are not available yet")
+    if managed_payment and (not str(responses.get("phone") or "").isdigit() or len(str(responses.get("phone") or "")) != 10):
+        raise ValueError("A 10-digit phone number is required for online payment")
+    if amount_paise > 0 and not managed_payment:
         if event.payment_settings is None:
             raise ValueError("Manual UPI payment settings are not configured")
         validate_manual_upi_settings(event.payment_settings)
@@ -359,14 +365,17 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
             amount=Decimal(participant_total_paise) / Decimal(100),
             expected_amount_paise=participant_total_paise,
             currency="INR",
-            payment_gateway="free" if is_free else "manual_upi",
-            method="free" if is_free else "manual_upi",
+            payment_gateway="free" if is_free else ("cashfree" if managed_payment else "manual_upi"),
+            method="free" if is_free else ("cashfree" if managed_payment else "manual_upi"),
             status="not_required" if is_free else "pending",
             paid_at=now if is_free else None,
         )
     )
     record_audit(db, actor_user_id=user_id, action="registration_created", resource_type="registration", resource_id=registration.id)
-    sync_event_payment(db, order)
+    if managed_payment:
+        ensure_payment(db, plan=PaymentPlan(PaymentMode.CASHFREE_PLATFORM, participant_total_paise, platform_fee_paise), event_order_id=order.id)
+    else:
+        sync_event_payment(db, order)
     db.commit()
     saved = db.scalar(registration_query().where(Registration.id == registration.id))
     return saved, confirmation_token, claim_code
@@ -378,6 +387,8 @@ def update_payment_reference(db: Session, confirmation_token: str, utr_reference
     )
     if registration is None:
         raise ValueError("Registration not found")
+    if registration.payment is not None and registration.payment.payment_gateway == "cashfree":
+        raise ValueError("Gateway payments cannot use a manual payment reference")
     now = utc_now()
     if registration.status not in {"awaiting_payment", "pending_verification"}:
         raise ValueError("Registration is no longer awaiting payment")
@@ -1023,6 +1034,8 @@ def decide_registration_payment(
     )
     if registration is None:
         raise ValueError("Registration not found")
+    if registration.payment is not None and registration.payment.payment_gateway == "cashfree":
+        raise ValueError("Cashfree payments are confirmed only by provider verification")
     order = _lock_order_for_registration(db, registration.id)
     all_batch = _registrations_for_order(db, order.id) if order is not None else [registration]
     batch = [child for child in all_batch if child.status in _REVIEWABLE_REGISTRATION_STATES]
@@ -1465,7 +1478,7 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
         computed_total["fieldConfig"] = field_config
         computed_total["addonConfig"] = addon_config
         amount_paise = computed_total["totalPaise"]
-        if amount_paise > 0 and event.payment_settings is None:
+        if amount_paise > 0 and event.payment_collection_method == "DIRECT_UPI" and event.payment_settings is None:
             raise ValueError("Manual UPI payment settings are not configured")
         pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer, organization=event.organization, participant_count=len(member_responses))
         computed_total["platformFeePaise"] = pricing["platformFeePaise"]
@@ -1483,7 +1496,13 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
 
     # Participant pays the sum of participant totals (base + fee when they bear it).
     total_amount_paise = sum(item["pricing"]["participantTotalPaise"] for item in prepared)
-    if total_amount_paise > 0:
+    managed_payment = event.payment_collection_method == "CASHFREE_MANAGED" and total_amount_paise > 0
+    if managed_payment and not get_settings().cashfree_ready:
+        raise ValueError("Online payments are not available yet")
+    if managed_payment and any(not str(item["responses"].get("phone") or "").isdigit()
+                               or len(str(item["responses"].get("phone") or "")) != 10 for item in prepared):
+        raise ValueError("A 10-digit phone number is required for online payment")
+    if total_amount_paise > 0 and not managed_payment:
         validate_manual_upi_settings(event.payment_settings)
     confirmation_tokens: list[str] = []
     claim_codes: list[str | None] = []
@@ -1555,13 +1574,17 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
             amount=amount,
             expected_amount_paise=payable_paise,
             currency="INR",
-            payment_gateway="free" if base_paise == 0 else "manual_upi",
-            method="free" if base_paise == 0 else "manual_upi",
+            payment_gateway="free" if base_paise == 0 else ("cashfree" if managed_payment else "manual_upi"),
+            method="free" if base_paise == 0 else ("cashfree" if managed_payment else "manual_upi"),
             status="not_required" if base_paise == 0 else "pending",
             paid_at=now if base_paise == 0 else None,
         ))
         record_audit(db, actor_user_id=user_id, action="registration_created", resource_type="registration", resource_id=registration.id)
-    sync_event_payment(db, order)
+    if managed_payment:
+        ensure_payment(db, plan=PaymentPlan(PaymentMode.CASHFREE_PLATFORM, total_amount_paise,
+            sum(reg.platform_fee_paise or 0 for reg in registrations)), event_order_id=order.id)
+    else:
+        sync_event_payment(db, order)
     db.commit()
     saved = _registrations_for_order(db, order.id)
     return saved, confirmation_tokens, claim_codes

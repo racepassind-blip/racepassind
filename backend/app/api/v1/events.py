@@ -855,6 +855,8 @@ def publish_event(
     
     # Check paid organizer verification for paid events
     if has_paid_tickets:
+        if event.payment_collection_method == "CASHFREE_MANAGED" and not get_settings().cashfree_ready:
+            raise HTTPException(status_code=422, detail="Cashfree must be configured before publishing a managed payment event")
         # Get the organization to check verification status
         organization = db.scalar(select(Organization).where(Organization.id == event.organization_id))
         if organization and organization.paid_verification_status != "VERIFIED":

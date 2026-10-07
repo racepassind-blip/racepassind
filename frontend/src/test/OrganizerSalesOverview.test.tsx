@@ -42,7 +42,7 @@ it("filters and paginates orders, and confirms rejection before submitting", () 
   expect(screen.getByText("Runner 11")).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Order status"), { target: { value: "under_review" } });
   expect(screen.getByText("Runner 0")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Reject", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: /^Reject$/ }));
   expect(onDecision).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Confirm rejection" }));
   expect(onDecision).toHaveBeenCalledWith(orders[0], "reject");

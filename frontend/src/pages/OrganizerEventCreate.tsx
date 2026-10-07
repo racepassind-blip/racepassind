@@ -139,6 +139,12 @@ const defaultFieldEditors = (): ParticipantFieldEditor[] => PREDEFINED_FIELDS
 const defaultAddonEditors = (): AddonEditor[] => [];
 
 interface OrganizerEventResponse {
+  refundPolicyEnabled: boolean;
+  refundPolicyType: "full_refund" | "partial_refund" | "organizer_approval" | "no_refund" | null;
+  refundCutoffAt: string | null;
+  refundPercentage: number | null;
+  platformFeeRefundable: boolean;
+  refundPolicyText: string | null;
   id: string;
   organizationId: string;
   name: string;
@@ -173,7 +179,7 @@ interface OrganizerEventResponse {
     tickets: Array<{ id: string; name: string; description: string; pricePaise: number; quantityTotal: number; saleStart: string | null; saleEnd: string | null; maxPerUser: number | null }>;
   }>;
   paymentSettings: { upiId: string; payeeName: string; instructions: string } | null;
-  paymentCollectionMethod: "DIRECT_UPI" | "PAYMENT_GATEWAY";
+  paymentCollectionMethod: "DIRECT_UPI" | "CASHFREE_MANAGED";
   platformFeeBearer?: "ORGANIZER" | "PARTICIPANT";
   platformFeeBearerLocked?: boolean;
 }
@@ -271,7 +277,13 @@ const OrganizerEventCreate = () => {
   const [upiId, setUpiId] = useState("");
   const [payeeName, setPayeeName] = useState("");
   const [paymentInstructions, setPaymentInstructions] = useState("Pay the exact amount using UPI, then submit your UTR/reference.");
-  const [paymentCollectionMethod, setPaymentCollectionMethod] = useState<"DIRECT_UPI" | "PAYMENT_GATEWAY">("DIRECT_UPI");
+  const [paymentCollectionMethod, setPaymentCollectionMethod] = useState<"DIRECT_UPI" | "CASHFREE_MANAGED">("DIRECT_UPI");
+  const [cashfreeEnabled, setCashfreeEnabled] = useState(false);
+  useEffect(() => {
+    void apiRequest<{ enabled: boolean }>("/cashfree/availability")
+      .then((result) => setCashfreeEnabled(result.enabled))
+      .catch(() => setCashfreeEnabled(false));
+  }, []);
   const [allowDirectUpi, setAllowDirectUpi] = useState(false);
   const [platformFeeBearer, setPlatformFeeBearer] = useState<"ORGANIZER" | "PARTICIPANT">("ORGANIZER");
   // Set once the loaded event already had this bearer persisted; used to lock the
@@ -382,12 +394,12 @@ const OrganizerEventCreate = () => {
           setOrganizationId(organization.id);
           setAllowDirectUpi(organization.allowDirectUpi ?? false);
           if (!(organization.allowDirectUpi ?? false)) {
-            setPaymentCollectionMethod("PAYMENT_GATEWAY");
+            setPaymentCollectionMethod("CASHFREE_MANAGED");
           }
         } else {
           setOrganizationId("");
           setAllowDirectUpi(false);
-          setPaymentCollectionMethod("PAYMENT_GATEWAY");
+          setPaymentCollectionMethod("CASHFREE_MANAGED");
         }
       })
       .catch((error) => {
@@ -401,7 +413,7 @@ const OrganizerEventCreate = () => {
     const organization = organizationOptions.find((option) => option.id === nextOrganizationId);
     setOrganizationId(nextOrganizationId);
     setAllowDirectUpi(organization?.allowDirectUpi ?? false);
-    setPaymentCollectionMethod(organization?.allowDirectUpi ? "DIRECT_UPI" : "PAYMENT_GATEWAY");
+    setPaymentCollectionMethod(organization?.allowDirectUpi ? "DIRECT_UPI" : "CASHFREE_MANAGED");
   };
 
   const selectedOrganization = organizationOptions.find((organization) => organization.id === organizationId);
@@ -1387,14 +1399,14 @@ const OrganizerEventCreate = () => {
                     </div>
                   </div>
                 )}
-                <div className="flex items-center gap-3 rounded-lg border p-3 opacity-70">
-                  <input type="radio" name="paymentCollectionMethod" value="PAYMENT_GATEWAY" checked={paymentCollectionMethod === "PAYMENT_GATEWAY"} onChange={() => setPaymentCollectionMethod("PAYMENT_GATEWAY")} disabled className="h-4 w-4 text-muted-foreground focus:ring-muted-foreground" />
+                <div className={`flex items-center gap-3 rounded-lg border p-3 ${cashfreeEnabled ? "" : "opacity-70"}`}>
+                  <input type="radio" name="paymentCollectionMethod" value="CASHFREE_MANAGED" checked={paymentCollectionMethod === "CASHFREE_MANAGED"} onChange={() => setPaymentCollectionMethod("CASHFREE_MANAGED")} disabled={!cashfreeEnabled} className="h-4 w-4 text-muted-foreground focus:ring-muted-foreground" />
                   <div className="flex-1">
                     <div className="font-medium flex items-center gap-2">
                       <span>Online Payment Gateway</span>
-                      <span className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">Coming Soon</span>
+                      <span className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cashfreeEnabled ? "Available" : "Coming Soon"}</span>
                     </div>
-                    <div className="text-xs text-muted-foreground">Automated payment processing via Payment Gateway. (Available soon)</div>
+                    <div className="text-xs text-muted-foreground">Online payment through Cashfree, with manual organizer settlements.</div>
                   </div>
                 </div>
               </div>

@@ -90,6 +90,7 @@ def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: in
         "addonConfig": addon_config,
         "tiers": tiers,
         "platformFeeBearer": event.platform_fee_bearer,
+        "paymentCollectionMethod": event.payment_collection_method,
         "sportPassFeePercentageBasisPoints": fee_percentage_basis_points,
         "sportPassFeeMinimumPaise": fee_minimum_paise,
         "sportPassFeeMaximumPaise": fee_maximum_paise,

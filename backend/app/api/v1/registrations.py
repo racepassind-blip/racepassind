@@ -152,7 +152,7 @@ def _confirmation_response(
     result["ticket"] = ticket
     result["event"]["whatsappGroupUrl"] = event.whatsapp_group_url if ticket is not None else None
     payment_settings = None
-    if event.payment_settings is not None:
+    if event.payment_collection_method == "DIRECT_UPI" and event.payment_settings is not None:
         try:
             payment_settings = build_upi_payment_details(
                 event.payment_settings,
@@ -171,6 +171,7 @@ def _confirmation_response(
             payment_settings["qrImageUrl"] = signed_qr["qrImageUrl"]
             payment_settings["qrImageExpiresAt"] = signed_qr["qrImageExpiresAt"]
     result["paymentSettings"] = payment_settings
+    result["paymentCollectionMethod"] = event.payment_collection_method
     result["ticket"] = ticket
     return result
 

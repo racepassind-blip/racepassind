@@ -75,6 +75,11 @@ class Settings:
     communication_encryption_key: str | None = field(default=None, repr=False)
     # MFA remains available but is opt-in until the rollout is complete.
     admin_mfa_enabled: bool = False
+    cashfree_environment: str = "sandbox"
+    cashfree_client_id: str | None = field(default=None, repr=False)
+    cashfree_client_secret: str | None = field(default=None, repr=False)
+    cashfree_enabled: bool = False
+    cashfree_webhook_url: str | None = None
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -107,7 +112,18 @@ class Settings:
             storage_max_dimension=int(os.getenv("STORAGE_MAX_DIMENSION", "4096")),
             communication_encryption_key=os.getenv("COMMUNICATION_ENCRYPTION_KEY"),
             admin_mfa_enabled=_as_bool(os.getenv("ADMIN_MFA_ENABLED"), default=False),
+            cashfree_environment=os.getenv("CASHFREE_ENVIRONMENT", "sandbox").strip().lower(),
+            cashfree_client_id=os.getenv("CASHFREE_CLIENT_ID"),
+            cashfree_client_secret=os.getenv("CASHFREE_CLIENT_SECRET"),
+            cashfree_enabled=_as_bool(os.getenv("CASHFREE_ENABLED"), default=False),
+            cashfree_webhook_url=os.getenv("CASHFREE_WEBHOOK_URL"),
         )
+
+    @property
+    def cashfree_ready(self) -> bool:
+        return bool(self.cashfree_enabled and self.cashfree_client_id and self.cashfree_client_secret
+                    and self.cashfree_webhook_url and self.cashfree_webhook_url.startswith("https://")
+                    and self.cashfree_webhook_url.endswith("/api/v1/webhooks/cashfree"))
 
     @property
     def is_production(self) -> bool:
@@ -115,6 +131,12 @@ class Settings:
 
     def validate_runtime(self) -> None:
         """Fail closed for production-only configuration mistakes."""
+        if self.cashfree_enabled and self.cashfree_environment not in {"sandbox", "production"}:
+            raise RuntimeError("CASHFREE_ENVIRONMENT must be sandbox or production")
+        if self.cashfree_enabled and not self.cashfree_ready:
+            raise RuntimeError("Cashfree requires credentials and an HTTPS CASHFREE_WEBHOOK_URL")
+        if self.cashfree_enabled and self.is_production and self.cashfree_environment != "production":
+            raise RuntimeError("Production application requires production Cashfree configuration")
         if self.storage_mode not in {"local", "s3"}:
             raise RuntimeError("STORAGE_MODE must be either local or s3")
         if self.storage_signed_url_ttl_seconds < 60 or self.storage_signed_url_ttl_seconds > 86400:

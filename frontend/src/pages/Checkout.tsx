@@ -15,6 +15,7 @@ import type { AddonDefinition, ParticipantFieldConfig } from "@/data/mockEvents"
 import { apiRequest } from "@/lib/api";
 import { scrollToTop } from "@/lib/scroll";
 import { computeSportPassFeePaise, formatPaise } from "@/lib/platform-fee";
+import { launchCashfree } from "@/lib/cashfree";
 
 const CONFIRMATION_TOKEN_KEY = "sportpass_confirmation_token";
 type ResponseValue = string | boolean;
@@ -56,6 +57,7 @@ type RegistrationResponse = {
     currency: string;
     amountPaise: number;
   } | null;
+  paymentCollectionMethod?: "DIRECT_UPI" | "CASHFREE_MANAGED";
   registrations?: RegistrationResponse[];
 };
 
@@ -125,7 +127,7 @@ const Checkout = () => {
   const { user, isParticipant, isInitialized } = useAuth();
   const { data: event, isLoading, isError } = useEvent(eventId);
   const participantLabel = "Participant";
-  const steps = ["Tickets", `${participantLabel} details`, "UPI Payment"];
+  const steps = ["Tickets", `${participantLabel} details`, event?.paymentCollectionMethod === "CASHFREE_MANAGED" ? "Online Payment" : "UPI Payment"];
   const [cart] = useState<CartLine[]>(() => readCart(eventId, tierId));
   const [riders, setRiders] = useState<RiderDraft[]>([]);
   const [activeRiderIndex, setActiveRiderIndex] = useState(0);
@@ -135,6 +137,21 @@ const Checkout = () => {
   const [utrReference, setUtrReference] = useState("");
   const [registrationMode, setRegistrationMode] = useState<RegistrationMode | null>(null);
   const [qrDownloaded, setQrDownloaded] = useState(false);
+  const [gatewayStatus, setGatewayStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!eventId || !new URLSearchParams(location.search).has("cashfree_return")) return;
+    try {
+      const saved = sessionStorage.getItem(`sportpass_cashfree_checkout_${eventId}`);
+      if (!saved) return;
+      const registration = JSON.parse(saved) as BatchRegistrationResponse;
+      setRegistration(registration);
+      setCurrentStep(2);
+      void apiRequest<{ status: string }>("/registrations/cashfree/status", {
+        method: "POST", body: JSON.stringify({ confirmation_token: registration.confirmationToken }),
+      }).then(({ status }) => setGatewayStatus(status)).catch(() => setGatewayStatus("verification_pending"));
+    } catch { setGatewayStatus("verification_pending"); }
+  }, [eventId, location.search]);
 
   // Advancing a checkout step (or switching participant) can leave mobile users
   // scrolled at the bottom of the previous section. Reset to the top so the new
@@ -145,7 +162,16 @@ const Checkout = () => {
 
   const checkoutReturnPath = `${location.pathname}${location.search}`;
   const effectiveRegistrationMode = isParticipant ? "account" : registrationMode;
-  const fields = useMemo(() => event?.fieldConfig?.fields?.length ? [...event.fieldConfig.fields].sort((a, b) => a.order - b.order) : FALLBACK_FIELDS, [event]);
+  const fields = useMemo(() => {
+    const configured = event?.fieldConfig?.fields?.length
+      ? [...event.fieldConfig.fields].sort((a, b) => a.order - b.order) : FALLBACK_FIELDS;
+    if (event?.paymentCollectionMethod !== "CASHFREE_MANAGED") return configured;
+    if (configured.some((field) => field.id === "phone")) {
+      return configured.map((field) => field.id === "phone" ? { ...field, required: true } : field);
+    }
+    return [...configured, { id: "phone", label: "Phone", type: "phone" as const,
+      required: true, predefined: true, order: configured.length + 1 }];
+  }, [event]);
   // Team two-section config (present only for team-format events)
   const mainRegistrantFields = useMemo(
     () => event?.fieldConfig?.main_registrant_fields ? [...event.fieldConfig.main_registrant_fields].sort((a, b) => a.order - b.order) : [],
@@ -426,6 +452,9 @@ const Checkout = () => {
         }),
       });
       setRegistration(result);
+      if (result.paymentCollectionMethod === "CASHFREE_MANAGED" && eventId) {
+        sessionStorage.setItem(`sportpass_cashfree_checkout_${eventId}`, JSON.stringify(result));
+      }
       if (result.confirmationToken) sessionStorage.setItem(CONFIRMATION_TOKEN_KEY, result.confirmationToken);
       const allFree = result.registrations.every((child) => child.paymentStatus === "not_required");
       if (allFree) {
@@ -461,6 +490,52 @@ const Checkout = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const payWithCashfree = async () => {
+    if (!registration?.confirmationToken) return;
+    setLoading(true);
+    try {
+      const current = await apiRequest<{ status: string }>("/registrations/cashfree/status", {
+        method: "POST", body: JSON.stringify({ confirmation_token: registration.confirmationToken }),
+      });
+      if (current.status === "successful" || current.status === "paid_needs_review") {
+        setGatewayStatus(current.status);
+        return;
+      }
+      const session = await apiRequest<{ status: string; paymentSessionId?: string; environment?: "sandbox" | "production" }>("/registrations/cashfree/session", {
+        method: "POST", body: JSON.stringify({ confirmation_token: registration.confirmationToken }),
+      });
+      if (session.status === "paid") { setGatewayStatus("successful"); return; }
+      if (!session.paymentSessionId || !session.environment) throw new Error("Cashfree session was not created");
+      const result = await launchCashfree(session.paymentSessionId, session.environment);
+      if (result.error) throw new Error(result.error.message || "Payment did not complete");
+      if (!result.redirect) {
+        const status = await apiRequest<{ status: string }>("/registrations/cashfree/status", {
+          method: "POST", body: JSON.stringify({ confirmation_token: registration.confirmationToken }),
+        });
+        setGatewayStatus(status.status);
+      }
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not open online payment"); }
+    finally { setLoading(false); }
+  };
+
+  const openVerifiedConfirmation = async () => {
+    if (!registration?.confirmationToken) return;
+    setLoading(true);
+    try {
+      const fresh = await apiRequest<BatchRegistrationResponse>("/registrations/confirmation", {
+        method: "POST", body: JSON.stringify({ confirmation_token: registration.confirmationToken }),
+      });
+      navigate("/confirmation", { state: {
+        ...fresh, confirmationToken: registration.confirmationToken, claimCode: registration.claimCode,
+        registrations: fresh.registrations.map((child, index) => ({ ...child,
+          confirmationToken: registration.registrations[index]?.confirmationToken,
+          claimCode: registration.registrations[index]?.claimCode,
+        })),
+      } });
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not load confirmed registration"); }
+    finally { setLoading(false); }
   };
 
   // Once submitted, the authoritative amount the participant pays is the UPI amount
@@ -868,7 +943,17 @@ const Checkout = () => {
               );
             })()}
 
-            {currentStep === 2 && registration && <section className="space-y-5"><div><h2 className="text-xl font-bold">Pay for all {participantLabel.toLowerCase()}s</h2><p className="mt-1 text-sm text-muted-foreground">One payment covers all paid entries in this order.</p></div><div className="rounded-2xl border bg-card p-5"><p className="text-sm text-muted-foreground">{registration.registrations.length} {registration.registrations.length === 1 ? "entry" : "entries"}</p><p className="mt-2 text-sm font-bold tracking-wide">{registration.registrations.map((child) => child.registrationReference).join(" · ")}</p>{registration.platformFeeBearer === "PARTICIPANT" && (registration.platformFeePaise ?? 0) > 0 && <div className="mt-4 space-y-1 text-sm text-muted-foreground"><div className="flex items-center justify-between"><span>Registration Fee</span><span>{formatPaise(registration.baseAmountPaise ?? 0)}</span></div><div className="flex items-center justify-between"><span>SportPass Fee</span><span>{formatPaise(registration.platformFeePaise ?? 0)}</span></div></div>}<p className="mt-5 text-sm text-muted-foreground">Total amount to pay</p><p className="text-3xl font-extrabold text-primary">₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings && <div className="space-y-4 rounded-2xl border bg-primary/5 p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">UPI ID</p><p className="font-bold">{registration.paymentSettings.upiId}</p><p className="text-xs text-muted-foreground">Payee: {registration.paymentSettings.payeeName}</p></div><Button variant="outline" size="sm" onClick={copyUpi}><Copy className="mr-2 h-4 w-4" /> Copy</Button></div><p className="text-sm text-muted-foreground">{registration.paymentSettings.instructions}</p><div className="flex flex-col items-center gap-3 rounded-lg bg-white p-3"><img src={registration.paymentSettings.qrDataUrl} alt="Generated UPI payment QR" className="h-56 w-56" /><p className="text-xs text-muted-foreground">Scan to pay ₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings.qrImageUrl && <div><p className="mb-2 text-xs font-medium text-muted-foreground">Organizer-provided QR</p><img src={registration.paymentSettings.qrImageUrl} alt="Organizer UPI QR" className="mx-auto max-h-56 rounded-lg" /></div>}<div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm dark:border-blue-900/50 dark:bg-blue-950/20"><p className="font-semibold text-blue-900 dark:text-blue-100">Can't scan? Pay from your UPI app directly</p><p className="mt-1 text-blue-800/80 dark:text-blue-100/80">Download the QR image below, then open your UPI app (GPay, PhonePe, Paytm, etc.), choose <span className="font-semibold">Scan QR</span> or <span className="font-semibold">Upload QR</span>, and select the downloaded image to pay ₹{totalRupees.toLocaleString("en-IN")} automatically.</p><Button type="button" variant="outline" size="sm" className="mt-3 gap-2 border-blue-300 bg-white text-blue-900 hover:bg-blue-50 dark:border-blue-800 dark:bg-transparent dark:text-blue-100" onClick={() => void downloadQrAsPng(registration.paymentSettings!.qrDataUrl, `sportpass-payment-qr-${registration.registrations[0]?.registrationReference ?? "order"}.png`).then(() => setQrDownloaded(true)).catch(() => toast.error("Could not download QR image"))}><Download className="h-4 w-4" /> Download QR image</Button>{qrDownloaded && <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400"><CheckCircle2 className="h-4 w-4 shrink-0" /> QR saved — open your UPI app, tap Scan QR or Upload QR, and pick this image to pay.</p>}</div></div>}<div className="space-y-2"><Label>UTR / transaction reference (optional)</Label><Input value={utrReference} onChange={(e) => setUtrReference(e.target.value)} placeholder="Enter it after paying in your UPI app" /><p className="text-xs text-muted-foreground">One reference will be submitted for the complete {participantLabel.toLowerCase()} group.</p></div><Button onClick={submitUtr} disabled={loading} size="lg" className="w-full">{loading ? "Saving…" : "Submit reference / continue"}</Button><p className="flex items-center justify-center gap-1 text-xs text-muted-foreground"><Shield className="h-3 w-3" /> Do not enter card details on SportPass.</p></section>}
+            {currentStep === 2 && registration && registration.paymentCollectionMethod === "CASHFREE_MANAGED" && (
+              <section className="space-y-5 rounded-2xl border bg-card p-6">
+                <h2 className="text-xl font-bold">Pay securely with Cashfree</h2>
+                <p>One payment covers {registration.registrations.length} entries: {formatPaise(registration.participantTotalPaise ?? registration.amountPaise)}.</p>
+                {gatewayStatus === "successful" ? <p className="text-green-700">Payment verified. Your registrations are confirmed.</p> :
+                  <p className="text-sm text-muted-foreground">{gatewayStatus === "paid_needs_review" ? "Payment received; SportPass is reviewing this registration." : "Registration remains pending until Cashfree confirms payment."}</p>}
+                <Button onClick={() => void payWithCashfree()} disabled={loading || gatewayStatus === "successful" || gatewayStatus === "paid_needs_review"}>{loading ? "Opening…" : "Pay online"}</Button>
+                {gatewayStatus === "successful" && <Button variant="outline" onClick={() => void openVerifiedConfirmation()} disabled={loading}>View registration</Button>}
+              </section>
+            )}
+            {currentStep === 2 && registration && registration.paymentCollectionMethod !== "CASHFREE_MANAGED" && <section className="space-y-5"><div><h2 className="text-xl font-bold">Pay for all {participantLabel.toLowerCase()}s</h2><p className="mt-1 text-sm text-muted-foreground">One payment covers all paid entries in this order.</p></div><div className="rounded-2xl border bg-card p-5"><p className="text-sm text-muted-foreground">{registration.registrations.length} {registration.registrations.length === 1 ? "entry" : "entries"}</p><p className="mt-2 text-sm font-bold tracking-wide">{registration.registrations.map((child) => child.registrationReference).join(" · ")}</p>{registration.platformFeeBearer === "PARTICIPANT" && (registration.platformFeePaise ?? 0) > 0 && <div className="mt-4 space-y-1 text-sm text-muted-foreground"><div className="flex items-center justify-between"><span>Registration Fee</span><span>{formatPaise(registration.baseAmountPaise ?? 0)}</span></div><div className="flex items-center justify-between"><span>SportPass Fee</span><span>{formatPaise(registration.platformFeePaise ?? 0)}</span></div></div>}<p className="mt-5 text-sm text-muted-foreground">Total amount to pay</p><p className="text-3xl font-extrabold text-primary">₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings && <div className="space-y-4 rounded-2xl border bg-primary/5 p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">UPI ID</p><p className="font-bold">{registration.paymentSettings.upiId}</p><p className="text-xs text-muted-foreground">Payee: {registration.paymentSettings.payeeName}</p></div><Button variant="outline" size="sm" onClick={copyUpi}><Copy className="mr-2 h-4 w-4" /> Copy</Button></div><p className="text-sm text-muted-foreground">{registration.paymentSettings.instructions}</p><div className="flex flex-col items-center gap-3 rounded-lg bg-white p-3"><img src={registration.paymentSettings.qrDataUrl} alt="Generated UPI payment QR" className="h-56 w-56" /><p className="text-xs text-muted-foreground">Scan to pay ₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings.qrImageUrl && <div><p className="mb-2 text-xs font-medium text-muted-foreground">Organizer-provided QR</p><img src={registration.paymentSettings.qrImageUrl} alt="Organizer UPI QR" className="mx-auto max-h-56 rounded-lg" /></div>}<div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm dark:border-blue-900/50 dark:bg-blue-950/20"><p className="font-semibold text-blue-900 dark:text-blue-100">Can't scan? Pay from your UPI app directly</p><p className="mt-1 text-blue-800/80 dark:text-blue-100/80">Download the QR image below, then open your UPI app (GPay, PhonePe, Paytm, etc.), choose <span className="font-semibold">Scan QR</span> or <span className="font-semibold">Upload QR</span>, and select the downloaded image to pay ₹{totalRupees.toLocaleString("en-IN")} automatically.</p><Button type="button" variant="outline" size="sm" className="mt-3 gap-2 border-blue-300 bg-white text-blue-900 hover:bg-blue-50 dark:border-blue-800 dark:bg-transparent dark:text-blue-100" onClick={() => void downloadQrAsPng(registration.paymentSettings!.qrDataUrl, `sportpass-payment-qr-${registration.registrations[0]?.registrationReference ?? "order"}.png`).then(() => setQrDownloaded(true)).catch(() => toast.error("Could not download QR image"))}><Download className="h-4 w-4" /> Download QR image</Button>{qrDownloaded && <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400"><CheckCircle2 className="h-4 w-4 shrink-0" /> QR saved — open your UPI app, tap Scan QR or Upload QR, and pick this image to pay.</p>}</div></div>}<div className="space-y-2"><Label>UTR / transaction reference (optional)</Label><Input value={utrReference} onChange={(e) => setUtrReference(e.target.value)} placeholder="Enter it after paying in your UPI app" /><p className="text-xs text-muted-foreground">One reference will be submitted for the complete {participantLabel.toLowerCase()} group.</p></div><Button onClick={submitUtr} disabled={loading} size="lg" className="w-full">{loading ? "Saving…" : "Submit reference / continue"}</Button><p className="flex items-center justify-center gap-1 text-xs text-muted-foreground"><Shield className="h-3 w-3" /> Do not enter card details on SportPass.</p></section>}
           </main>
 
           <aside className="min-w-0 lg:col-span-1">

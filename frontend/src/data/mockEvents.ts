@@ -90,6 +90,7 @@ export interface SportEvent {
   addonConfig?: EventAddonConfig;
   tiers: TicketTier[];
   platformFeeBearer?: "ORGANIZER" | "PARTICIPANT";
+  paymentCollectionMethod?: "DIRECT_UPI" | "CASHFREE_MANAGED";
   sportPassFeePercentageBasisPoints?: number;
   sportPassFeeMinimumPaise?: number;
   sportPassFeeMaximumPaise?: number;

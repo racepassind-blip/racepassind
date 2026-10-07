@@ -23,6 +23,8 @@ interface RefundRecord {
   organizerComments: string | null;
   status: string;
   refundUtr: string | null;
+  providerRefundId?: string | null;
+  providerRefundStatus?: string | null;
   requestedAt: string;
   reviewedAt: string | null;
   refundedAt: string | null;
@@ -70,8 +72,20 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function DetailDrawer({ refund, onClose }: { refund: RefundRecord; onClose: () => void }) {
+function DetailDrawer({ refund, onClose, onUpdated }: { refund: RefundRecord; onClose: () => void; onUpdated: (updated: RefundRecord) => void }) {
   const amount = refund.approvedRefundAmount ?? refund.requestedRefundAmount;
+  const [processing, setProcessing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const runCashfreeRefund = async () => {
+    if (processing) return;
+    setProcessing(true); setActionError(null);
+    try {
+      const action = refund.providerRefundId ? "reconcile" : "process";
+      await apiRequest(`/admin/refunds/${refund.id}/cashfree/${action}`, { method: "POST" });
+      onUpdated(await apiRequest<RefundRecord>(`/admin/refunds/${refund.id}`));
+    } catch (error) { setActionError(error instanceof Error ? error.message : "Cashfree refund could not be checked"); }
+    finally { setProcessing(false); }
+  };
   return (
     <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
       <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -141,6 +155,14 @@ function DetailDrawer({ refund, onClose }: { refund: RefundRecord; onClose: () =
           <section>
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Provider</p>
             <p>{refund.paymentProvider} · {refund.paymentMethod}</p>
+            {refund.providerRefundStatus && <p>Cashfree status: {refund.providerRefundStatus}</p>}
+            {refund.providerRefundId && <p className="font-mono text-xs">{refund.providerRefundId}</p>}
+            {refund.paymentProvider === "CASHFREE" && refund.status === "APPROVED" && (
+              <Button className="mt-3" disabled={processing} onClick={() => void runCashfreeRefund()}>
+                {processing ? "Checking…" : refund.providerRefundId ? "Check Cashfree refund" : `Issue Cashfree refund ${fmt(amount)}`}
+              </Button>
+            )}
+            {actionError && <p className="mt-2 text-destructive">{actionError}</p>}
           </section>
         </div>
       </div>
@@ -157,6 +179,7 @@ const AdminRefunds = () => {
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [detail, setDetail] = useState<RefundRecord | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -175,7 +198,7 @@ const AdminRefunds = () => {
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load refunds"))
       .finally(() => setLoading(false));
-  }, [statusFilter, cursor]);
+  }, [statusFilter, cursor, reloadKey]);
 
   const goPrev = () => {
     setCursor(cursorHistory[cursorHistory.length - 1] ?? null);
@@ -277,7 +300,7 @@ const AdminRefunds = () => {
         </div>
       </div>
 
-      {detail && <DetailDrawer refund={detail} onClose={() => setDetail(null)} />}
+      {detail && <DetailDrawer refund={detail} onClose={() => setDetail(null)} onUpdated={(updated) => { setDetail(updated); setReloadKey((value) => value + 1); }} />}
     </AdminDashboardLayout>
   );
 };

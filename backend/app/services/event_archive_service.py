@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
 from app.services.audit_service import record_audit
 from models import (
@@ -63,6 +64,15 @@ def delete_archived_event(db: Session, event: Event, actor_user_id: UUID) -> Non
     - Orders are left intact (they can span multiple events); only their
       event-specific items/payments are removed.
     """
+    from models import OrganizerSettlement, OrganizerPayableAdjustment, CheckoutPayment
+    db.scalar(select(Event).where(Event.id == event.id).with_for_update())
+    managed = db.scalar(select(Payment.id).join(Registration, Registration.id == Payment.registration_id)
+        .where(Registration.event_id == event.id, Payment.payment_gateway.notin_(["manual", "manual_upi", "free", "manual_offline", "DIRECT_UPI", "direct_upi"])).limit(1))
+    checkout = db.scalar(select(CheckoutPayment.id).join(Payment, Payment.order_id == CheckoutPayment.event_order_id)
+        .join(Registration, Registration.id == Payment.registration_id).where(Registration.event_id == event.id,
+            CheckoutPayment.mode.in_(["CASHFREE_PLATFORM", "CASHFREE_SPLIT"])).limit(1))
+    if managed or checkout or db.scalar(select(OrganizerSettlement.id).where(OrganizerSettlement.event_id == event.id).limit(1)) or db.scalar(select(OrganizerPayableAdjustment.id).where(OrganizerPayableAdjustment.event_id == event.id).limit(1)):
+        raise HTTPException(status_code=409, detail="Financial history must be retained. Keep this event archived.")
     record_audit(
         db,
         actor_user_id=actor_user_id,

@@ -182,7 +182,7 @@ def request_refund(
 
     # Calculate requested refund amount based on policy
     refund_pct = event.refund_percentage if event.refund_percentage is not None else 100
-    platform_fee_refundable = event.platform_fee_refundable
+    platform_fee_refundable = event.platform_fee_refundable and registration.platform_fee_bearer == "PARTICIPANT"
 
     reg_amount = registration.total_amount_paise or 0
     fee_amount = registration.platform_fee_paise or 0
@@ -240,6 +240,9 @@ def confirm_refund_received(
         raise ValueError("Refund not found")
     if refund.status != REFUND_STATUS_REFUND_SENT:
         raise ValueError("Refund cannot be confirmed in its current state")
+
+    # Serialize completed refund effects with manual settlement decisions.
+    db.scalar(select(Event).where(Event.id == refund.event_id).with_for_update())
 
     now = utc_now()
     refund.status = REFUND_STATUS_REFUNDED
@@ -645,6 +648,8 @@ def serialize_refund(refund: Refund) -> dict:
         "status": refund.status,
         "refundUtr": refund.refund_utr,
         "refundProofUrl": refund.refund_proof_url,
+        "providerRefundId": refund.provider_refund_id,
+        "providerRefundStatus": refund.provider_refund_status,
         "requestedAt": refund.requested_at,
         "reviewedAt": refund.reviewed_at,
         "approvedAt": refund.approved_at,

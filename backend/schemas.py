@@ -47,6 +47,7 @@ class EventOut(BaseModel):
     tiers: list[TicketTierOut]
     # SportPass platform-fee context so the participant total can be previewed.
     platformFeeBearer: Literal["ORGANIZER", "PARTICIPANT"] = "ORGANIZER"
+    paymentCollectionMethod: Literal["DIRECT_UPI", "CASHFREE_MANAGED"] = "DIRECT_UPI"
     sportPassFeePercentageBasisPoints: int = 400
     sportPassFeeMinimumPaise: int = 2000
     sportPassFeeMaximumPaise: int = 6000

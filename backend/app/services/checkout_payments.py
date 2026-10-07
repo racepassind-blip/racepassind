@@ -189,6 +189,12 @@ def reconcile_gateway_success(db, payment, *, provider: PaymentProvider, account
         receipt.checkout_payment_id != payment.id or receipt.amount_paise != payment.amount_paise or receipt.currency != payment.currency):
         raise ValueError("Payment evidence does not match the order")
     lock_owner()
+    if payment.event_order_id and environment == "production" and payment.mode == "CASHFREE_PLATFORM":
+        from models import Event, Registration
+        event_ids = db.scalars(select(Registration.event_id).join(Payment, Payment.registration_id == Registration.id)
+                              .where(Payment.order_id == payment.event_order_id).distinct()).all()
+        for event_id in sorted(event_ids, key=str):
+            db.scalar(select(Event).where(Event.id == event_id).with_for_update())
     payment = db.scalar(select(CheckoutPayment).where(CheckoutPayment.id == payment.id).with_for_update().execution_options(populate_existing=True))
     existing = db.scalar(select(CheckoutReceipt).where(CheckoutReceipt.provider == receipt.provider,
         CheckoutReceipt.account == account, CheckoutReceipt.environment == environment, CheckoutReceipt.payment_id == receipt.payment_id))
@@ -211,7 +217,11 @@ def reconcile_gateway_success(db, payment, *, provider: PaymentProvider, account
             raise
         disposition = "confirmed" if ready else "paid_needs_review"
         payment.status = "successful" if ready else "paid_needs_review"
-    db.add(CheckoutReceipt(checkout_payment_id=payment.id, provider=receipt.provider, account=account,
-        environment=environment, payment_id=receipt.payment_id, amount_paise=receipt.amount_paise, disposition=disposition))
+    receipt_row = CheckoutReceipt(checkout_payment_id=payment.id, provider=receipt.provider, account=account,
+        environment=environment, payment_id=receipt.payment_id, amount_paise=receipt.amount_paise, disposition=disposition)
+    db.add(receipt_row)
     db.flush()
+    if payment.event_order_id and environment == "production" and disposition == "confirmed" and payment.mode == "CASHFREE_PLATFORM":
+        from app.services.organizer_settlement_service import post_verified_collection
+        post_verified_collection(db, receipt_id=receipt_row.id)
     return disposition

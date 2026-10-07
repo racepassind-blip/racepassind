@@ -28,6 +28,15 @@ from app.services.organization_fee_service import (
     serialize_organization_fee,
     update_organization_fee_settings,
 )
+from app.services.organizer_settlement_service import (
+    SettlementValidationError,
+    create_adjustment,
+    create_settlement,
+    list_settlements,
+    serialize_settlement,
+    settlement_summary,
+    update_pending_settlement,
+)
 from app.services.platform_fee_service import (
     PlatformFeeValidationError,
     get_effective_pricing,
@@ -66,12 +75,138 @@ class CreditReasonIn(BaseModel):
     amount_paise: StrictInt = Field(gt=0)
 
 
+class OrganizerSettlementIn(BaseModel):
+    amount_paise: StrictInt = Field(gt=0)
+    method: Literal["BANK_TRANSFER", "UPI", "OTHER"]
+    reference_number: str | None = Field(default=None, max_length=160)
+    settlement_date: dt.date
+    status: Literal["PENDING", "PAID"] = "PAID"
+    notes: str | None = Field(default=None, max_length=2000)
+    idempotency_key: str = Field(min_length=8, max_length=120)
+
+
+class OrganizerSettlementUpdateIn(BaseModel):
+    event_id: UUID
+    expected_version: StrictInt = Field(ge=1)
+    amount_paise: StrictInt = Field(gt=0)
+    method: Literal["BANK_TRANSFER", "UPI", "OTHER"]
+    reference_number: str | None = Field(default=None, max_length=160)
+    settlement_date: dt.date
+    status: Literal["PENDING", "PAID", "FAILED", "CANCELLED"]
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class OrganizerPayableAdjustmentIn(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=120)
+    settlement_id: UUID | None = None
+    amount_paise: StrictInt
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+@router.get("/settlement-events")
+def settlement_events(search: str = Query(default="", max_length=120), page: int = Query(default=1, ge=1),
+                      _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    query = select(Event).join(Organization).where(
+        Event.name.ilike(f"%{search}%") | Organization.name.ilike(f"%{search}%"))
+    total = db.scalar(select(func.count()).select_from(query.subquery()))
+    events = db.scalars(query.order_by(Event.created_at.desc(), Event.id).offset((page - 1) * 20).limit(20)).all()
+    summaries = {e.id: settlement_summary(db, event_id=e.id) for e in sorted(events, key=lambda e: str(e.id))}
+    return {"items": [summaries[e.id] for e in events], "total": total, "page": page}
+
+
+@router.get("/events/{event_id}/settlement-adjustments")
+def adjustment_history(event_id: UUID, _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    from models import OrganizerPayableAdjustment
+    rows = db.scalars(select(OrganizerPayableAdjustment).where(OrganizerPayableAdjustment.event_id == event_id)
+                      .order_by(OrganizerPayableAdjustment.created_at.desc())).all()
+    names = {u.id: u.name for u in db.scalars(select(User).where(User.id.in_({r.created_by for r in rows}))).all()}
+    return {"items": [{"id": str(r.id), "amountPaise": r.amount_paise, "reason": r.reason,
+        "kind": r.kind, "settlementId": str(r.settlement_id) if r.settlement_id else None,
+        "createdAt": r.created_at.isoformat(), "createdBy": str(r.created_by), "createdByName": names.get(r.created_by)} for r in rows]}
+
+
+@router.get("/events/{event_id}/settlement-collections")
+def collection_history(event_id: UUID, page: int = Query(default=1, ge=1),
+                       _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    from models import ManagedRegistrationCollection, CheckoutReceipt
+    query = select(ManagedRegistrationCollection, CheckoutReceipt.payment_id).join(
+        CheckoutReceipt, CheckoutReceipt.id == ManagedRegistrationCollection.receipt_id).where(
+        ManagedRegistrationCollection.event_id == event_id)
+    total = db.scalar(select(func.count()).select_from(query.subquery()))
+    rows = db.execute(query.order_by(ManagedRegistrationCollection.created_at.desc(), ManagedRegistrationCollection.id)
+                      .offset((page - 1) * 50).limit(50)).all()
+    return {"total": total, "page": page, "items": [{"id": str(c.id), "registrationId": str(c.registration_id),
+        "providerPaymentId": provider_id, "totalPaidPaise": c.total_paid_paise, "platformFeePaise": c.platform_fee_paise,
+        "organizerPayablePaise": c.organizer_payable_paise, "createdAt": c.created_at.isoformat()} for c, provider_id in rows]}
+
+
 @router.get("/dashboard")
 def admin_dashboard(
     _: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
 ) -> dict:
     return get_admin_dashboard(db)
+
+
+@router.get("/events/{event_id}/settlement-summary")
+def get_event_settlement_summary(event_id: UUID, _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    try:
+        return settlement_summary(db, event_id=event_id)
+    except SettlementValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/events/{event_id}/settlements")
+def get_event_settlements(event_id: UUID, _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    try:
+        return {"items": list_settlements(db, event_id=event_id)}
+    except SettlementValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/events/{event_id}/settlements", status_code=status.HTTP_201_CREATED)
+def post_event_settlement(event_id: UUID, payload: OrganizerSettlementIn, admin: User = Depends(require_roles("admin")),
+                          _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    try:
+        row = create_settlement(db, event_id=event_id, actor_user_id=admin.id, **payload.model_dump())
+        db.commit()
+        db.refresh(row)
+        return serialize_settlement(row)
+    except SettlementValidationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Transfer reference or request already exists. Reload the ledger.") from exc
+
+
+@router.patch("/settlements/{settlement_id}")
+def patch_event_settlement(settlement_id: UUID, payload: OrganizerSettlementUpdateIn, admin: User = Depends(require_roles("admin")),
+                           _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    try:
+        row = update_pending_settlement(db, settlement_id=settlement_id, actor_user_id=admin.id, **payload.model_dump())
+        db.commit()
+        db.refresh(row)
+        return serialize_settlement(row)
+    except SettlementValidationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Transfer reference already exists. Reload the ledger.") from exc
+
+
+@router.post("/events/{event_id}/settlement-adjustments", status_code=status.HTTP_201_CREATED)
+def post_event_settlement_adjustment(event_id: UUID, payload: OrganizerPayableAdjustmentIn,
+                                     admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf),
+                                     db: Session = Depends(get_db)) -> dict:
+    try:
+        row = create_adjustment(db, event_id=event_id, actor_user_id=admin.id, **payload.model_dump())
+        db.commit()
+        return {"id": str(row.id), "amountPaise": row.amount_paise, "reason": row.reason}
+    except SettlementValidationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _serialize_admin_event(event: Event) -> dict:

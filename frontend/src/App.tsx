@@ -47,6 +47,7 @@ import AdminCommunication from "./pages/AdminCommunication";
 import AdminRefunds from "./pages/AdminRefunds";
 import AdminCredits from "./pages/AdminCredits";
 import AdminOrganizerPricing from "./pages/AdminOrganizerPricing";
+import AdminSettlements from "./pages/AdminSettlements";
 import AdminMfaSetup from "./pages/AdminMfaSetup";
 import OrganizerCredits from "./pages/OrganizerCredits";
 import OrganizerRefunds from "./pages/OrganizerRefunds";
@@ -105,6 +106,7 @@ const App = () => (
             <Route path="/admin/refunds" element={<ProtectedRoute allowedRoles={["admin"]}><AdminRefunds /></ProtectedRoute>} />
             <Route path="/admin/credits" element={<ProtectedRoute allowedRoles={["admin"]}><AdminCredits /></ProtectedRoute>} />
             <Route path="/admin/organizer-pricing" element={<ProtectedRoute allowedRoles={["admin"]}><AdminOrganizerPricing /></ProtectedRoute>} />
+            <Route path="/admin/settlements" element={<ProtectedRoute allowedRoles={["admin"]}><AdminSettlements /></ProtectedRoute>} />
 
             {/* Admin/Organizer routes */}
             <Route path="/organizer" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerDashboard /></ProtectedRoute>} />
