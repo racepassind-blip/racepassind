@@ -52,14 +52,18 @@ def submit_destination(db, *, organization_id, upi_id: str, payee_name: str, act
     return destination
 
 
-def assert_paid_event_available(db, event: Event) -> OrganizationPaymentDestination:
+def assert_paid_event_available(db, event: Event) -> OrganizationPaymentDestination | None:
     organization = db.scalar(select(Organization).where(Organization.id == event.organization_id).with_for_update())
     settings = event.payment_settings
     if (organization is None or organization.status != "active" or
-        organization.paid_verification_status != "VERIFIED" or not organization.allow_direct_upi or
+        organization.paid_verification_status != "VERIFIED" or
         event.status != "published" or event.archived_at is not None or event.registration_status != "open" or
-        event.payment_collection_method != "DIRECT_UPI" or settings is None or not settings.is_active or
-        settings.method != "manual_upi" or settings.payment_destination_id is None):
+        event.payment_collection_method not in {"DIRECT_UPI", "CASHFREE_MANAGED"}):
+        raise ValueError(PUBLIC_UNAVAILABLE_MESSAGE)
+    if event.payment_collection_method == "CASHFREE_MANAGED":
+        return None
+    if (not organization.allow_direct_upi or settings is None or not settings.is_active or
+            settings.method != "manual_upi" or settings.payment_destination_id is None):
         raise ValueError(PUBLIC_UNAVAILABLE_MESSAGE)
     destination = db.scalar(select(OrganizationPaymentDestination).where(
         OrganizationPaymentDestination.id == settings.payment_destination_id,

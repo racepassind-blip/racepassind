@@ -916,39 +916,14 @@ const Checkout = () => {
                       </div>
                     );
                   })()}
+                  {activeRiderIndex === totalParticipants - 1 && totalPaise > 0 && <div className="overflow-hidden rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-white shadow-sm">
+                    <div className="flex gap-3 border-b border-orange-100 px-5 py-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-orange-100 text-orange-700"><Shield className="h-5 w-5" /></span><div><p className="font-bold text-slate-950">About this booking</p><p className="mt-0.5 text-sm text-slate-500">Please review who is responsible for your event experience.</p></div></div>
+                    <div className="space-y-3 px-5 py-4 text-sm leading-6 text-slate-600"><p>This event is organized and conducted by <span className="font-semibold text-slate-950">{event.organizer}</span>. SportPass India provides the registration, ticketing and event-management platform.</p><p>The organizer is responsible for the event’s conduct, venue, permissions, safety, cancellations and refunds under the displayed refund policy.</p>{event.paymentSettings?.method === "DIRECT_UPI" && <p>The registration amount is paid directly to <span className="font-semibold text-slate-950">{event.paymentSettings.payeeName || event.organizer}</span> and is not held by SportPass India.</p>}</div>
+                    <label className={`m-4 mt-0 flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${responsibilityAcknowledged ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white hover:border-orange-300 hover:bg-orange-50/40"}`}><input aria-label="I have reviewed the event, organizer and refund details." type="checkbox" checked={responsibilityAcknowledged} onChange={(e) => setResponsibilityAcknowledged(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 accent-emerald-600" /><span><span className="block text-sm font-semibold text-slate-950">I have reviewed the event, organizer and refund details.</span><span className="mt-1 block text-xs leading-5 text-slate-500">Required before continuing to payment.</span></span></label>
+                  </div>}
                   <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-                    <Button type="button" variant="outline" onClick={() => activeRiderIndex > 0 ? setActiveRiderIndex(activeRiderIndex - 1) : setCurrentStep(0)}>
-                      <ArrowLeft className="mr-2 h-4 w-4" /> Previous
-                    </Button>
-                    {activeRiderIndex < totalParticipants - 1 ? (
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          if (!riderReady(activeRider)) {
-                            toast.error(`Complete the required ${participantLabel.toLowerCase()} fields for this ${participantLabel.toLowerCase()}.`);
-                            return;
-                          }
-                          setActiveRiderIndex(activeRiderIndex + 1);
-                        }}
-                      >
-                        Save {participantLabel.toLowerCase()} & continue
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </Button>
-                    ) : (
-                      <>
-                      {totalPaise > 0 && <div className="mb-4 rounded-xl border border-primary/15 bg-primary/[0.035] p-4 text-sm text-muted-foreground">
-                        <p className="font-semibold text-foreground">About this booking</p>
-                        <p className="mt-1 leading-5">This event is organized and conducted by <span className="font-semibold text-foreground">{event.organizer}</span>. SportPass India provides the registration, ticketing and event-management platform.</p>
-                        <p className="mt-2 leading-5">The organizer is responsible for the event, including its conduct, venue, permissions, safety, cancellations and refunds as per the displayed refund policy.</p>
-                        {event.paymentSettings?.method === "DIRECT_UPI" && <p className="mt-2 leading-5">The registration amount is paid directly to <span className="font-semibold text-foreground">{event.paymentSettings.payeeName || event.organizer}</span> and is not held by SportPass India.</p>}
-                        <label className="mt-3 flex items-start gap-2 text-sm font-medium text-foreground"><input type="checkbox" checked={responsibilityAcknowledged} onChange={(e) => setResponsibilityAcknowledged(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-input accent-primary" /> <span>I have reviewed the event, organizer and refund details.</span></label>
-                      </div>}
-                      <Button type="button" onClick={createRegistration} disabled={!participantReady || loading || (totalPaise > 0 && !responsibilityAcknowledged)}>
-                        {loading ? "Creating registrations…" : totalPaise === 0 ? "Complete free registrations" : "Continue to payment"}
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </Button>
-                      </>
-                    )}
+                    <Button type="button" variant="outline" onClick={() => activeRiderIndex > 0 ? setActiveRiderIndex(activeRiderIndex - 1) : setCurrentStep(0)}><ArrowLeft className="mr-2 h-4 w-4" /> Previous</Button>
+                    {activeRiderIndex < totalParticipants - 1 ? <Button type="button" onClick={() => { if (!riderReady(activeRider)) { toast.error(`Complete the required ${participantLabel.toLowerCase()} fields for this ${participantLabel.toLowerCase()}.`); return; } setActiveRiderIndex(activeRiderIndex + 1); }}>Save {participantLabel.toLowerCase()} & continue<ArrowRight className="ml-2 h-4 w-4" /></Button> : <Button type="button" className="sm:min-w-52" onClick={createRegistration} disabled={!participantReady || loading || (totalPaise > 0 && !responsibilityAcknowledged)}>{loading ? "Creating registrations…" : totalPaise === 0 ? "Complete free registrations" : "Continue to payment"}<ArrowRight className="ml-2 h-4 w-4" /></Button>}
                   </div>
                   {!participantReady && activeRiderIndex === totalParticipants - 1 && (
                     <p className="text-right text-sm text-muted-foreground">Complete the required {participantLabel.toLowerCase()} fields for every {participantLabel.toLowerCase()} before continuing.</p>
