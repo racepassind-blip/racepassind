@@ -19,6 +19,7 @@ Email types:
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -32,6 +33,8 @@ from sqlalchemy.orm import Session
 from app.services.audit_service import record_audit
 from app.services.gmail_api_service import GmailDeliveryError, gmail_api_configured, send_gmail_message
 from models import CommunicationConfig, EmailLog, Registration
+
+logger = logging.getLogger(__name__)
 
 # Email limits (per 24-hour rolling window)
 EMAIL_WARNING_LIMIT = 470
@@ -77,6 +80,16 @@ class SendEmailResult:
         self.status = status  # SENT, PENDING_LIMIT, FAILED, SKIPPED_DISABLED
         self.message = message
         self.email_log = email_log
+        # Background callers often ignore this result. Make every unsuccessful
+        # outcome visible without logging recipients, message bodies or secrets.
+        if not success:
+            logger.warning(
+                "Email delivery status=%s reason=%s email_type=%s reference_id=%s",
+                status,
+                getattr(email_log, "failure_reason", None),
+                getattr(email_log, "email_type", None),
+                getattr(email_log, "reference_id", None),
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -182,6 +195,7 @@ def send_email(
     )
 
     if config is None or not config.enabled:
+        logger.warning("Email configuration %s", "missing; save sender settings in Admin Communication" if config is None else "disabled")
         # Log skipped email
         log = _get_or_create_email_log(
             db,
@@ -229,6 +243,10 @@ def send_email(
     gmail_address = config_data.get("gmail_address", "")
 
     if not sender_name or not gmail_address or not gmail_api_configured():
+        logger.warning(
+            "Email configuration incomplete: sender_name_present=%s gmail_address_present=%s gmail_oauth_configured=%s",
+            bool(sender_name), bool(gmail_address), gmail_api_configured(),
+        )
         log = _get_or_create_email_log(
             db,
             recipient=recipient,

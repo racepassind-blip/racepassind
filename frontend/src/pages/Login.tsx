@@ -133,6 +133,9 @@ const Login = () => {
                   {isLoading ? "Signing in…" : "Sign in"}
                   {!isLoading && <ArrowRight className="h-4 w-4" />}
                 </Button>
+                <div className="text-center">
+                  <button type="button" className="text-sm text-primary hover:underline" onClick={() => navigate("/forgot-password")}>Forgot password?</button>
+                </div>
               </form>
 
               <div className="mt-8 border-t pt-6 text-center text-sm">
