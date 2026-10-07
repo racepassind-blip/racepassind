@@ -13,6 +13,20 @@ from app.services.auth_service import hash_opaque_token as hash_token
 from models import CheckoutPayment, Event, Order, OrderItem, Payment, Registration, Ticket
 
 
+def _cashfree_phone(value: str | None) -> str:
+    """Return the 10-digit national mobile format required by Cashfree."""
+    digits = "".join(character for character in (value or "") if character.isdigit())
+    if digits.startswith("0091") and len(digits) == 14:
+        digits = digits[4:]
+    elif digits.startswith("91") and len(digits) == 12:
+        digits = digits[2:]
+    elif digits.startswith("0") and len(digits) == 11:
+        digits = digits[1:]
+    if len(digits) != 10 or digits[0] not in "6789":
+        raise ValueError("A valid 10-digit phone number is required for Cashfree")
+    return digits
+
+
 def payment_for_token(db: Session, token: str) -> tuple[CheckoutPayment, Registration]:
     registration = db.scalar(select(Registration).where(Registration.confirmation_token_hash == hash_opaque_token(token)))
     if registration is None:
@@ -36,7 +50,7 @@ def start_checkout(db: Session, *, token: str, return_url: str) -> dict:
             raise ValueError("Cashfree account configuration changed for this checkout")
         result = gateway.recover_session(payment)
     else:
-        phone = registration.participant.normalized_phone or ""
+        phone = _cashfree_phone(registration.participant.phone or registration.participant.normalized_phone)
         result = gateway.recover_session(payment, missing_ok=True)
         if result is None:
             result = gateway.create_session(payment, phone=phone, customer_id=str(registration.id), return_url=return_url)

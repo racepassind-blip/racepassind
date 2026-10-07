@@ -123,6 +123,21 @@ class CashfreeIntegrationTests(unittest.TestCase):
         self.assertEqual(self.checkout.provider_order_id, f"sp_{self.checkout.id.hex}")
         gateway.create_session.assert_not_called()
 
+    def test_checkout_converts_stored_country_code_to_cashfree_phone(self):
+        self.checkout.provider_account = None
+        self.checkout.provider_environment = None
+        self.checkout.provider_order_id = None
+        self.registration.participant.phone = "+91 98765 43210"
+        self.registration.participant.normalized_phone = "919876543210"
+        self.db.commit()
+        gateway = Mock(account="merchant", environment="sandbox")
+        gateway.recover_session.return_value = None
+        gateway.create_session.return_value = {
+            "orderId": f"sp_{self.checkout.id.hex}", "paymentSessionId": "sandbox-session", "environment": "sandbox"}
+        with patch("app.services.cashfree_registration_service.CashfreeGateway", return_value=gateway):
+            start_checkout(self.db, token="test-confirmation-token", return_url="https://example.test/return")
+        self.assertEqual(gateway.create_session.call_args.kwargs["phone"], "9876543210")
+
     def test_refund_only_reduces_ledger_after_provider_success(self):
         fake = FakeCashfree()
         with patch("app.services.cashfree_registration_service.CashfreeGateway", return_value=fake):
