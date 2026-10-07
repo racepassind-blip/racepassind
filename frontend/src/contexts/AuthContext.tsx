@@ -1,7 +1,8 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth as useClerkAuth } from "@clerk/react";
 
-import { ApiError, apiRequest, clearCsrfToken, setUnauthorizedHandler } from "@/lib/api";
+import { ApiError, apiRequest, clearCsrfToken, setAuthTokenProvider, setUnauthorizedHandler } from "@/lib/api";
 
 export type UserRole = "admin" | "organizer" | "participant" | "user";
 
@@ -46,7 +47,7 @@ function clearAccountCache(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.getMutationCache().clear();
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+function LegacyAuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -130,6 +131,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
+}
+
+function ClerkAuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
+  const { isLoaded, isSignedIn, getToken, signOut } = useClerkAuth();
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const clearSession = useCallback(() => {
+    setUser(null);
+    setAuthTokenProvider(null);
+    clearAccountCache(queryClient);
+  }, [queryClient]);
+
+  const bootstrap = useCallback(async () => {
+    if (!isLoaded) return;
+    setIsLoading(true);
+    setAuthError(null);
+    if (!isSignedIn) {
+      clearSession();
+      setIsLoading(false);
+      return;
+    }
+    setAuthTokenProvider(getToken);
+    try {
+      const response = await apiRequest<AuthResponse>("/auth/me");
+      setUser(response.user);
+    } catch (error) {
+      clearSession();
+      if (!(error instanceof ApiError) || error.status !== 401) setAuthError(error instanceof Error ? error.message : "Could not connect to SportPass");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clearSession, getToken, isLoaded, isSignedIn]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(clearSession);
+    void bootstrap();
+    return () => { setUnauthorizedHandler(null); setAuthTokenProvider(null); };
+  }, [bootstrap, clearSession]);
+
+  const logout = useCallback(async () => { setIsLoading(true); try { await signOut(); } finally { clearSession(); setIsLoading(false); } }, [clearSession, signOut]);
+  const value: AuthContextType = {
+    user, isLoading: isLoading || !isLoaded, isInitialized: isLoaded, authError,
+    login: async () => { throw new Error("Use Clerk sign-in"); }, logout,
+    retryBootstrap: () => void bootstrap(), isAdmin: user?.role === "admin",
+    isStaff: user?.role === "admin" || user?.role === "organizer",
+    isParticipant: user?.role === "participant" || user?.role === "user",
+  };
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <ClerkAuthProvider>{children}</ClerkAuthProvider> : <LegacyAuthProvider>{children}</LegacyAuthProvider>;
 }
 
 export function useAuth() {

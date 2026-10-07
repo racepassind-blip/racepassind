@@ -8,6 +8,7 @@ export type ApiRequestOptions = RequestInit & {
 };
 
 let unauthorizedHandler: (() => void) | null = null;
+let authTokenProvider: (() => Promise<string | null>) | null = null;
 let activeApiRequests = 0;
 const apiLoadingListeners = new Set<() => void>();
 
@@ -59,6 +60,10 @@ export class ApiError extends Error {
 
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   unauthorizedHandler = handler;
+}
+
+export function setAuthTokenProvider(provider: (() => Promise<string | null>) | null): void {
+  authTokenProvider = provider;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +198,10 @@ async function executeRequest(
     headers.set("X-CSRF-Token", csrfToken);
   }
   if (!headers.has("X-Request-ID")) headers.set("X-Request-ID", crypto.randomUUID());
+  if (authTokenProvider && !headers.has("Authorization")) {
+    const token = await authTokenProvider();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
 
   return fetch(`${API_BASE}${path}`, {
     ...options,

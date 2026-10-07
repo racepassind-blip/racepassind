@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Building2, CheckCircle2, Eye, EyeOff, KeyRound, ShieldCheck, Ticket, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import { SignUp } from "@clerk/react";
 
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,10 @@ const Signup = () => {
     password: "",
     organizationName: "",
   });
+
+  if (import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) {
+    return <Layout><div className="mx-auto flex justify-center px-4 py-10"><SignUp routing="path" path="/signup" forceRedirectUrl={returnTo ?? "/dashboard"} /></div></Layout>;
+  }
 
   const updateForm = (field: keyof typeof form, value: string) => {
     setSubmitted(false);

@@ -36,6 +36,11 @@ from models import OrganizerApplication, User
 router = APIRouter()
 
 
+def _ensure_legacy_auth_enabled() -> None:
+    if get_settings().clerk_auth_required:
+        raise HTTPException(status_code=410, detail="Password authentication is disabled; use Clerk")
+
+
 @router.get("/csrf")
 def csrf_token(request: Request, response: Response) -> dict:
     """Return a CSRF token the SPA can echo back in the X-CSRF-Token header.
@@ -125,6 +130,7 @@ def register(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
+    _ensure_legacy_auth_enabled()
     email = normalize_email(payload.email)
     client_ip = request.client.host if request.client else "unknown"
     try:
@@ -178,6 +184,7 @@ def organizer_signup(
     db: Session = Depends(get_db),
 ) -> dict:
     """Submit an organizer application for admin review."""
+    _ensure_legacy_auth_enabled()
     email = normalize_email(payload.email)
     client_ip = request.client.host if request.client else "unknown"
     try:
@@ -244,6 +251,7 @@ def login(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
+    _ensure_legacy_auth_enabled()
     email = normalize_email(payload.email)
     client_ip = request.client.host if request.client else "unknown"
     try:

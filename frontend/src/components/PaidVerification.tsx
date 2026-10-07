@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { BadgeCheck, Clock, FileCheck2, ShieldCheck, XCircle } from "lucide-react";
+import { BadgeCheck, Ban, Clock, FileCheck2, ShieldCheck, XCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -13,7 +13,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/api";
 
-type PaidVerificationStatus = "NOT_SUBMITTED" | "UNDER_REVIEW" | "VERIFIED" | "REJECTED";
+type PaidVerificationStatus = "NOT_SUBMITTED" | "UNDER_REVIEW" | "VERIFIED" | "REJECTED" | "SUSPENDED";
 
 type PaidVerification = {
   organizationId: string;
@@ -30,6 +30,7 @@ type PaidVerification = {
   submittedAt: string | null;
   reviewedAt: string | null;
   rejectionReason: string | null;
+  suspensionReason?: string | null;
 };
 
 interface PaidVerificationProps {
@@ -44,6 +45,7 @@ const STATUS_META: Record<PaidVerificationStatus, { label: string; icon: typeof 
   UNDER_REVIEW: { label: "Under Review", icon: Clock, className: "border-amber-300 text-amber-700" },
   VERIFIED: { label: "Verified", icon: BadgeCheck, className: "border-emerald-300 text-emerald-700" },
   REJECTED: { label: "Rejected", icon: XCircle, className: "border-destructive/40 text-destructive" },
+  SUSPENDED: { label: "Suspended", icon: Ban, className: "border-destructive/40 text-destructive" },
 };
 
 function formatDate(value: string | null) {
@@ -211,6 +213,14 @@ const PaidVerification = ({ organizationId }: PaidVerificationProps) => {
             <p className="font-semibold">Your verification was rejected.</p>
             {verification?.rejectionReason && <p className="mt-1">Reason: {verification.rejectionReason}</p>}
             <p className="mt-1">Update the details below and resubmit.</p>
+          </div>
+        )}
+
+        {status === "SUSPENDED" && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+            <p className="font-semibold">Paid registration access is suspended.</p>
+            {verification?.suspensionReason && <p className="mt-1">Reason: {verification.suspensionReason}</p>}
+            <p className="mt-1">Your historical events and registrations remain available. Contact SportPass support for review.</p>
           </div>
         )}
 

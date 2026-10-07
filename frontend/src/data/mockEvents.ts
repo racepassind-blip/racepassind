@@ -91,6 +91,7 @@ export interface SportEvent {
   tiers: TicketTier[];
   platformFeeBearer?: "ORGANIZER" | "PARTICIPANT";
   paymentCollectionMethod?: "DIRECT_UPI" | "CASHFREE_MANAGED";
+  paymentSettings?: { method?: string; upiId: string; payeeName: string; instructions: string } | null;
   sportPassFeePercentageBasisPoints?: number;
   sportPassFeeMinimumPaise?: number;
   sportPassFeeMaximumPaise?: number;

@@ -93,6 +93,7 @@ it("reuses the order key and access token when checkout times out", async () => 
   fireEvent.click(await screen.findByRole("button", { name: "Add Race jersey M" }));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Test Buyer" } });
   fireEvent.change(screen.getByLabelText("Phone (required)"), { target: { value: "9876543210" } });
+  fireEvent.click(screen.getByLabelText("I have reviewed the seller, product and return/refund details."));
   const pay = screen.getByRole("button", { name: /Continue to payment/ });
   await waitFor(() => expect(pay).toBeEnabled());
   fireEvent.click(pay);
@@ -118,6 +119,7 @@ it("shows the generated order ID and asks the buyer to save it", async () => {
   fireEvent.change(screen.getByLabelText("Email (optional)"), { target: { value: "invalid" } });
   expect(screen.getByRole("button", { name: /Continue to payment/ })).toBeDisabled();
   fireEvent.change(screen.getByLabelText("Email (optional)"), { target: { value: "" } });
+  fireEvent.click(screen.getByLabelText("I have reviewed the seller, product and return/refund details."));
   await waitFor(() => expect(screen.getByRole("button", { name: /Continue to payment/ })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: /Continue to payment/ }));
   expect(await screen.findByText(orderId)).toBeInTheDocument();

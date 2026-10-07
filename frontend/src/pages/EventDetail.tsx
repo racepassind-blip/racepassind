@@ -295,6 +295,10 @@ const EventDetail = () => {
               </section>
             )}
 
+            <section className="rounded-xl border bg-card p-5 sm:p-6">
+              <div className="flex items-start gap-3"><Info className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div className="min-w-0 flex-1"><h2 className="text-lg font-bold">Organizer Information</h2><dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">Organized by</dt><dd className="mt-1 font-semibold">{event.organizerInfo?.name ?? event.organizer}</dd></div><div><dt className="text-muted-foreground">Payment recipient</dt><dd className="mt-1 font-semibold">{event.paymentSettings?.payeeName || event.organizerInfo?.name || event.organizer}</dd></div><div><dt className="text-muted-foreground">Refund responsibility</dt><dd className="mt-1 font-semibold">Organizer</dd></div><div><dt className="text-muted-foreground">Refund policy</dt><dd className="mt-1 font-semibold text-primary">{event.refundPolicyEnabled ? "View policy above" : "No policy published"}</dd></div></dl><button type="button" className="mt-4 text-sm font-semibold text-primary hover:underline" onClick={() => window.alert("Please contact SportPass support to report this event.")}>Report this event</button></div></div>
+            </section>
+
             {/* WhatsApp Support CTA */}
             <section>
               <div className="rounded-xl border border-[#25D366]/20 bg-[#25D366]/5 p-5">

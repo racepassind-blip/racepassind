@@ -3,7 +3,7 @@ from dataclasses import FrozenInstanceError, replace
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from app.sports.base import SportAdapter
@@ -446,12 +446,19 @@ def test_sport_specific_score_limit_is_not_a_shared_schema_limit():
 
 def test_trekking_manual_payment_confirmation_and_capacity(db):
     from app.services.registration_service import decide_registration_payment
-    from models import EventPaymentSettings
+    from models import EventPaymentSettings, OrganizationPaymentDestination
     event, user, _ = make_event(db, "trekking", quantity=1)
     event.organization.credit_deduction_mode = "MANUAL_EVENT_SETTLEMENT"
     ticket = event.categories[0].tickets[0]
     ticket.price = 10000
-    event.payment_settings = EventPaymentSettings(method="manual_upi", upi_id="test@bank", payee_name="Test organizer", is_active=True)
+    event.organization.status = "active"
+    event.organization.paid_verification_status = "VERIFIED"
+    event.organization.allow_direct_upi = True
+    event.payment_collection_method = "DIRECT_UPI"
+    destination = OrganizationPaymentDestination(organization_id=event.organization_id, upi_id="test@bank", payee_name="Test organizer", status="APPROVED")
+    db.add(destination)
+    db.flush()
+    event.payment_settings = EventPaymentSettings(method="manual_upi", upi_id="test@bank", payee_name="Test organizer", is_active=True, payment_destination_id=destination.id)
     db.commit()
     registration = register(db, event)
     assert registration.status == "awaiting_payment"
@@ -464,6 +471,36 @@ def test_trekking_manual_payment_confirmation_and_capacity(db):
     assert registration.payment.status == "approved"
     assert ticket.quantity_sold == 1
     assert ticket.quantity_reserved == 0
+
+
+def test_paid_registration_service_rechecks_access_and_preserves_existing_registration(db):
+    from models import EventPaymentSettings, OrganizationPaymentDestination, Registration
+    event, _, _ = make_event(db, "trekking", quantity=3)
+    event.organization.status = "active"
+    event.organization.paid_verification_status = "VERIFIED"
+    event.organization.allow_direct_upi = True
+    event.payment_collection_method = "DIRECT_UPI"
+    event.categories[0].tickets[0].price = 10000
+    destination = OrganizationPaymentDestination(
+        organization_id=event.organization_id, upi_id="secure@bank",
+        payee_name="Test organizer", status="APPROVED",
+    )
+    db.add(destination)
+    db.flush()
+    event.payment_settings = EventPaymentSettings(
+        method="manual_upi", upi_id=destination.upi_id, payee_name=destination.payee_name,
+        is_active=True, payment_destination_id=destination.id,
+    )
+    db.commit()
+
+    existing = register(db, event)
+    event.organization.allow_direct_upi = False
+    db.commit()
+
+    with pytest.raises(ValueError, match="Paid registrations are currently unavailable"):
+        register(db, event)
+    assert db.get(Registration, existing.id) is not None
+    assert db.scalar(select(func.count(Registration.id)).where(Registration.event_id == event.id)) == 1
 
 
 def test_new_adapter_flows_through_event_api_and_registration(db, monkeypatch):

@@ -285,6 +285,7 @@ const OrganizerEventCreate = () => {
       .catch(() => setCashfreeEnabled(false));
   }, []);
   const [allowDirectUpi, setAllowDirectUpi] = useState(false);
+  const [paymentDestinationStatus, setPaymentDestinationStatus] = useState<"NOT_SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "LEGACY_APPROVED">("NOT_SUBMITTED");
   const [platformFeeBearer, setPlatformFeeBearer] = useState<"ORGANIZER" | "PARTICIPANT">("ORGANIZER");
   // Set once the loaded event already had this bearer persisted; used to lock the
   // control after paid registrations have started (backend enforces this too).
@@ -495,6 +496,9 @@ const OrganizerEventCreate = () => {
         // Also fetch org to know if Direct UPI is allowed
         apiRequest<{ allowDirectUpi?: boolean }>(`/organizer/organizations/${event.organizationId}`)
           .then((org) => setAllowDirectUpi(org.allowDirectUpi ?? false))
+          .catch(() => undefined);
+        apiRequest<{ paymentDestinationStatus: typeof paymentDestinationStatus }>(`/organizer/events/${event.id}/payment-settings`)
+          .then((settings) => setPaymentDestinationStatus(settings.paymentDestinationStatus))
           .catch(() => undefined);
         setCategories(event.categories.map((category) => {
           const parsed = parseDistanceString(category.distance ?? "");
@@ -1029,17 +1033,18 @@ const OrganizerEventCreate = () => {
         })),
       };
 
-      await Promise.all([
+      const [, paymentResult] = await Promise.all([
         bannerFile
           ? uploadFile(`/organizer/events/${savedEventId}/banner`, bannerFile)
           : Promise.resolve(),
         hasPaidTickets
-          ? apiRequest(`/organizer/events/${savedEventId}/payment-settings`, {
+          ? apiRequest<{ paymentDestinationStatus: typeof paymentDestinationStatus }>(`/organizer/events/${savedEventId}/payment-settings`, {
               method: "PUT",
               body: JSON.stringify({ upi_id: upiId, payee_name: payeeName, instructions: paymentInstructions }),
             })
           : Promise.resolve(),
       ]);
+      if (paymentResult) setPaymentDestinationStatus(paymentResult.paymentDestinationStatus);
       if (publish) await apiRequest(`/organizer/events/${savedEventId}/publish`, { method: "POST", body: "{}" });
       await queryClient.invalidateQueries({ queryKey: ["organizer-events"] });
       await queryClient.invalidateQueries({ queryKey: ["events"] });
@@ -1411,7 +1416,7 @@ const OrganizerEventCreate = () => {
                 </div>
               </div>
             </div>
-            {paymentCollectionMethod === "DIRECT_UPI" && <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>UPI ID {hasPaidTickets ? "*" : "(optional)"}</Label><Input value={upiId} onChange={(e) => setUpiId(e.target.value)} placeholder="yourname@upi" /></div><div className="space-y-2"><Label>Payee name {hasPaidTickets ? "*" : "(optional)"}</Label><Input value={payeeName} onChange={(e) => setPayeeName(e.target.value)} placeholder="Your club or organization" /></div><div className="space-y-2 sm:col-span-2"><Label>Payment instructions *</Label><Textarea value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} /></div></div>}
+            {paymentCollectionMethod === "DIRECT_UPI" && <div className="grid gap-4 sm:grid-cols-2"><div className="sm:col-span-2 rounded-lg border bg-muted/30 p-3 text-sm"><span className="font-semibold">Destination status: {paymentDestinationStatus.replaceAll("_", " ")}</span><p className="mt-1 text-xs text-muted-foreground">Changing the UPI ID or payee name sends the new destination for review. Paid registrations remain unavailable until it is approved.</p></div><div className="space-y-2"><Label>UPI ID {hasPaidTickets ? "*" : "(optional)"}</Label><Input value={upiId} onChange={(e) => setUpiId(e.target.value)} placeholder="yourname@upi" /></div><div className="space-y-2"><Label>Payee name {hasPaidTickets ? "*" : "(optional)"}</Label><Input value={payeeName} onChange={(e) => setPayeeName(e.target.value)} placeholder="Your club or organization" /></div><div className="space-y-2 sm:col-span-2"><Label>Payment instructions *</Label><Textarea value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} /></div></div>}
 
             {hasPaidTickets && (
               <div className="space-y-3 border-t pt-6">

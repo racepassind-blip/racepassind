@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/api";
 
-type VerificationStatus = "NOT_SUBMITTED" | "UNDER_REVIEW" | "VERIFIED" | "REJECTED";
+type VerificationStatus = "NOT_SUBMITTED" | "UNDER_REVIEW" | "VERIFIED" | "REJECTED" | "SUSPENDED";
 
 interface OrganizerOverview {
   organizationId: string;
@@ -35,6 +35,9 @@ interface OrganizerOverview {
 interface VerificationDetail {
   organizationId: string;
   organizationName: string;
+  organizationType: string | null;
+  city: string | null;
+  state: string | null;
   paidVerificationStatus: VerificationStatus;
   panNumber: string | null;
   nameAsPerPan: string | null;
@@ -58,11 +61,24 @@ interface DirectUpiAuditEntry {
   changedAt: string;
 }
 
+interface PaymentDestination {
+  id: string;
+  upiId: string;
+  payeeName: string;
+  status: "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "LEGACY_APPROVED";
+  submittedAt: string;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+}
+
+interface VerificationDocument { id: string; documentType: string; filename: string; readUrl: string; }
+
 const VERIF_META: Record<VerificationStatus, { label: string; className: string }> = {
   NOT_SUBMITTED: { label: "Not submitted", className: "border-muted-foreground/30 text-muted-foreground" },
   UNDER_REVIEW: { label: "Under review", className: "border-amber-300 text-amber-700" },
   VERIFIED: { label: "Verified", className: "border-emerald-300 text-emerald-700" },
   REJECTED: { label: "Rejected", className: "border-destructive/40 text-destructive" },
+  SUSPENDED: { label: "Suspended", className: "border-destructive/40 text-destructive" },
 };
 
 const VERIF_FILTERS: Array<{ value: "all" | VerificationStatus; label: string }> = [
@@ -70,6 +86,7 @@ const VERIF_FILTERS: Array<{ value: "all" | VerificationStatus; label: string }>
   { value: "UNDER_REVIEW", label: "Under review" },
   { value: "VERIFIED", label: "Verified" },
   { value: "REJECTED", label: "Rejected" },
+  { value: "SUSPENDED", label: "Suspended" },
   { value: "NOT_SUBMITTED", label: "Not submitted" },
 ];
 
@@ -104,6 +121,7 @@ const AdminOrganizers = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
+  const [verificationDocuments, setVerificationDocuments] = useState<VerificationDocument[]>([]);
 
   // Direct UPI manage dialog
   const [manageOrg, setManageOrg] = useState<OrganizerOverview | null>(null);
@@ -111,6 +129,8 @@ const AdminOrganizers = () => {
   const [upiAuditLoading, setUpiAuditLoading] = useState(false);
   const [upiToggleBusy, setUpiToggleBusy] = useState(false);
   const [upiWarningEvents, setUpiWarningEvents] = useState<Array<{ id: string; name: string }>>([]);
+  const [destinations, setDestinations] = useState<PaymentDestination[]>([]);
+  const [destinationReason, setDestinationReason] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -140,9 +160,15 @@ const AdminOrganizers = () => {
     setReviewOrg(org);
     setDetail(null);
     setRejectReason("");
+    setVerificationDocuments([]);
     setDetailLoading(true);
     try {
-      setDetail(await apiRequest<VerificationDetail>(`/organizer/organizations/${org.organizationId}/paid-verification`));
+      const [verification, documents] = await Promise.all([
+        apiRequest<VerificationDetail>(`/organizer/organizations/${org.organizationId}/paid-verification`),
+        apiRequest<VerificationDocument[]>(`/organizer/organizations/${org.organizationId}/paid-verification/documents`),
+      ]);
+      setDetail(verification);
+      setVerificationDocuments(documents);
     } catch (detailError) {
       toast.error(detailError instanceof Error ? detailError.message : "Could not load verification details.");
     } finally {
@@ -150,7 +176,7 @@ const AdminOrganizers = () => {
     }
   };
 
-  const closeReview = () => { setReviewOrg(null); setDetail(null); setRejectReason(""); };
+  const closeReview = () => { setReviewOrg(null); setDetail(null); setRejectReason(""); setVerificationDocuments([]); };
 
   const review = async (decision: "VERIFIED" | "REJECTED") => {
     if (!reviewOrg) return;
@@ -171,14 +197,38 @@ const AdminOrganizers = () => {
     }
   };
 
+  const suspendVerification = async () => {
+    if (!reviewOrg || !rejectReason.trim()) { toast.error("Add a reason before suspending paid access."); return; }
+    setActionBusy(true);
+    try {
+      await apiRequest(`/admin/organizations/${reviewOrg.organizationId}/paid-verification/suspend`, {
+        method: "POST", body: JSON.stringify({ reason: rejectReason.trim() }),
+      });
+      toast.success("Paid verification suspended. New paid transactions are blocked.");
+      closeReview();
+      await load();
+    } catch (suspendError) {
+      toast.error(suspendError instanceof Error ? suspendError.message : "Could not suspend paid verification.");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   // ── Direct UPI manage dialog ─────────────────────────────────────────────
   const openManage = async (org: OrganizerOverview) => {
     setManageOrg(org);
     setUpiAudit([]);
     setUpiWarningEvents([]);
+    setDestinations([]);
+    setDestinationReason("");
     setUpiAuditLoading(true);
     try {
-      setUpiAudit(await apiRequest<DirectUpiAuditEntry[]>(`/admin/organizations/${org.organizationId}/direct-upi/audit`));
+      const [audit, paymentDestinations] = await Promise.all([
+        apiRequest<DirectUpiAuditEntry[]>(`/admin/organizations/${org.organizationId}/direct-upi/audit`),
+        apiRequest<PaymentDestination[]>(`/admin/organizations/${org.organizationId}/payment-destinations`),
+      ]);
+      setUpiAudit(audit);
+      setDestinations(paymentDestinations);
     } catch {
       // Non-blocking; audit history is informational only
     } finally {
@@ -186,7 +236,26 @@ const AdminOrganizers = () => {
     }
   };
 
-  const closeManage = () => { setManageOrg(null); setUpiAudit([]); setUpiWarningEvents([]); };
+  const closeManage = () => { setManageOrg(null); setUpiAudit([]); setUpiWarningEvents([]); setDestinations([]); setDestinationReason(""); };
+
+  const reviewDestination = async (destination: PaymentDestination, decision: "APPROVED" | "REJECTED") => {
+    if (!manageOrg) return;
+    if (decision === "REJECTED" && !destinationReason.trim()) { toast.error("Add a reason before rejecting the destination."); return; }
+    setUpiToggleBusy(true);
+    try {
+      await apiRequest(`/admin/organizations/${manageOrg.organizationId}/payment-destinations/${destination.id}/review`, {
+        method: "POST",
+        body: JSON.stringify({ status: decision, rejection_reason: decision === "REJECTED" ? destinationReason.trim() : null }),
+      });
+      setDestinations(await apiRequest<PaymentDestination[]>(`/admin/organizations/${manageOrg.organizationId}/payment-destinations`));
+      setDestinationReason("");
+      toast.success(decision === "APPROVED" ? "Payment destination approved." : "Payment destination rejected.");
+    } catch (actionError) {
+      toast.error(actionError instanceof Error ? actionError.message : "Could not review the destination.");
+    } finally {
+      setUpiToggleBusy(false);
+    }
+  };
 
   const toggleDirectUpi = async (allow: boolean) => {
     if (!manageOrg) return;
@@ -284,6 +353,9 @@ const AdminOrganizers = () => {
           ) : detail ? (
             <div className="space-y-4">
               <dl className="grid gap-3 sm:grid-cols-2 text-sm">
+                <Field label="Organization" value={detail.organizationName} />
+                <Field label="Organization type" value={detail.organizationType?.replaceAll("_", " ") ?? null} />
+                <Field label="City / State" value={[detail.city, detail.state].filter(Boolean).join(", ")} />
                 <Field label="PAN" value={detail.panNumber} />
                 <Field label="Name as per PAN" value={detail.nameAsPerPan} />
                 <Field label="GST registered" value={detail.gstRegistered ? "Yes" : "No"} />
@@ -295,6 +367,8 @@ const AdminOrganizers = () => {
                 <Field label="Current status" value={VERIF_META[detail.paidVerificationStatus].label} />
               </dl>
 
+              <div><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Supporting documents</p>{verificationDocuments.length === 0 ? <p className="mt-1 text-sm text-muted-foreground">No documents submitted.</p> : <div className="mt-2 flex flex-wrap gap-2">{verificationDocuments.map((document) => <Button key={document.id} asChild size="sm" variant="outline"><a href={document.readUrl} target="_blank" rel="noreferrer">{document.documentType.replaceAll("_", " ")}: {document.filename}</a></Button>)}</div>}</div>
+
               {detail.paidVerificationStatus === "REJECTED" && detail.rejectionReason && (
                 <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">Previous rejection: {detail.rejectionReason}</p>
               )}
@@ -304,6 +378,9 @@ const AdminOrganizers = () => {
                   <Label htmlFor="reject-reason">Rejection reason <span className="font-normal text-muted-foreground">(required to reject)</span></Label>
                   <Textarea id="reject-reason" value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} rows={3} maxLength={2000} placeholder="Explain what needs to be corrected" />
                 </div>
+              )}
+              {detail.paidVerificationStatus === "VERIFIED" && (
+                <div className="space-y-2"><Label htmlFor="suspend-reason">Suspension reason</Label><Textarea id="suspend-reason" value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} rows={3} maxLength={2000} placeholder="Required before suspending paid registrations" /></div>
               )}
             </div>
           ) : (
@@ -316,6 +393,8 @@ const AdminOrganizers = () => {
                 <Button variant="outline" onClick={() => void review("REJECTED")} disabled={actionBusy} className="text-destructive hover:text-destructive">Reject</Button>
                 <Button onClick={() => void review("VERIFIED")} disabled={actionBusy}>{actionBusy ? "Saving…" : "Verify"}</Button>
               </>
+            ) : detail?.paidVerificationStatus === "VERIFIED" ? (
+              <><Button variant="destructive" onClick={() => void suspendVerification()} disabled={actionBusy}>Suspend paid access</Button><Button variant="outline" onClick={closeReview}>Close</Button></>
             ) : (
               <Button variant="outline" onClick={closeReview}>Close</Button>
             )}
@@ -364,6 +443,19 @@ const AdminOrganizers = () => {
               <div className={`rounded-md px-3 py-2 text-xs font-semibold ${(manageOrg?.allowDirectUpi ?? false) ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-muted text-muted-foreground"}`}>
                 {(manageOrg?.allowDirectUpi ?? false) ? "Direct UPI: Allowed" : "Direct UPI: Restricted"}
               </div>
+            </section>
+
+            <section className="rounded-xl border p-4 space-y-3">
+              <div><p className="font-semibold text-sm">Payment destinations</p><p className="mt-1 text-xs text-muted-foreground">Only an approved destination can receive new Direct UPI registrations or merchandise orders.</p></div>
+              {destinations.length === 0 ? <p className="text-xs text-muted-foreground">No UPI destination submitted.</p> : destinations.map((destination) => (
+                <div key={destination.id} className="rounded-lg border bg-muted/20 p-3 text-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold">{destination.upiId}</p><p className="text-xs text-muted-foreground">{destination.payeeName} · submitted {formatDate(destination.submittedAt)}</p></div><Badge variant="outline">{destination.status.replaceAll("_", " ")}</Badge></div>
+                  {destination.rejectionReason && <p className="mt-2 text-xs text-destructive">Reason: {destination.rejectionReason}</p>}
+                  {(destination.status === "UNDER_REVIEW" || destination.status === "LEGACY_APPROVED") && (
+                    <div className="mt-3 space-y-2"><Textarea value={destinationReason} onChange={(event) => setDestinationReason(event.target.value)} rows={2} maxLength={2000} placeholder="Reason required only when rejecting" /><div className="flex gap-2"><Button size="sm" onClick={() => void reviewDestination(destination, "APPROVED")} disabled={upiToggleBusy}>Approve destination</Button><Button size="sm" variant="outline" className="text-destructive" onClick={() => void reviewDestination(destination, "REJECTED")} disabled={upiToggleBusy}>Reject</Button></div></div>
+                  )}
+                </div>
+              ))}
             </section>
 
             {/* Warning: active Direct UPI events */}

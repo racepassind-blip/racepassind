@@ -21,6 +21,7 @@ from app.services.audit_service import record_audit
 from app.services.payment_service import normalize_payment_reference, validate_manual_upi_settings
 from app.services.checkout_payments import PaymentMode, PaymentPlan, ensure_payment, sync_event_payment
 from app.config import get_settings
+from app.services.organizer_payment_security import assert_paid_event_available
 from app.services.registration_config_service import calculate_registration_total, normalize_event_configs
 from app.services.platform_fee_service import compute_participant_pricing
 from app.services.credit_service import CREDIT_CHARGEABLE_PAYMENT_GATEWAYS, CreditValidationError, debit_credits, CREDIT_REGISTRATION_DEBIT
@@ -268,10 +269,12 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
         raise ValueError("Online payments are not available yet")
     if managed_payment and (not str(responses.get("phone") or "").isdigit() or len(str(responses.get("phone") or "")) != 10):
         raise ValueError("A 10-digit phone number is required for online payment")
-    if amount_paise > 0 and not managed_payment:
-        if event.payment_settings is None:
+    if amount_paise > 0:
+        assert_paid_event_available(db, event)
+        if not managed_payment and event.payment_settings is None:
             raise ValueError("Manual UPI payment settings are not configured")
-        validate_manual_upi_settings(event.payment_settings)
+        if not managed_payment:
+            validate_manual_upi_settings(event.payment_settings)
     computed_total["fieldConfig"] = field_config
     computed_total["addonConfig"] = addon_config
     is_free = amount_paise == 0
@@ -1502,8 +1505,10 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
     if managed_payment and any(not str(item["responses"].get("phone") or "").isdigit()
                                or len(str(item["responses"].get("phone") or "")) != 10 for item in prepared):
         raise ValueError("A 10-digit phone number is required for online payment")
-    if total_amount_paise > 0 and not managed_payment:
-        validate_manual_upi_settings(event.payment_settings)
+    if total_amount_paise > 0:
+        assert_paid_event_available(db, event)
+        if not managed_payment:
+            validate_manual_upi_settings(event.payment_settings)
     confirmation_tokens: list[str] = []
     claim_codes: list[str | None] = []
     registrations: list[Registration] = []

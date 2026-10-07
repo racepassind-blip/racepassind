@@ -1,4 +1,9 @@
-"""Add shared payment identities and immutable receipt records."""
+"""Add shared payment identities and immutable receipt records.
+
+This historical migration remains on main because it has already been applied
+to the configured database. The shared-payment application code remains on its
+separate feature branch until the provider integration is ready.
+"""
 from alembic import op
 import sqlalchemy as sa
 
@@ -45,7 +50,6 @@ def upgrade():
 
 
 def downgrade():
-    # Financial data must not be discarded by a routine rollback.
     connection = op.get_bind()
     if connection.scalar(sa.text("SELECT count(*) FROM checkout_payments")):
         raise RuntimeError("Shared payment data exists; disable new checkout instead of dropping financial records")
