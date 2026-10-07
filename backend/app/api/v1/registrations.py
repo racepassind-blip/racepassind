@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -43,6 +45,7 @@ from db import get_db
 from models import Event, User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _send_confirmation_email_safe(db: Session, registration) -> str:
@@ -52,8 +55,9 @@ def _send_confirmation_email_safe(db: Session, registration) -> str:
     """
     try:
         result = send_registration_confirmation(db, registration)
-    except Exception:
+    except Exception as exc:
         # Registration must never depend on email. Swallow any unexpected error.
+        logger.error("Registration email failed registration_id=%s error_type=%s", registration.id, type(exc).__name__)
         db.rollback()
         return "failed"
 
@@ -79,8 +83,14 @@ def _send_confirmation_email_background(registration_id, event_id) -> None:
         registration = db.get(_Registration, registration_id)
         if registration is not None:
             send_registration_confirmation(db, registration)
-    except Exception:
+        else:
+            logger.warning("Registration email skipped: registration_id=%s not found", registration_id)
+    except Exception as exc:
         # Background tasks must never crash the worker.
+        logger.error(
+            "Registration email background task failed registration_id=%s event_id=%s error_type=%s",
+            registration_id, event_id, type(exc).__name__,
+        )
         try:
             db.rollback()
         except Exception:

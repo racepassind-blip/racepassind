@@ -115,13 +115,15 @@ def test_admin_test_uses_api_without_app_password(settings):
     assert send.call_args.args[0]["Subject"] == "SportPass Email Test"
 
 
-def test_regular_delivery_logs_api_failure(settings):
+def test_regular_delivery_logs_api_failure(settings, caplog):
     db = configured_db()
     with patch.object(email_service, "get_email_limit_status", return_value=(email_service.EmailLimitStatus.NORMAL, 0)), patch.object(email_service, "send_gmail_message", side_effect=gmail.GmailDeliveryError("Quota reached", "PROVIDER_LIMIT_REACHED")):
         result = email_service.send_email(db, recipient="recipient@example.com", subject="Ticket", body="Confirmed", email_type="TICKET")
     assert not result.success
     assert result.email_log.status == "failed"
     assert result.email_log.failure_reason == "PROVIDER_LIMIT_REACHED"
+    assert "PROVIDER_LIMIT_REACHED" in caplog.text
+    assert "recipient@example.com" not in caplog.text
 
 
 def test_regular_delivery_preserves_attachments(settings):
@@ -144,12 +146,25 @@ def test_retry_uses_api_and_updates_existing_log(settings):
     db.add.assert_not_called()
 
 
-def test_disabled_email_does_not_send(settings):
+def test_disabled_email_does_not_send(settings, caplog):
     db = configured_db()
     db.scalar.return_value.enabled = False
     with patch.object(email_service, "send_gmail_message") as send:
         result = email_service.send_email(db, recipient="recipient@example.com", subject="Ticket", body="Confirmed", email_type="TICKET")
     assert result.status == "SKIPPED_DISABLED"
+    assert "Email configuration disabled" in caplog.text
+    send.assert_not_called()
+
+
+def test_missing_oauth_is_visible_without_exposing_credentials(settings, caplog):
+    settings.gmail_oauth_refresh_token = None
+    db = configured_db()
+    with patch.object(email_service, "get_email_limit_status", return_value=(email_service.EmailLimitStatus.NORMAL, 0)), patch.object(email_service, "send_gmail_message") as send:
+        result = email_service.send_email(db, recipient="recipient@example.com", subject="Ticket", body="Confirmed", email_type="TICKET")
+    assert result.status == "FAILED"
+    assert "gmail_oauth_configured=False" in caplog.text
+    assert "secret" not in caplog.text
+    assert "recipient@example.com" not in caplog.text
     send.assert_not_called()
 
 
