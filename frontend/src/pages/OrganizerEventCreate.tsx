@@ -1037,7 +1037,7 @@ const OrganizerEventCreate = () => {
         bannerFile
           ? uploadFile(`/organizer/events/${savedEventId}/banner`, bannerFile)
           : Promise.resolve(),
-        hasPaidTickets
+        hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI"
           ? apiRequest<{ paymentDestinationStatus: typeof paymentDestinationStatus }>(`/organizer/events/${savedEventId}/payment-settings`, {
               method: "PUT",
               body: JSON.stringify({ upi_id: upiId, payee_name: payeeName, instructions: paymentInstructions }),
@@ -1383,7 +1383,7 @@ const OrganizerEventCreate = () => {
           </section>}
 
           {currentStep === 5 && <section className="space-y-5 rounded-xl border bg-card p-6">
-            <div><h2 className="text-lg font-bold">Payment details</h2><p className="text-sm text-muted-foreground">{hasPaidTickets ? "Paid ticket tiers use manual UPI. Participants submit a UTR and you approve payment." : "All ticket tiers are free. Participants can register without payment or UPI details."}</p></div>
+            <div><h2 className="text-lg font-bold">Payment details</h2><p className="text-sm text-muted-foreground">{hasPaidTickets ? (paymentCollectionMethod === "CASHFREE_MANAGED" ? "Participants pay online through Cashfree. No organizer UPI details are required." : "Participants pay your verified UPI destination, submit a UTR, and you approve payment.") : "All ticket tiers are free. Participants can register without payment details."}</p></div>
             <div className="space-y-3">
               <Label>Payment Collection Method {hasPaidTickets ? "*" : "(optional)"}</Label>
               <div className="space-y-2">
