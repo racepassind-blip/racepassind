@@ -2,8 +2,8 @@
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0068_organizer_settlement_ledger"
-down_revision = "0067_checkout_payments"
+revision = "0072_organizer_settlement_ledger"
+down_revision = "0071_password_reset_tokens"
 branch_labels = None
 depends_on = None
 
