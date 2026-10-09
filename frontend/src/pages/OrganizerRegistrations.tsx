@@ -1021,7 +1021,7 @@ const OrganizerRegistrations = () => {
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">Choose a point to see the matching registration list. Click a registration to see each group member’s pickup choice.</p>
               </div>
-              {pickupFilter !== "all" && <Button type="button" variant="ghost" size="sm" onClick={() => { setPickupFilter("all"); setCursor(null); setCursorHistory([]); }}>Show all pickup points</Button>}
+              <Button type="button" variant="outline" size="sm" disabled={pickupFilter === "all"} onClick={() => { setPickupFilter("all"); setCursor(null); setCursorHistory([]); }}>Clear pickup filter</Button>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {pickupPoints.map((point) => (

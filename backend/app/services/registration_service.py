@@ -700,6 +700,14 @@ def _organizer_registration_query(
                     Registration.registration_reference.ilike(pattern),
                 )
             )
+        elif column is Participant.name:
+            matching_member = select(RegistrationParticipant.registration_id).join(
+                Participant, Participant.id == RegistrationParticipant.participant_id
+            ).where(
+                RegistrationParticipant.registration_id == Registration.id,
+                Participant.name.ilike(pattern),
+            ).exists()
+            query = query.where(or_(Participant.name.ilike(pattern), matching_member))
         else:
             query = query.where(column.ilike(pattern))
     return query

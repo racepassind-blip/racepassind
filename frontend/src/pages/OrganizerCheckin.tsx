@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { AlertTriangle, Camera, CheckCircle2, ChevronRight, ClipboardList, ScanLine, Settings2, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ChevronRight, ClipboardList, ScanLine, Search, Settings2, ShieldCheck, XCircle } from "lucide-react";
 import QrScanner from "qr-scanner";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
@@ -15,6 +15,8 @@ import { apiRequest } from "@/lib/api";
 interface EventOption { id: string; name: string; isArchived: boolean; }
 interface Checkpoint { id: string; name: string; position: number; }
 interface CheckpointResponse { checkpoints: Checkpoint[]; }
+interface NameMatch { id: string; registrationReference: string; participant: { name: string }; participants?: Array<{ participant: { name: string } }>; participantCount?: number; ticket: { name: string; category: string | null }; status: string; checkInStatus: string; }
+interface NameMatchResponse { items: NameMatch[]; nextCursor: string | null; hasMore: boolean; }
 interface CheckinResult {
   registrationReference: string;
   event: { id: string; name: string; location: string };
@@ -50,6 +52,10 @@ const OrganizerCheckin = () => {
   const [checkpointsLoading, setCheckpointsLoading] = useState(false);
   const [credential, setCredential] = useState("");
   const [registrationReference, setRegistrationReference] = useState("");
+  const [nameSearch, setNameSearch] = useState("");
+  const [nameMatches, setNameMatches] = useState<NameMatch[]>([]);
+  const [nameSearchError, setNameSearchError] = useState<string | null>(null);
+  const [searchingName, setSearchingName] = useState(false);
   const [result, setResult] = useState<CheckinResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -71,6 +77,8 @@ const OrganizerCheckin = () => {
     setCheckpoints([]);
     setCheckpointsLoading(true);
     setResult(null);
+    setNameMatches([]);
+    setNameSearchError(null);
     void apiRequest<CheckpointResponse>(`/organizer/events/${eventId}/checkpoints`).then((response) => {
       setCheckpoints(response.checkpoints);
     }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not load checkpoints")).finally(() => setCheckpointsLoading(false));
@@ -105,6 +113,22 @@ const OrganizerCheckin = () => {
   }, [scannerOpen, stopScanner, submitCheckinValues]);
 
   const submitCheckin = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void submitCheckinValues(credential.trim(), registrationReference.trim()); };
+  const searchByName = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = nameSearch.trim();
+    if (!eventId || !name) return;
+    setSearchingName(true);
+    setNameSearchError(null);
+    setNameMatches([]);
+    try {
+      const params = new URLSearchParams({ event_id: eventId, status: "all", participant: name, check_in_status: "not_checked_in", page_size: "25" });
+      const response = await apiRequest<NameMatchResponse>(`/organizer/registrations?${params}`);
+      setNameMatches(response.items);
+      if (response.items.length === 0) setNameSearchError("No unchecked-in registration matched that name. Check the spelling or use the registration number.");
+    } catch (lookupError) {
+      setNameSearchError(lookupError instanceof Error ? lookupError.message : "Could not search registrations.");
+    } finally { setSearchingName(false); }
+  };
   const selectedEvent = events.find((event) => event.id === eventId);
   const selectedCheckpoint = checkpoints.find((checkpoint) => checkpoint.id === checkpointId);
   const readyToScan = Boolean(eventId && checkpointId);
@@ -146,8 +170,14 @@ const OrganizerCheckin = () => {
             </Card>
 
             <Card>
-              <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Settings2 className="h-4 w-4 text-primary" />Manual fallback</CardTitle><CardDescription>Use a credential or registration reference if the camera cannot read the ticket.</CardDescription></CardHeader>
-              <CardContent><form onSubmit={submitCheckin} className="space-y-4"><div className="space-y-2"><Label htmlFor="ticket-credential">Ticket QR credential</Label><Input id="ticket-credential" value={credential} onChange={(event) => setCredential(event.target.value)} placeholder="sportpass://ticket?v=1&t=…" maxLength={300} autoComplete="off" /></div><div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground"><span className="h-px flex-1 bg-border" />or<span className="h-px flex-1 bg-border" /></div><div className="space-y-2"><Label htmlFor="checkin-reference">Registration reference</Label><Input id="checkin-reference" value={registrationReference} onChange={(event) => setRegistrationReference(event.target.value)} placeholder="SPE-… or RP-…" maxLength={80} autoComplete="off" /></div>{error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}<Button type="submit" className="h-11 w-full gap-2" disabled={submitting || !readyToScan}>{submitting ? "Recording scan…" : "Record manual scan"}</Button></form></CardContent>
+              <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Settings2 className="h-4 w-4 text-primary" />Manual check-in</CardTitle><CardDescription>Look up an unchecked-in participant by name, or enter their registration number or ticket credential.</CardDescription></CardHeader>
+              <CardContent className="space-y-5">
+                <form onSubmit={searchByName} className="space-y-2"><Label htmlFor="checkin-name">Participant name</Label><div className="flex gap-2"><Input id="checkin-name" value={nameSearch} onChange={(event) => { setNameSearch(event.target.value); setNameMatches([]); setNameSearchError(null); }} placeholder="Search participant name" maxLength={120} autoComplete="off" /><Button type="submit" variant="outline" disabled={searchingName || !readyToScan || !nameSearch.trim()}><Search className="mr-1.5 h-4 w-4" />{searchingName ? "Searching…" : "Find"}</Button></div></form>
+                {nameSearchError && <div role="status" className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">{nameSearchError}</div>}
+                {nameMatches.length > 0 && <div className="space-y-2" aria-live="polite"><p className="text-xs font-semibold text-muted-foreground">Select the correct registration ({nameMatches.length}{nameMatches.length === 25 ? "+" : ""} matches)</p>{nameMatches.map((match) => <div key={match.id} className="flex items-center justify-between gap-3 rounded-lg border p-3"><div className="min-w-0"><p className="truncate text-sm font-semibold">{match.participant.name}{match.participantCount && match.participantCount > 1 ? ` + ${match.participantCount - 1}` : ""}</p><p className="truncate font-mono text-xs text-muted-foreground">{match.registrationReference} · {match.ticket.category ? `${match.ticket.category} · ` : ""}{match.ticket.name}</p>{match.participants && match.participants.length > 1 && <p className="mt-1 truncate text-xs text-muted-foreground">Also: {match.participants.map((entry) => entry.participant.name).join(", ")}</p>}</div><Button type="button" size="sm" disabled={submitting} onClick={() => void submitCheckinValues("", match.registrationReference)}>Check in</Button></div>)}</div>}
+                <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground"><span className="h-px flex-1 bg-border" />or enter details<span className="h-px flex-1 bg-border" /></div>
+                <form onSubmit={submitCheckin} className="space-y-4"><div className="space-y-2"><Label htmlFor="ticket-credential">Ticket QR credential</Label><Input id="ticket-credential" value={credential} onChange={(event) => setCredential(event.target.value)} placeholder="sportpass://ticket?v=1&t=…" maxLength={300} autoComplete="off" /></div><div className="space-y-2"><Label htmlFor="checkin-reference">Registration number</Label><Input id="checkin-reference" value={registrationReference} onChange={(event) => setRegistrationReference(event.target.value)} placeholder="SPE-… or RP-…" maxLength={80} autoComplete="off" /></div>{error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}<Button type="submit" className="h-11 w-full gap-2" disabled={submitting || !readyToScan}>{submitting ? "Recording scan…" : "Record manual check-in"}</Button></form>
+              </CardContent>
             </Card>
           </div>
         </div>

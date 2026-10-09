@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from app.services.ticket_pdf_service import build_ticket_pdf
+from app.services.ticket_bundle_pdf_service import build_ticket_bundle_pdf
 
 
 class TicketPdfServiceTests(unittest.TestCase):
@@ -74,6 +75,23 @@ class TicketPdfServiceTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "confirmed registrations"):
             build_ticket_pdf(registration, event, "sportpass://ticket?v=1&t=opaque")
+
+    def test_bundle_rejects_an_unconfirmed_member(self) -> None:
+        confirmed, event = self._registration()
+        pending, _ = self._registration("pending_verification")
+        with self.assertRaisesRegex(ValueError, "confirmed registrations"):
+            build_ticket_bundle_pdf([confirmed, pending], event, ["test-qr", "test-qr"])
+
+    def test_bundle_accepts_group_with_long_names_and_instructions(self) -> None:
+        registration, event = self._registration()
+        event.organization.name = "Outdoor Club with a long organizer name for layout coverage"
+        event.description = "Detailed event instructions. " * 100
+        registration.participant_memberships = [
+            SimpleNamespace(participant=SimpleNamespace(name=f"Group participant {i}"))
+            for i in range(12)
+        ]
+        pdf = build_ticket_bundle_pdf([registration, registration], event, ["test-qr", "test-qr"])
+        self.assertTrue(pdf.startswith(b"%PDF-"))
 
 
 if __name__ == "__main__":
