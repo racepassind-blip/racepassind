@@ -45,7 +45,7 @@ const OrganizerDashboard = () => {
   const queryClient = useQueryClient();
   const [updatingEventId, setUpdatingEventId] = useState<string | null>(null);
   const [eventSearch, setEventSearch] = useState("");
-  const [eventFilter, setEventFilter] = useState<EventFilter>("all");
+  const [eventFilter, setEventFilter] = useState<EventFilter>("upcoming");
   const [eventPage, setEventPage] = useState(1);
   const [searchParams, setSearchParams] = useSearchParams();
   const [organizationTabOpen, setOrganizationTabOpen] = useState(searchParams.get("tab") === "organization");
@@ -115,8 +115,8 @@ const OrganizerDashboard = () => {
     const rightTime = new Date(right.eventDate).getTime();
     if (!Number.isFinite(leftTime)) return 1;
     if (!Number.isFinite(rightTime)) return -1;
-    if (eventFilter === "past") return rightTime - leftTime;
-    return leftTime - rightTime;
+    if (eventFilter === "upcoming") return leftTime - rightTime;
+    return rightTime - leftTime;
   });
   const eventPageSize = 12;
   const eventPageCount = Math.max(1, Math.ceil(filteredEvents.length / eventPageSize));

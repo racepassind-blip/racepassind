@@ -1013,20 +1013,32 @@ const OrganizerRegistrations = () => {
 
         {pickupEnabled && pickupPoints.length > 0 && (
           <section className="rounded-2xl border bg-card p-5 shadow-sm">
-            <div className="flex items-center gap-2">
-              <h2 className="font-bold">Pickup points</h2>
-              <Badge variant="secondary">per participant</Badge>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold">Pickup points</h2>
+                  <Badge variant="secondary">per participant</Badge>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">Choose a point to see the matching registration list. Click a registration to see each group member’s pickup choice.</p>
+              </div>
+              {pickupFilter !== "all" && <Button type="button" variant="ghost" size="sm" onClick={() => { setPickupFilter("all"); setCursor(null); setCursorHistory([]); }}>Show all pickup points</Button>}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">How many participants chose each pickup point across the current status filter.</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {pickupPoints.map((point) => (
-                <div key={point.id} className="rounded-lg border bg-muted/20 p-3">
+                <button
+                  key={point.id}
+                  type="button"
+                  aria-pressed={pickupFilter === point.id}
+                  onClick={() => { setPickupFilter((current) => current === point.id ? "all" : point.id); setCursor(null); setCursorHistory([]); }}
+                  className={`rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${pickupFilter === point.id ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-muted/20 hover:border-primary/50 hover:bg-muted/40"}`}
+                >
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-medium">{point.name}</p>
                     <Badge variant="secondary">{pickupSummary.get(point.id) ?? 0}</Badge>
                   </div>
                   {point.address && <p className="mt-1 text-xs text-muted-foreground">{point.address}</p>}
-                </div>
+                  <p className="mt-3 text-xs font-semibold text-primary">{pickupFilter === point.id ? "Showing matching registrations · click to clear" : "View matching registrations →"}</p>
+                </button>
               ))}
             </div>
           </section>
