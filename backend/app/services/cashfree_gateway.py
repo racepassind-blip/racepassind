@@ -64,7 +64,7 @@ class CashfreeGateway:
     def order_id(payment) -> str:
         return f"sp_{payment.id.hex}"
 
-    def create_session(self, payment, *, phone: str, customer_id: str, return_url: str):
+    def create_session(self, payment, *, phone: str, customer_id: str, return_url: str, customer_name: str | None = None, customer_email: str | None = None):
         if not phone.isdigit() or len(phone) != 10:
             raise ProviderUnavailable("A valid 10-digit phone number is required for Cashfree")
         if payment.amount_paise < 100:
@@ -72,7 +72,9 @@ class CashfreeGateway:
         order_id = self.order_id(payment)
         body = self._request("POST", "/pg/orders", payload={
             "order_id": order_id, "order_amount": float(rupees(payment.amount_paise)), "order_currency": "INR",
-            "customer_details": {"customer_id": customer_id, "customer_phone": phone},
+            "customer_details": {"customer_id": customer_id, "customer_phone": phone,
+                **({"customer_name": customer_name} if customer_name else {}),
+                **({"customer_email": customer_email} if customer_email else {})},
             "order_meta": {"return_url": return_url, "notify_url": self.webhook_url},
         }, idempotency_key=str(payment.id))
         if not isinstance(body, dict):
@@ -110,6 +112,55 @@ class CashfreeGateway:
             return VerifiedReceipt("cashfree", self.account, self.environment, payment_id,
                                    payment.id, payment.amount_paise, payment.currency, payment.provider_order_id)
         raise ProviderUnavailable("No verified successful Cashfree payment found")
+
+    def payment_state(self, payment) -> str:
+        """Return a safe participant-facing state for all attempts on an order.
+
+        Success wins permanently. Pending wins over failed attempts because a
+        late authorization can still complete. Otherwise the most recent
+        terminal attempt distinguishes an explicit failure from abandonment.
+        """
+        if (payment.provider_account, payment.provider_environment) != (self.account, self.environment):
+            raise ProviderUnavailable("Cashfree account configuration changed for this checkout")
+        if payment.provider_order_id != self.order_id(payment):
+            raise ProviderUnavailable("Cashfree order binding is invalid")
+        payments = self._request("GET", f"/pg/orders/{payment.provider_order_id}/payments")
+        if not isinstance(payments, list):
+            raise ProviderUnavailable("Invalid Cashfree payment response")
+        valid: list[dict] = []
+        unknown = False
+        for item in payments:
+            if not isinstance(item, dict):
+                unknown = True
+                continue
+            status = item.get("payment_status")
+            if status not in {"SUCCESS", "PENDING", "FAILED", "USER_DROPPED"}:
+                unknown = True
+                continue
+            if (item.get("order_id") != payment.provider_order_id
+                    or item.get("payment_currency") != payment.currency
+                    or amount_paise(item.get("payment_amount")) != payment.amount_paise):
+                raise ProviderUnavailable("Cashfree payment evidence does not match this checkout")
+            valid.append(item)
+        if any(item["payment_status"] == "SUCCESS" for item in valid):
+            return "successful"
+        if any(item["payment_status"] == "PENDING" for item in valid):
+            return "pending"
+        if unknown:
+            return "verification_pending"
+        order = self._request("GET", f"/pg/orders/{payment.provider_order_id}")
+        if (not isinstance(order, dict) or order.get("order_id") != payment.provider_order_id
+                or order.get("order_currency") != payment.currency
+                or amount_paise(order.get("order_amount")) != payment.amount_paise):
+            raise ProviderUnavailable("Cashfree order response did not match this checkout")
+        if order.get("order_status") in {"EXPIRED", "TERMINATED"}:
+            return "expired"
+        if order.get("order_status") != "ACTIVE":
+            return "verification_pending"
+        if not valid:
+            return "not_attempted"
+        latest = max(valid, key=lambda item: str(item.get("payment_time") or ""))
+        return "user_dropped" if latest["payment_status"] == "USER_DROPPED" else "failed"
 
     def verify_webhook(self, raw_body: bytes, timestamp: str | None, signature: str | None) -> None:
         if not timestamp or not signature or len(raw_body) > 1_000_000:

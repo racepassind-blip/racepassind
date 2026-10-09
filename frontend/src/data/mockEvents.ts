@@ -88,6 +88,10 @@ export interface SportEvent {
   schedule?: EventScheduleItem[];
   fieldConfig?: EventFieldConfig;
   addonConfig?: EventAddonConfig;
+  // Generic event-level Waiver & Declaration (content only; acceptance is private).
+  waiver?: { enabled?: boolean; title?: string; text?: string };
+  // Generic event-level Pickup Points (options only; per-participant selection is private).
+  pickupPoints?: { enabled?: boolean; required?: boolean; points?: Array<{ id: string; name: string; description?: string; address?: string }> };
   tiers: TicketTier[];
   platformFeeBearer?: "ORGANIZER" | "PARTICIPANT";
   paymentCollectionMethod?: "DIRECT_UPI" | "CASHFREE_MANAGED";

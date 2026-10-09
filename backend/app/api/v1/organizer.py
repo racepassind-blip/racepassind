@@ -36,6 +36,7 @@ from app.services.registration_service import (
     list_organizer_registrations,
     serialize_organizer_registration,
     create_manual_registration,
+    pickup_point_summary,
     transfer_registration_category,
 )
 from app.services.image_validation import ImageValidationError
@@ -124,6 +125,7 @@ def _serialize_organization(organization: Organization, storage=None) -> dict:
         "onboardingStatus": "completed" if onboarding_complete else "pending",
         "onboardingCompletedAt": organization.onboarding_completed_at.isoformat() if onboarding_complete else None,
         "allowDirectUpi": organization.allow_direct_upi,
+        "allowCashfree": organization.allow_cashfree,
     }
 
 
@@ -525,6 +527,23 @@ def event_checkin_matrix(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
+@router.get("/events/{event_id}/pickup-summary")
+def event_pickup_summary(
+    event_id: UUID,
+    status_filter: str | None = Query(default="all", alias="status", max_length=30),
+    payment_status: str | None = Query(default=None, max_length=30),
+    check_in_status: str | None = Query(default="all", alias="check_in_status", max_length=30),
+    user: User = Depends(require_roles("organizer", "admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Participant-correct pickup counts across all of the event's registrations."""
+    try:
+        return pickup_point_summary(db, user, event_id, status_filter=status_filter,
+                                    payment_status=payment_status, check_in_status=check_in_status)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
 @router.get("/registrations/{registration_id}/check-in-timeline")
 def registration_checkin_timeline(
     registration_id: UUID,
@@ -571,6 +590,7 @@ def organizer_registrations(
     registration_reference: str | None = Query(default=None, alias="registration_reference", max_length=80),
     payment_status: str | None = Query(default=None, max_length=30),
     check_in_status: str | None = Query(default=None, alias="check_in_status", max_length=30),
+    pickup_point_id: str | None = Query(default=None, max_length=64),
     page_size: int = Query(default=50, ge=1, le=500),
     legacy_limit: int | None = Query(default=None, alias="limit", ge=1, le=500),
     cursor: str | None = Query(default=None, max_length=512),
@@ -592,6 +612,7 @@ def organizer_registrations(
             registration_reference=registration_reference,
             payment_status=payment_status,
             check_in_status=check_in_status,
+            pickup_point_id=pickup_point_id,
             page_size=legacy_limit or page_size,
             cursor=cursor,
         )
@@ -612,6 +633,7 @@ def export_registrations_csv(
     registration_reference: str | None = Query(default=None, alias="registration_reference", max_length=80),
     payment_status: str | None = Query(default=None, max_length=30),
     check_in_status: str | None = Query(default=None, alias="check_in_status", max_length=30),
+    pickup_point_id: str | None = Query(default=None, max_length=64),
     user: User = Depends(require_roles("organizer", "admin")),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -630,6 +652,7 @@ def export_registrations_csv(
             registration_reference=registration_reference,
             payment_status=payment_status,
             check_in_status=check_in_status,
+            pickup_point_id=pickup_point_id,
         )
     except CsvExportTooLargeError as exc:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)) from exc

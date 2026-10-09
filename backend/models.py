@@ -127,6 +127,7 @@ class Organization(Base):
     # billing risk if the organizer does not pay the platform fee later.
     # Default false — admin must explicitly enable for each trusted organizer.
     allow_direct_upi: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)
+    allow_cashfree: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)
 
     creator: Mapped[User | None] = relationship(back_populates="organizations", foreign_keys=[created_by])
     members: Mapped[list["OrganizationMember"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
@@ -1228,6 +1229,11 @@ class Refund(Base):
     """
 
     __tablename__ = "refunds"
+    __table_args__ = (
+        Index("uq_refund_registration_open_or_completed", "registration_id", unique=True,
+              postgresql_where=text("registration_id IS NOT NULL AND status IN ('REQUESTED','APPROVED','PROCESSING','REFUND_SENT','REFUNDED')"),
+              sqlite_where=text("registration_id IS NOT NULL AND status IN ('REQUESTED','APPROVED','PROCESSING','REFUND_SENT','REFUNDED')")),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # registration_id is NULL for manual (organizer-created) refunds
@@ -1276,6 +1282,8 @@ class Refund(Base):
     provider_refund_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     provider_refund_status: Mapped[str | None] = mapped_column(String(60), nullable=True)
     provider_refund_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    initiated_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    initiated_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
     requested_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -1502,6 +1510,28 @@ class CheckoutReceipt(Base):
     amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
     disposition: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CashfreePaymentResolution(Base):
+    """One immutable admin decision per paid, unfulfilled checkout."""
+    __tablename__ = "cashfree_payment_resolutions"
+    __table_args__ = (
+        CheckConstraint("action IN ('FULFILL','REFUND')", name="ck_cashfree_resolution_action"),
+        CheckConstraint("status IN ('FULFILLED','PENDING','REFUNDED','NEEDS_REVIEW')", name="ck_cashfree_resolution_status"),
+        CheckConstraint("amount_paise > 0", name="ck_cashfree_resolution_amount"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    checkout_payment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("checkout_payments.id"), nullable=False, unique=True)
+    receipt_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("checkout_receipts.id"), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(String(1000), nullable=False)
+    initiated_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    provider_refund_id: Mapped[str | None] = mapped_column(String(120), unique=True)
+    provider_status: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ManagedRegistrationCollection(Base):

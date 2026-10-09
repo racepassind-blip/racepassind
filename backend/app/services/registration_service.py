@@ -22,12 +22,64 @@ from app.services.payment_service import normalize_payment_reference, validate_m
 from app.services.checkout_payments import PaymentMode, PaymentPlan, ensure_payment, sync_event_payment
 from app.config import get_settings
 from app.services.organizer_payment_security import assert_paid_event_available
-from app.services.registration_config_service import calculate_registration_total, normalize_event_configs
+from app.services.registration_config_service import calculate_registration_total, normalize_event_configs, waiver_acceptance_field, pickup_point_field, PICKUP_POINT_FIELD_ID
 from app.services.platform_fee_service import compute_participant_pricing
 from app.services.credit_service import CREDIT_CHARGEABLE_PAYMENT_GATEWAYS, CreditValidationError, debit_credits, CREDIT_REGISTRATION_DEBIT
 from app.services.ticket_service import serialize_ticket, ticket_token_for_registration
 from app.services.organizer_visibility_service import _authorized_event_ids, get_visibility_for_events, serialize_visibility, visibility_filter_for_events
 from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, RegistrationParticipant, Refund, Ticket, User
+
+
+def _event_waiver_config(event: Event) -> dict:
+    """The event's stored waiver config, if any (sibling key in field_config)."""
+    return dict((event.field_config or {}).get("waiver") or {})
+
+
+def _waiver_extra_fields(event: Event) -> list[dict] | None:
+    """Require waiver acceptance for the primary registrant when enabled.
+
+    Capability-gated: an event whose sport adapter does not support waivers never
+    enforces one, even if stale config is present.
+    """
+    waiver = _event_waiver_config(event)
+    if not waiver.get("enabled"):
+        return None
+    if not get_adapter(event.category).supports_waiver:
+        return None
+    return [waiver_acceptance_field()]
+
+
+def _event_pickup_config(event: Event) -> dict:
+    """The event's stored pickup-points config, if any (sibling key in field_config)."""
+    return dict((event.field_config or {}).get("pickup_points") or {})
+
+
+def _pickup_extra_fields(event: Event) -> list[dict] | None:
+    """Inject the per-participant pickup select field when pickup points are enabled.
+
+    Capability-gated: an event whose sport adapter does not support pickup points
+    never enforces one, even if stale config is present. Unlike the waiver (which
+    applies to the primary registrant only), the pickup selection is per
+    participant, so this is applied to every participant row.
+    """
+    pickup = _event_pickup_config(event)
+    if not pickup.get("enabled"):
+        return None
+    if not get_adapter(event.category).supports_pickup_points:
+        return None
+    point_ids = [point["id"] for point in pickup.get("points", []) if isinstance(point, dict) and point.get("id")]
+    if not point_ids:
+        return None
+    return [pickup_point_field(point_ids, bool(pickup.get("required", False)))]
+
+
+def _snapshot_registration_terms(computed_total: dict, event: Event) -> None:
+    waiver = _event_waiver_config(event)
+    if waiver.get("enabled") and get_adapter(event.category).supports_waiver:
+        computed_total["eventWaiver"] = {**waiver, "accepted": True, "acceptedAt": utc_now().isoformat()}
+    pickup = _event_pickup_config(event)
+    if pickup.get("enabled") and get_adapter(event.category).supports_pickup_points:
+        computed_total["pickupPoints"] = pickup
 
 
 def _human_reference() -> str:
@@ -260,6 +312,8 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
             _registration_responses(payload),
             payload.selections,
             base_fee_paise=ticket.price,
+            extra_required_fields=_waiver_extra_fields(event),
+            per_participant_fields=_pickup_extra_fields(event),
         )
     except ValueError:
         raise
@@ -277,6 +331,7 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
             validate_manual_upi_settings(event.payment_settings)
     computed_total["fieldConfig"] = field_config
     computed_total["addonConfig"] = addon_config
+    _snapshot_registration_terms(computed_total, event)
     is_free = amount_paise == 0
     # Snapshot the SportPass platform-fee pricing for this registration.
     pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer, organization=event.organization)
@@ -558,6 +613,7 @@ def _organizer_registration_query(
     registration_reference: str | None = None,
     payment_status: str | None = None,
     check_in_status: str | None = None,
+    pickup_point_id: str | None = None,
     visibility_by_event: dict[UUID, dict] | None = None,
     visibility_event_ids: list[UUID] | None = None,
 ):
@@ -589,6 +645,16 @@ def _organizer_registration_query(
         query = query.where(Registration.category_id == category_id)
     if ticket_id is not None:
         query = query.where(Registration.ticket_id == ticket_id)
+    selected_pickup = _normalize_filter(pickup_point_id)
+    if selected_pickup:
+        member_pickup = select(RegistrationParticipant.registration_id).where(
+            RegistrationParticipant.registration_id == Registration.id,
+            RegistrationParticipant.responses[PICKUP_POINT_FIELD_ID].as_string() == selected_pickup,
+        ).exists()
+        query = query.where(or_(
+            Registration.responses[PICKUP_POINT_FIELD_ID].as_string() == selected_pickup,
+            member_pickup,
+        ))
 
     normalized_status = _normalize_filter(status_filter)
     if normalized_status in {None, "pending"}:
@@ -672,6 +738,7 @@ def list_organizer_registrations(
     registration_reference: str | None = None,
     payment_status: str | None = None,
     check_in_status: str | None = None,
+    pickup_point_id: str | None = None,
     page_size: int = 50,
     cursor: str | None = None,
     visibility_by_event: dict[UUID, dict] | None = None,
@@ -694,6 +761,7 @@ def list_organizer_registrations(
         registration_reference=registration_reference,
         payment_status=payment_status,
         check_in_status=check_in_status,
+        pickup_point_id=pickup_point_id,
         visibility_by_event=visibility_by_event,
         visibility_event_ids=authorized_event_ids,
     )
@@ -796,6 +864,61 @@ def _authorized_event_for_organizer(db: Session, user, event_id: UUID) -> Event 
     return db.scalar(query)
 
 
+def pickup_point_summary(db: Session, user, event_id: UUID, *, status_filter="all", payment_status=None, check_in_status="all") -> dict:
+    """Participant-correct pickup counts across ALL of an event's registrations.
+
+    Counts PER PARTICIPANT (not per registration), so a multi-participant
+    registration contributes each member's own selection. Only the event's own
+    configured points are returned, preserving event isolation. Returns an empty
+    summary when pickup points are not enabled for the event.
+    """
+    event = _authorized_event_for_organizer(db, user, event_id)
+    if event is None:
+        raise ValueError("Event not found")
+    pickup = dict((event.field_config or {}).get("pickup_points") or {})
+    points = pickup.get("points") or []
+    counts: dict[str, int] = {str(point["id"]): 0 for point in points if isinstance(point, dict) and point.get("id")}
+    if not pickup.get("enabled") or not counts:
+        return {
+            "enabled": bool(pickup.get("enabled")),
+            "required": bool(pickup.get("required", False)),
+            "points": [{"id": pid, "name": _pickup_name(points, pid), "count": 0} for pid in counts],
+            "unassignedParticipants": 0,
+        }
+    registrations = db.execute(_organizer_registration_query(
+        db, user, event_id=event_id, status_filter=status_filter,
+        payment_status=payment_status, check_in_status=check_in_status,
+    ).order_by(None)).unique().all()
+    unassigned = 0
+    for registration, _event in registrations:
+        memberships = registration.participant_memberships or []
+        member_responses = (
+            [member.responses or {} for member in memberships]
+            if memberships
+            else [registration.responses or {}]
+        )
+        for responses in member_responses:
+            selected = responses.get(PICKUP_POINT_FIELD_ID)
+            key = str(selected) if selected not in (None, "") else None
+            if key is not None and key in counts:
+                counts[key] += 1
+            else:
+                unassigned += 1
+    return {
+        "enabled": True,
+        "required": bool(pickup.get("required", False)),
+        "points": [{"id": pid, "name": _pickup_name(points, pid), "count": count} for pid, count in counts.items()],
+        "unassignedParticipants": unassigned,
+    }
+
+
+def _pickup_name(points: list, point_id: str) -> str:
+    for point in points:
+        if isinstance(point, dict) and str(point.get("id")) == str(point_id):
+            return str(point.get("name") or point_id)
+    return str(point_id)
+
+
 def _csv_cell(value) -> str:
     if value is None:
         return ""
@@ -833,11 +956,33 @@ def _export_config_definitions(event: Event, rows: list[tuple[Registration, Even
         for addon in snapshot.get("addonConfig", {}).get("addons", []) if isinstance(snapshot, dict) else []:
             if isinstance(addon, dict) and addon.get("id"):
                 addon_definitions.setdefault(addon["id"], addon)
+        if snapshot.get("eventWaiver"):
+            field_definitions.setdefault("waiver_accepted", {"id": "waiver_accepted", "label": "Waiver accepted"})
+        if snapshot.get("pickupPoints", {}).get("enabled"):
+            field_definitions.setdefault(PICKUP_POINT_FIELD_ID, {"id": PICKUP_POINT_FIELD_ID, "label": "Pickup point"})
     return list(field_definitions.values()), list(addon_definitions.values())
 
 
 def _legacy_response_value(registration: Registration, field_id: str):
     responses = registration.responses or {}
+    if field_id == "waiver_accepted":
+        waiver = (registration.computed_total or {}).get("eventWaiver", {})
+        accepted = responses.get(field_id) is True or waiver.get("accepted") is True
+        return "Accepted" if accepted else "Not accepted"
+    if field_id == PICKUP_POINT_FIELD_ID:
+        config = (registration.computed_total or {}).get("pickupPoints", {})
+        names = {str(point.get("id")): point.get("name", point.get("id"))
+                 for point in config.get("points", []) if isinstance(point, dict)}
+        members = registration.participant_memberships or []
+        member_responses = [member.responses or {} for member in members] if members else [responses]
+        values = []
+        for index, member_response in enumerate(member_responses):
+            value = member_response.get(field_id)
+            if value:
+                name = names.get(str(value), str(value))
+                participant = members[index].participant.name if members else registration.participant.name
+                values.append(f"{participant}: {name}")
+        return " / ".join(values)
     if field_id in responses:
         return responses[field_id]
     participant = registration.participant
@@ -879,6 +1024,7 @@ def export_organizer_registrations_csv(
     registration_reference: str | None = None,
     payment_status: str | None = None,
     check_in_status: str | None = None,
+    pickup_point_id: str | None = None,
 ) -> str:
     event = _authorized_event_for_organizer(db, user, event_id)
     if event is None:
@@ -904,6 +1050,7 @@ def export_organizer_registrations_csv(
             registration_reference=registration_reference,
             payment_status=payment_status,
             check_in_status=check_in_status,
+            pickup_point_id=pickup_point_id,
             visibility_event_ids=[event_id],
         ).order_by(Registration.created_at.desc(), Registration.id.desc()).limit(_MAX_CSV_EXPORT_ROWS + 1)
     ).unique().all()
@@ -1085,7 +1232,7 @@ def decide_registration_payment(
         raise ValueError("A registration reservation is no longer available")
 
     event = db.get(Event, event_id)
-    if decision == "approve" and event is not None and event.organization.credit_deduction_mode != "MANUAL_EVENT_SETTLEMENT":
+    if decision == "approve" and event is not None:
         try:
             # The savepoint makes a multi-registration order all-or-nothing:
             # no earlier debit survives when a later registration is short.
@@ -1450,6 +1597,8 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
             raise ValueError("Only one team can be registered per order")
 
     field_config, addon_config = normalize_event_configs(event.field_config, event.addon_config)
+    waiver_extra_fields = _waiver_extra_fields(event)
+    pickup_extra_fields = _pickup_extra_fields(event)
     prepared: list[dict] = []
     for entry in entries:
         ticket = tickets[entry.ticket_id]
@@ -1472,6 +1621,11 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
                 entry.selections,
                 base_fee_paise=ticket.price,
                 is_team_member=(is_team and index > 0),
+                # The waiver applies to the primary registrant only; pickup
+                # selection is per participant, so it is validated/stored for
+                # every row (including non-primary team members).
+                extra_required_fields=waiver_extra_fields if index == 0 else None,
+                per_participant_fields=pickup_extra_fields,
             )
             member_responses.append(responses)
             if index == 0:
@@ -1480,6 +1634,7 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
         assert computed_total is not None
         computed_total["fieldConfig"] = field_config
         computed_total["addonConfig"] = addon_config
+        _snapshot_registration_terms(computed_total, event)
         amount_paise = computed_total["totalPaise"]
         if amount_paise > 0 and event.payment_collection_method == "DIRECT_UPI" and event.payment_settings is None:
             raise ValueError("Manual UPI payment settings are not configured")
@@ -1625,6 +1780,8 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
         event.addon_config,
         category_options=sorted({category.distance for category in event.categories if category.distance}),
     )
+    waiver_fields = _waiver_extra_fields(event)
+    pickup_fields = _pickup_extra_fields(event)
     raw_member_responses = [member.responses for member in payload.participants] if payload.participants else [payload.responses]
     get_adapter(event.category).validate_registration(ticket.category, len(raw_member_responses))
     shared_email, shared_phone = _resolve_shared_contact(
@@ -1644,6 +1801,8 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
             payload.selections,
             base_fee_paise=ticket.price,
             is_team_member=(is_team and index > 0),
+            extra_required_fields=waiver_fields if index == 0 else None,
+            per_participant_fields=pickup_fields,
         )
         member_responses.append(normalized_responses)
         if index == 0:
@@ -1653,6 +1812,7 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
     responses = member_responses[0]
     computed_total["fieldConfig"] = field_config
     computed_total["addonConfig"] = addon_config
+    _snapshot_registration_terms(computed_total, event)
     amount_paise = computed_total["totalPaise"]
     is_free = amount_paise == 0
     # Snapshot the SportPass platform-fee pricing for this manual registration.
@@ -1701,7 +1861,7 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
     db.add(registration)
     db.flush()
     _attach_registration_members(db, registration, participants, member_responses)
-    if confirmed and not is_free and registration.platform_fee_paise > 0 and event.organization.credit_deduction_mode != "MANUAL_EVENT_SETTLEMENT":
+    if confirmed and not is_free and registration.platform_fee_paise > 0:
         try:
             debit_credits(db, organization_id=event.organization_id, amount=registration.platform_fee_paise, transaction_type=CREDIT_REGISTRATION_DEBIT, description="SportPass fee for confirmed manual registration", source_type="REGISTRATION", source_id=str(registration.id), event_id=registration.event_id, registration_id=registration.id, created_by=user.id)
         except CreditValidationError:

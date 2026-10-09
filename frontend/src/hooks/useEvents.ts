@@ -224,6 +224,8 @@ export interface OrganizerEvent {
   categories: OrganizerEventCategory[];
   fieldConfig: EventFieldConfig;
   addonConfig: EventAddonConfig;
+  waiver?: { enabled?: boolean; title?: string; text?: string };
+  pickupPoints?: { enabled?: boolean; required?: boolean; points?: Array<{ id: string; name: string; description?: string; address?: string }> };
   paymentSettings: {
     method: string;
     upiId: string;

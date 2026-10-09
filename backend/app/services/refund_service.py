@@ -2,8 +2,7 @@
 
 Architecture:
   - Direct UPI refunds: manual — organizer marks sent with a UTR.
-  - Cashfree refunds: placeholder only — NOT_IMPLEMENTED returned.
-  - All paths use process_refund() as the single dispatch entry point.
+  - Cashfree refunds: admin initiates through the verified Cashfree integration.
 
 Safety rules:
   - Never auto-trigger a Direct UPI refund from SportPass's account.
@@ -17,7 +16,7 @@ from __future__ import annotations
 import datetime as dt
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.audit_service import record_audit
@@ -167,6 +166,12 @@ def request_refund(
     participant_comments: str | None,
 ) -> Refund:
     """Create a new REQUESTED refund for a confirmed paid registration."""
+    # Match settlement/refund writers: event first, then registration.
+    event_id = db.scalar(select(Registration.event_id).where(Registration.id == registration_id))
+    if event_id is not None:
+        db.scalar(select(Event).where(Event.id == event_id).with_for_update())
+    db.scalar(select(Registration).where(Registration.id == registration_id)
+              .with_for_update().execution_options(populate_existing=True))
     eligibility = check_refund_eligibility(db, registration_id, for_participant=True)
     if not eligibility["eligible"]:
         raise ValueError(eligibility["reason"])
@@ -228,6 +233,15 @@ def request_refund(
     return db.get(Refund, refund.id)
 
 
+def _locked_refund(db: Session, refund_id: UUID) -> Refund:
+    event_id = db.scalar(select(Refund.event_id).where(Refund.id == refund_id))
+    if event_id is None:
+        raise ValueError("Refund not found")
+    db.scalar(select(Event).where(Event.id == event_id).with_for_update())
+    return db.scalar(select(Refund).where(Refund.id == refund_id).with_for_update()
+                     .execution_options(populate_existing=True))
+
+
 def confirm_refund_received(
     db: Session,
     *,
@@ -235,7 +249,7 @@ def confirm_refund_received(
     actor_user_id: UUID | None,
 ) -> Refund:
     """Participant confirms they received the refund — moves REFUND_SENT → REFUNDED."""
-    refund = db.get(Refund, refund_id)
+    refund = _locked_refund(db, refund_id)
     if refund is None:
         raise ValueError("Refund not found")
     if refund.status != REFUND_STATUS_REFUND_SENT:
@@ -283,7 +297,7 @@ def review_refund(
     if decision not in ("approve", "reject"):
         raise ValueError("Decision must be 'approve' or 'reject'")
 
-    refund = db.get(Refund, refund_id)
+    refund = _locked_refund(db, refund_id)
     if refund is None:
         raise ValueError("Refund not found")
     if refund.status != REFUND_STATUS_REQUESTED:
@@ -302,8 +316,10 @@ def review_refund(
             approved_amount_paise = refund.requested_refund_amount
         if approved_amount_paise > max_refundable:
             raise ValueError(f"Approved refund amount cannot exceed original amount paid (₹{max_refundable / 100:.2f})")
-        if approved_amount_paise < 0:
-            raise ValueError("Approved refund amount cannot be negative")
+        if approved_amount_paise <= 0:
+            raise ValueError("Approved refund amount must be greater than zero")
+        if refund.payment_provider == "CASHFREE" and approved_amount_paise < refund.platform_fee_refund_amount:
+            raise ValueError("Approved amount cannot be less than the platform fee refund")
 
         refund.approved_refund_amount = approved_amount_paise
         refund.status = REFUND_STATUS_APPROVED
@@ -349,7 +365,7 @@ def mark_refund_sent(
     SportPass NEVER transfers money on behalf of the organizer.
     The organizer must manually send via UPI and enter the UTR here.
     """
-    refund = db.get(Refund, refund_id)
+    refund = _locked_refund(db, refund_id)
     if refund is None:
         raise ValueError("Refund not found")
     if refund.status != REFUND_STATUS_APPROVED:
@@ -371,7 +387,7 @@ def mark_refund_sent(
         refund.organizer_comments = organizer_comments
     if actual_amount_paise is not None:
         # Allow organizer to record the actual sent amount (must not exceed original)
-        if actual_amount_paise > refund.original_total_paid:
+        if actual_amount_paise <= 0 or actual_amount_paise > refund.original_total_paid:
             raise ValueError("Actual refund amount cannot exceed the original amount paid")
         refund.approved_refund_amount = actual_amount_paise
 
@@ -388,19 +404,22 @@ def mark_refund_sent(
 
 
 # ---------------------------------------------------------------------------
-# Provider dispatch (future extensibility)
+# Provider dispatch
 # ---------------------------------------------------------------------------
 
 def process_refund(db: Session, refund: Refund, *, reviewer_user_id: UUID) -> dict:
     """Dispatch to the correct provider refund processor.
 
-    For Direct UPI this is a no-op at the provider level (manual process).
-    For Cashfree this returns NOT_IMPLEMENTED until the integration is built.
+    Direct UPI remains manual. Cashfree uses the same verified processor as
+    the admin API; callers must authorize the actor before invoking this.
     """
     if refund.payment_provider == PAYMENT_PROVIDER_DIRECT_UPI:
         return _process_manual_upi_refund(refund)
     if refund.payment_provider == PAYMENT_PROVIDER_CASHFREE:
-        return _process_cashfree_refund(refund)
+        from app.services.cashfree_refunds import reconcile_cashfree_refund
+        return {"status": reconcile_cashfree_refund(
+            db, refund_id=refund.id, initiate=True, actor_user_id=reviewer_user_id,
+        )}
     return {"status": "NOT_IMPLEMENTED", "message": f"Unknown provider: {refund.payment_provider}"}
 
 
@@ -417,15 +436,18 @@ def _process_manual_upi_refund(refund: Refund) -> dict:
     }
 
 
-def _process_cashfree_refund(refund: Refund) -> dict:
-    """Placeholder for Cashfree Easy Split refund.
-
-    NOT YET IMPLEMENTED. Will call Cashfree Refunds API once integrated.
-    """
-    return {
-        "status": "NOT_IMPLEMENTED",
-        "message": "Automated refunds for Cashfree are not available yet. Please contact SportPass support.",
-    }
+def _refund_page_after(db: Session, cursor: str):
+    """Return a stable (created_at, id) keyset boundary for the supplied row."""
+    try:
+        cursor_id = UUID(cursor)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Invalid refund cursor") from exc
+    boundary = db.execute(select(Refund.created_at, Refund.id).where(Refund.id == cursor_id)).one_or_none()
+    if boundary is None:
+        raise ValueError("Refund cursor not found")
+    created_at, refund_id = boundary
+    return or_(Refund.created_at < created_at,
+               and_(Refund.created_at == created_at, Refund.id < refund_id))
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +486,7 @@ def list_refunds_for_organizer(
             joinedload(Refund.participant),
         )
         .where(Refund.organizer_id == organizer_id)
-        .order_by(Refund.created_at.desc())
+        .order_by(Refund.created_at.desc(), Refund.id.desc())
     )
     if event_id:
         query = query.where(Refund.event_id == event_id)
@@ -473,11 +495,7 @@ def list_refunds_for_organizer(
     if payment_provider:
         query = query.where(Refund.payment_provider == payment_provider)
     if cursor:
-        from uuid import UUID as _UUID
-        try:
-            query = query.where(Refund.id < _UUID(cursor))
-        except (ValueError, AttributeError):
-            pass
+        query = query.where(_refund_page_after(db, cursor))
     return list(db.scalars(query.limit(limit + 1)))
 
 
@@ -499,7 +517,7 @@ def list_refunds_for_admin(
             joinedload(Refund.participant),
             joinedload(Refund.organization),
         )
-        .order_by(Refund.created_at.desc())
+        .order_by(Refund.created_at.desc(), Refund.id.desc())
     )
     if event_id:
         query = query.where(Refund.event_id == event_id)
@@ -510,11 +528,7 @@ def list_refunds_for_admin(
     if payment_provider:
         query = query.where(Refund.payment_provider == payment_provider)
     if cursor:
-        from uuid import UUID as _UUID
-        try:
-            query = query.where(Refund.id < _UUID(cursor))
-        except (ValueError, AttributeError):
-            pass
+        query = query.where(_refund_page_after(db, cursor))
     return list(db.scalars(query.limit(limit + 1)))
 
 
@@ -542,7 +556,7 @@ def create_manual_refund(
     """
     # Verify the event belongs to this organizer
     event = db.scalar(
-        select(Event).where(Event.id == event_id, Event.organization_id == organizer_id)
+        select(Event).where(Event.id == event_id, Event.organization_id == organizer_id).with_for_update()
     )
     if event is None:
         raise ValueError("Event not found or does not belong to your organisation")
@@ -561,9 +575,15 @@ def create_manual_refund(
                 Registration.event_id == event_id,
                 Event.organization_id == organizer_id,
             )
+            .with_for_update(of=Registration).execution_options(populate_existing=True)
         )
         if reg is None:
             raise ValueError("Registration not found for this event or organisation")
+        if reg.payment and reg.payment.payment_gateway == "cashfree":
+            raise ValueError("Cashfree registrations must use the managed refund flow")
+        if db.scalar(select(Refund.id).where(Refund.registration_id == reg.id,
+                Refund.status.in_(REFUND_ACTIVE_STATUSES | {REFUND_STATUS_REFUNDED}))) is not None:
+            raise ValueError("A refund already exists for this registration")
         participant_id = reg.participant_id
 
     now = utc_now()
@@ -650,6 +670,8 @@ def serialize_refund(refund: Refund) -> dict:
         "refundProofUrl": refund.refund_proof_url,
         "providerRefundId": refund.provider_refund_id,
         "providerRefundStatus": refund.provider_refund_status,
+        "initiatedBy": str(refund.initiated_by) if refund.initiated_by else None,
+        "initiatedAt": refund.initiated_at,
         "requestedAt": refund.requested_at,
         "reviewedAt": refund.reviewed_at,
         "approvedAt": refund.approved_at,

@@ -108,6 +108,8 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
         "schedule": event.schedule or [],
         "fieldConfig": field_config,
         "sportConfig": (event.field_config or {}).get("sport_config", {}),
+        "waiver": (event.field_config or {}).get("waiver", {"enabled": False}),
+        "pickupPoints": (event.field_config or {}).get("pickup_points", {"enabled": False}),
         "addonConfig": addon_config,
         "categories": [
             {
@@ -239,12 +241,14 @@ def create_event(
     _validate_registration_window(payload)
     organization = get_authorized_organization(db, user, payload.organization_id)
 
-    # Block Direct UPI if the organizer has not been granted access by admin.
-    if payload.payment_collection_method == "DIRECT_UPI" and not organization.allow_direct_upi:
+    has_paid_tickets = any(ticket.price_rupees > 0 for category in payload.categories for ticket in category.tickets)
+    if has_paid_tickets and payload.payment_collection_method == "DIRECT_UPI" and not organization.allow_direct_upi:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Direct UPI payments are not enabled for this organizer. Contact SportPass to request access.",
         )
+    if has_paid_tickets and payload.payment_collection_method == "CASHFREE_MANAGED" and not organization.allow_cashfree:
+        raise HTTPException(status_code=403, detail="Cashfree payments are not enabled for this organizer. Contact SportPass to request access.")
 
     field_config, addon_config = normalize_event_configs(
         payload.field_config,
@@ -279,7 +283,7 @@ def create_event(
         participants=0,
         rules=payload.rules,
         schedule=[item.model_dump(mode="json", exclude_none=True) for item in payload.schedule],
-        field_config={**field_config, "sport_config": payload.sport_config},
+        field_config={**field_config, "sport_config": payload.sport_config, "waiver": payload.waiver, "pickup_points": payload.pickup_points},
         addon_config=addon_config,
         payment_collection_method=payload.payment_collection_method,
         platform_fee_bearer=payload.platform_fee_bearer,
@@ -339,7 +343,9 @@ def create_event(
     )
     db.commit()
     db.refresh(event)
-    return _event_response(event, storage, get_settings().storage_signed_url_ttl_seconds, get_event_visibility(db, user, event.id))
+    response = _event_response(event, storage, get_settings().storage_signed_url_ttl_seconds, get_event_visibility(db, user, event.id))
+    response["paymentCollectionMethodLocked"] = _event_has_registration(db, event.id)
+    return response
 
 
 @router.get("/events/{event_id}")
@@ -355,7 +361,9 @@ def get_my_event(
         .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings), selectinload(Event.organization))
         .where(Event.id == event.id)
     )
-    return _event_response(event, storage, get_settings().storage_signed_url_ttl_seconds, get_event_visibility(db, user, event.id))
+    response = _event_response(event, storage, get_settings().storage_signed_url_ttl_seconds, get_event_visibility(db, user, event.id))
+    response["paymentCollectionMethodLocked"] = _event_has_registration(db, event.id)
+    return response
 
 
 @router.get("/events/{event_id}/dashboard")
@@ -425,6 +433,10 @@ def _event_has_paid_registration(db: Session, event_id: UUID) -> bool:
         .where(Registration.event_id == event_id, Registration.total_amount_paise > 0)
         .limit(1)
     ) is not None
+
+
+def _event_has_registration(db: Session, event_id: UUID) -> bool:
+    return db.scalar(select(Registration.id).where(Registration.event_id == event_id).limit(1)) is not None
 
 
 @router.post("/events/{event_id}/registration-status")
@@ -523,6 +535,8 @@ def update_event(
         select(Event)
         .options(selectinload(Event.categories).selectinload(EventCategory.tickets), selectinload(Event.payment_settings), selectinload(Event.organization))
         .where(Event.id == event.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     _validate_registration_window(payload)
     field_config, addon_config = normalize_event_configs(
@@ -561,6 +575,20 @@ def update_event(
         if preserve_sport_config
         else get_adapter(payload.sport).normalize_event_config(payload.sport_config)
     )
+    # Waiver is already normalized by the schema when submitted; otherwise the
+    # stored value is preserved so a general edit never drops it.
+    waiver_config = (
+        payload.waiver
+        if "waiver" in payload.model_fields_set
+        else (event.field_config or {}).get("waiver", {})
+    )
+    # Pickup points are already normalized by the schema when submitted; otherwise
+    # the stored value is preserved so a general edit never drops it.
+    pickup_config = (
+        payload.pickup_points
+        if "pickup_points" in payload.model_fields_set
+        else (event.field_config or {}).get("pickup_points", {})
+    )
 
     event.name = payload.name.strip()
     event.description = payload.description.strip()
@@ -584,19 +612,25 @@ def update_event(
     event.longitude = payload.longitude
     event.rules = payload.rules
     event.schedule = [item.model_dump(mode="json", exclude_none=True) for item in payload.schedule]
-    event.field_config = {**field_config, "sport_config": sport_config}
+    event.field_config = {**field_config, "sport_config": sport_config, "waiver": waiver_config, "pickup_points": pickup_config}
     event.addon_config = addon_config
     event.registration_open = payload.registration_open
     event.registration_close = payload.registration_close
     event.distance = _legacy_event_distance(payload)
     if payload.payment_collection_method is not None:
-        if payload.payment_collection_method == "DIRECT_UPI":
+        if payload.payment_collection_method != event.payment_collection_method and _event_has_registration(db, event.id):
+            raise HTTPException(status_code=409, detail="Payment method cannot be changed after the first registration. Create a new event to use a different method.")
+        if payload.payment_collection_method != event.payment_collection_method and payload.payment_collection_method == "DIRECT_UPI":
             org = db.scalar(select(Organization).where(Organization.id == event.organization_id))
             if org and not org.allow_direct_upi:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Direct UPI payments are not enabled for this organizer. Contact SportPass to request access.",
                 )
+        if payload.payment_collection_method != event.payment_collection_method and payload.payment_collection_method == "CASHFREE_MANAGED":
+            org = db.scalar(select(Organization).where(Organization.id == event.organization_id))
+            if org and not org.allow_cashfree:
+                raise HTTPException(status_code=403, detail="Cashfree payments are not enabled for this organizer. Contact SportPass to request access.")
         event.payment_collection_method = payload.payment_collection_method
 
     if payload.platform_fee_bearer is not None and payload.platform_fee_bearer != event.platform_fee_bearer:
@@ -901,6 +935,8 @@ def publish_event(
     if has_paid_tickets:
         if event.payment_collection_method == "CASHFREE_MANAGED" and not get_settings().cashfree_ready:
             raise HTTPException(status_code=422, detail="Cashfree must be configured before publishing a managed payment event")
+        if event.payment_collection_method == "CASHFREE_MANAGED" and not event.organization.allow_cashfree:
+            raise HTTPException(status_code=403, detail="Cashfree payments are not enabled for this organizer")
         # Get the organization to check verification status
         organization = db.scalar(select(Organization).where(Organization.id == event.organization_id))
         if organization and organization.paid_verification_status != "VERIFIED":

@@ -1,7 +1,7 @@
 import { MAX_TICKETS_PER_TRANSACTION } from "@/lib/registration-limits";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Download, Plus, Shield, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Download, Plus, RefreshCw, Shield, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Layout } from "@/components/Layout";
@@ -138,21 +138,63 @@ const Checkout = () => {
   const [registrationMode, setRegistrationMode] = useState<RegistrationMode | null>(null);
   const [qrDownloaded, setQrDownloaded] = useState(false);
   const [gatewayStatus, setGatewayStatus] = useState<string | null>(null);
+  const [missingPaymentSession, setMissingPaymentSession] = useState(false);
 
   useEffect(() => {
     if (!eventId || !new URLSearchParams(location.search).has("cashfree_return")) return;
     try {
       const saved = sessionStorage.getItem(`sportpass_cashfree_checkout_${eventId}`);
-      if (!saved) return;
+      if (!saved) { setMissingPaymentSession(true); return; }
       const registration = JSON.parse(saved) as BatchRegistrationResponse;
+      if (!registration.confirmationToken) { setMissingPaymentSession(true); return; }
       setRegistration(registration);
       setCurrentStep(2);
       void apiRequest<{ status: string }>("/registrations/cashfree/status", {
         method: "POST", body: JSON.stringify({ confirmation_token: registration.confirmationToken }),
       }).then(({ status }) => setGatewayStatus(status)).catch(() => setGatewayStatus("verification_pending"));
-    } catch { setGatewayStatus("verification_pending"); }
+    } catch { setMissingPaymentSession(true); }
   }, [eventId, location.search]);
+
+  useEffect(() => {
+    if (!registration?.confirmationToken || !["pending", "verification_pending", "awaiting"].includes(gatewayStatus || "")) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let attempts = 0;
+    const poll = async () => {
+      try {
+        const result = await apiRequest<{ status: string }>("/registrations/cashfree/status", {
+          method: "POST", body: JSON.stringify({ confirmation_token: registration.confirmationToken }),
+        });
+        if (!cancelled) setGatewayStatus(result.status);
+      } catch { /* Keep the last known state; a timeout is not payment failure. */ }
+      if (!cancelled && ++attempts < 12) timer = setTimeout(poll, 10000);
+    };
+    timer = setTimeout(poll, 5000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [registration?.confirmationToken, gatewayStatus]);
   const [responsibilityAcknowledged, setResponsibilityAcknowledged] = useState(false);
+  const [waiverAccepted, setWaiverAccepted] = useState(false);
+  // Waiver appears only when the organizer enabled it for this event, and must
+  // be accepted before the registration (and any payment) is created.
+  const waiverEnabled = Boolean(event?.waiver?.enabled);
+  const waiverBlocksContinue = waiverEnabled && !waiverAccepted;
+
+  // Pickup points are per participant: the organizer offers a set of locations
+  // and each participant selects one. The selection is stored in that
+  // participant's responses under PICKUP_POINT_FIELD_ID.
+  const PICKUP_POINT_FIELD_ID = "pickup_point_id";
+  const pickupEnabled = Boolean(event?.pickupPoints?.enabled);
+  const pickupRequired = pickupEnabled && Boolean(event?.pickupPoints?.required);
+  const pickupPoints = (pickupEnabled ? event?.pickupPoints?.points ?? [] : []) as Array<{ id: string; name: string; description?: string; address?: string }>;
+  const pickupField: ParticipantFieldConfig = {
+    id: PICKUP_POINT_FIELD_ID,
+    label: "Pickup point",
+    type: "select",
+    required: pickupRequired,
+    predefined: true,
+    order: 10001,
+    options: pickupPoints.map((point) => point.id),
+  };
 
   // Advancing a checkout step (or switching participant) can leave mobile users
   // scrolled at the bottom of the previous section. Reset to the top so the new
@@ -390,7 +432,13 @@ const Checkout = () => {
         ? (selection?.qty ?? 0) >= 1
         : Boolean(selection?.selected);
     });
-    return fieldsReady && sharedContactReady && addonsReady;
+    // Pickup selection is per participant: every participant must choose one
+    // when pickup points are enabled and required.
+    const pickupReady = !pickupRequired || (() => {
+      const value = rider.responses[PICKUP_POINT_FIELD_ID];
+      return value !== undefined && String(value).trim() !== "";
+    })();
+    return fieldsReady && sharedContactReady && addonsReady && pickupReady;
   };
   const participantReady = riders.length > 0 && riders.every(riderReady);
   const completedRiders = riders.filter(riderReady).length;
@@ -404,15 +452,27 @@ const Checkout = () => {
   const teamInfoFields = activeFields.filter((field) => field.id === "team_name" || field.id === "captain_name");
   const otherFields = activeFields.filter((field) => !identityFields.includes(field) && !contactFields.includes(field) && !emergencyFields.includes(field) && !teamInfoFields.includes(field));
 
+  if (missingPaymentSession) return (
+    <Layout><main className="mx-auto max-w-2xl px-4 py-12"><div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-6 text-amber-950">
+      <h1 className="text-xl font-semibold">We could not restore this checkout</h1>
+      <p className="mt-3">Do not pay again if money was debited. Verification continues automatically, and confirmed tickets will be emailed to your booking contact.</p>
+      <p className="mt-3 text-sm">Check your registrations or contact SportPass support with your event name and payment reference. Never share an OTP or card details.</p>
+      <Button className="mt-5" onClick={() => navigate("/dashboard/registrations")}>View my registrations</Button>
+    </div></main></Layout>
+  );
   if (isLoading) return <Layout><div className="py-20 text-center text-muted-foreground">Loading event…</div></Layout>;
-  if (isError || !event || selectedTiers.length === 0) return <Layout><div className="py-20 text-center text-muted-foreground">Event or ticket selection not found.</div></Layout>;
-  if (event.registrationStatus === "closed") return <Layout><div className="mx-auto max-w-2xl px-4 py-20 text-center"><h1 className="text-2xl font-extrabold">Registration is closed</h1><p className="mt-3 text-muted-foreground">The organizer is not accepting new responses for {event.title}.</p><Button className="mt-6" onClick={() => navigate(`/event/${event.id}`)}>Back to event</Button></div></Layout>;
+  if (isError || !event || (selectedTiers.length === 0 && !registration)) return <Layout><div className="py-20 text-center text-muted-foreground">Event or ticket selection not found.</div></Layout>;
+  if (event.registrationStatus === "closed" && !registration) return <Layout><div className="mx-auto max-w-2xl px-4 py-20 text-center"><h1 className="text-2xl font-extrabold">Registration is closed</h1><p className="mt-3 text-muted-foreground">The organizer is not accepting new responses for {event.title}.</p><Button className="mt-6" onClick={() => navigate(`/event/${event.id}`)}>Back to event</Button></div></Layout>;
 
   if (cart.reduce((sum, line) => sum + line.quantity, 0) > MAX_TICKETS_PER_TRANSACTION) return <Layout><div className="mx-auto max-w-2xl px-4 py-20 text-center"><h1 className="text-2xl font-extrabold">Maximum {MAX_TICKETS_PER_TRANSACTION} tickets per transaction</h1><p className="mt-3 text-muted-foreground">Your selection exceeds the limit. Reduce your selection before entering participant details.</p><Button className="mt-6" onClick={() => navigate(`/event/${event.id}`)}>Change ticket selection</Button></div></Layout>;
 
   const createRegistration = async () => {
     if (totalPaise > 0 && !responsibilityAcknowledged) {
       toast.error("Please review and acknowledge the booking details before continuing.");
+      return;
+    }
+    if (waiverEnabled && !waiverAccepted) {
+      toast.error("Please read and accept the Waiver & Declaration before continuing.");
       return;
     }
     if (!participantReady || !eventId) {
@@ -443,8 +503,12 @@ const Checkout = () => {
               participants: group.map(({ responses }, memberIndex) => ({
                 // Strip the plain shared-contact keys for everyone; keep captain_* on the captain only.
                 // For non-captain members, also strip main-registrant-only fields (e.g. team_name).
+                // Waiver acceptance is entry-level: send it on the primary registrant only.
                 responses: Object.fromEntries(
-                  Object.entries(responses).filter(([fieldId]) => {
+                  Object.entries({
+                    ...responses,
+                    ...(memberIndex === 0 && waiverEnabled ? { waiver_accepted: true } : {}),
+                  }).filter(([fieldId]) => {
                     if (fieldId === "email" || fieldId === "phone") return false;
                     if (memberIndex > 0 && MAIN_REGISTRANT_ONLY_IDS.includes(fieldId)) return false;
                     return true;
@@ -504,7 +568,7 @@ const Checkout = () => {
       const current = await apiRequest<{ status: string }>("/registrations/cashfree/status", {
         method: "POST", body: JSON.stringify({ confirmation_token: registration.confirmationToken }),
       });
-      if (current.status === "successful" || current.status === "paid_needs_review") {
+      if (!["awaiting", "not_attempted", "failed", "user_dropped"].includes(current.status)) {
         setGatewayStatus(current.status);
         return;
       }
@@ -512,6 +576,7 @@ const Checkout = () => {
         method: "POST", body: JSON.stringify({ confirmation_token: registration.confirmationToken }),
       });
       if (session.status === "paid") { setGatewayStatus("successful"); return; }
+      if (session.status !== "awaiting") { setGatewayStatus(session.status); return; }
       if (!session.paymentSessionId || !session.environment) throw new Error("Cashfree session was not created");
       const result = await launchCashfree(session.paymentSessionId, session.environment);
       if (result.error) throw new Error(result.error.message || "Payment did not complete");
@@ -525,6 +590,19 @@ const Checkout = () => {
     finally { setLoading(false); }
   };
 
+  const refreshCashfreeStatus = async () => {
+    if (!registration?.confirmationToken) return;
+    setLoading(true);
+    try {
+      const result = await apiRequest<{ status: string }>("/registrations/cashfree/status", {
+        method: "POST", body: JSON.stringify({ confirmation_token: registration.confirmationToken }),
+      });
+      setGatewayStatus(result.status);
+      if (result.status === "successful") toast.success("Payment verified successfully.");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not check payment status"); }
+    finally { setLoading(false); }
+  };
+
   const openVerifiedConfirmation = async () => {
     if (!registration?.confirmationToken) return;
     setLoading(true);
@@ -534,10 +612,10 @@ const Checkout = () => {
       });
       navigate("/confirmation", { state: {
         ...fresh, confirmationToken: registration.confirmationToken, claimCode: registration.claimCode,
-        registrations: fresh.registrations.map((child, index) => ({ ...child,
-          confirmationToken: registration.registrations[index]?.confirmationToken,
-          claimCode: registration.registrations[index]?.claimCode,
-        })),
+        registrations: fresh.registrations.map((child) => {
+          const saved = registration.registrations.find((item) => item.registrationReference === child.registrationReference);
+          return { ...child, confirmationToken: saved?.confirmationToken, claimCode: saved?.claimCode };
+        }),
       } });
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not load confirmed registration"); }
     finally { setLoading(false); }
@@ -771,11 +849,12 @@ const Checkout = () => {
                       <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${totalParticipants ? (completedRiders / totalParticipants) * 100 : 0}%` }} />
                     </div>
                     {teamParticipantsView()}
+                    {waiverEnabled && <div className="rounded-2xl border border-slate-200 bg-card p-5"><h3 className="font-bold">{event.waiver?.title || "Waiver & Declaration"}</h3><p className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{event.waiver?.text}</p><label className={`mt-4 flex cursor-pointer items-start gap-3 rounded-xl border p-4 ${waiverAccepted ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"}`}><input aria-label="I have read and agree to the Waiver & Declaration." type="checkbox" checked={waiverAccepted} onChange={(e) => setWaiverAccepted(e.target.checked)} className="mt-0.5 h-5 w-5 accent-emerald-600" /><span className="text-sm font-semibold">I have read and agree to the above Waiver &amp; Declaration.</span></label></div>}
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
                       <Button type="button" variant="outline" onClick={() => setCurrentStep(0)}>
                         <ArrowLeft className="mr-2 h-4 w-4" /> Previous
                       </Button>
-                      <Button type="button" onClick={createRegistration} disabled={!participantReady || loading}>
+                      <Button type="button" onClick={createRegistration} disabled={!participantReady || loading || waiverBlocksContinue}>
                         {loading ? "Creating registrations…" : totalPaise === 0 ? "Complete free registrations" : "Continue to payment"}
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
@@ -856,6 +935,30 @@ const Checkout = () => {
                           {renderFieldGrid(activeRider, emergencyFields)}
                         </section>
                       )}
+                      {pickupEnabled && pickupPoints.length > 0 && (
+                        <section className="space-y-4 border-t pt-6">
+                          <div>
+                            <h4 className="font-bold">Pickup point</h4>
+                            <p className="text-sm text-muted-foreground">Choose where this {participantLabel.toLowerCase()} will be picked up.</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Pickup point{pickupRequired ? " *" : ""}</Label>
+                            <Select
+                              value={activeRider.responses[PICKUP_POINT_FIELD_ID] === undefined ? "" : String(activeRider.responses[PICKUP_POINT_FIELD_ID])}
+                              onValueChange={(value) => updateResponse(activeRider.key, pickupField, value)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a pickup point" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {pickupPoints.map((point) => (
+                                  <SelectItem key={point.id} value={point.id}>{point.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </section>
+                      )}
                       {addons.length > 0 && (
                         <section className="space-y-4 border-t pt-6">
                           <div>
@@ -916,6 +1019,11 @@ const Checkout = () => {
                       </div>
                     );
                   })()}
+                  {activeRiderIndex === totalParticipants - 1 && waiverEnabled && <div className="overflow-hidden rounded-2xl border border-slate-200 bg-card shadow-sm">
+                    <div className="flex gap-3 border-b px-5 py-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Shield className="h-5 w-5" /></span><div><p className="font-bold">{event.waiver?.title || "Waiver & Declaration"}</p><p className="mt-0.5 text-sm text-muted-foreground">Please read and accept before continuing.</p></div></div>
+                    <div className="max-h-64 overflow-y-auto whitespace-pre-wrap px-5 py-4 text-sm leading-6 text-muted-foreground">{event.waiver?.text}</div>
+                    <label className={`m-4 mt-0 flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${waiverAccepted ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white hover:border-primary/40 hover:bg-primary/[0.03]"}`}><input aria-label="I have read and agree to the Waiver & Declaration." type="checkbox" checked={waiverAccepted} onChange={(e) => setWaiverAccepted(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 accent-emerald-600" /><span className="text-sm font-semibold">I have read and agree to the above Waiver &amp; Declaration.</span></label>
+                  </div>}
                   {activeRiderIndex === totalParticipants - 1 && totalPaise > 0 && <div className="overflow-hidden rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-white shadow-sm">
                     <div className="flex gap-3 border-b border-orange-100 px-5 py-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-orange-100 text-orange-700"><Shield className="h-5 w-5" /></span><div><p className="font-bold text-slate-950">About this booking</p><p className="mt-0.5 text-sm text-slate-500">Please review who is responsible for your event experience.</p></div></div>
                     <div className="space-y-3 px-5 py-4 text-sm leading-6 text-slate-600"><p>This event is organized and conducted by <span className="font-semibold text-slate-950">{event.organizer}</span>. SportPass India provides the registration, ticketing and event-management platform.</p><p>The organizer is responsible for the event’s conduct, venue, permissions, safety, cancellations and refunds under the displayed refund policy.</p>{event.paymentSettings?.method === "DIRECT_UPI" && <p>The registration amount is paid directly to <span className="font-semibold text-slate-950">{event.paymentSettings.payeeName || event.organizer}</span> and is not held by SportPass India.</p>}</div>
@@ -923,7 +1031,7 @@ const Checkout = () => {
                   </div>}
                   <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
                     <Button type="button" variant="outline" onClick={() => activeRiderIndex > 0 ? setActiveRiderIndex(activeRiderIndex - 1) : setCurrentStep(0)}><ArrowLeft className="mr-2 h-4 w-4" /> Previous</Button>
-                    {activeRiderIndex < totalParticipants - 1 ? <Button type="button" onClick={() => { if (!riderReady(activeRider)) { toast.error(`Complete the required ${participantLabel.toLowerCase()} fields for this ${participantLabel.toLowerCase()}.`); return; } setActiveRiderIndex(activeRiderIndex + 1); }}>Save {participantLabel.toLowerCase()} & continue<ArrowRight className="ml-2 h-4 w-4" /></Button> : <Button type="button" className="sm:min-w-52" onClick={createRegistration} disabled={!participantReady || loading || (totalPaise > 0 && !responsibilityAcknowledged)}>{loading ? "Creating registrations…" : totalPaise === 0 ? "Complete free registrations" : "Continue to payment"}<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+                    {activeRiderIndex < totalParticipants - 1 ? <Button type="button" onClick={() => { if (!riderReady(activeRider)) { toast.error(`Complete the required ${participantLabel.toLowerCase()} fields for this ${participantLabel.toLowerCase()}.`); return; } setActiveRiderIndex(activeRiderIndex + 1); }}>Save {participantLabel.toLowerCase()} & continue<ArrowRight className="ml-2 h-4 w-4" /></Button> : <Button type="button" className="sm:min-w-52" onClick={createRegistration} disabled={!participantReady || loading || (totalPaise > 0 && !responsibilityAcknowledged) || waiverBlocksContinue}>{loading ? "Creating registrations…" : totalPaise === 0 ? "Complete free registrations" : "Continue to payment"}<ArrowRight className="ml-2 h-4 w-4" /></Button>}
                   </div>
                   {!participantReady && activeRiderIndex === totalParticipants - 1 && (
                     <p className="text-right text-sm text-muted-foreground">Complete the required {participantLabel.toLowerCase()} fields for every {participantLabel.toLowerCase()} before continuing.</p>
@@ -933,13 +1041,24 @@ const Checkout = () => {
             })()}
 
             {currentStep === 2 && registration && registration.paymentCollectionMethod === "CASHFREE_MANAGED" && (
-              <section className="space-y-5 rounded-2xl border bg-card p-6">
-                <h2 className="text-xl font-bold">Pay securely with Cashfree</h2>
-                <p>One payment covers {registration.registrations.length} entries: {formatPaise(registration.participantTotalPaise ?? registration.amountPaise)}.</p>
-                {gatewayStatus === "successful" ? <p className="text-green-700">Payment verified. Your registrations are confirmed.</p> :
-                  <p className="text-sm text-muted-foreground">{gatewayStatus === "paid_needs_review" ? "Payment received; SportPass is reviewing this registration." : "Registration remains pending until Cashfree confirms payment."}</p>}
-                <Button onClick={() => void payWithCashfree()} disabled={loading || gatewayStatus === "successful" || gatewayStatus === "paid_needs_review"}>{loading ? "Opening…" : "Pay online"}</Button>
-                {gatewayStatus === "successful" && <Button variant="outline" onClick={() => void openVerifiedConfirmation()} disabled={loading}>View registration</Button>}
+              <section className="space-y-5 rounded-2xl border bg-card p-6 shadow-sm">
+                <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Secure checkout</p><h2 className="mt-1 text-2xl font-bold">Pay securely with Cashfree</h2><p className="mt-2 text-sm text-muted-foreground">One payment covers {registration.registrations.length} {registration.registrations.length === 1 ? "entry" : "entries"}: <span className="font-semibold text-foreground">{formatPaise(registration.participantTotalPaise ?? registration.amountPaise)}</span></p></div>
+                {gatewayStatus === "successful" && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950"><p className="flex items-center gap-2 font-semibold"><CheckCircle2 className="h-5 w-5 text-emerald-600" /> Payment successful</p><p className="mt-1 text-sm text-emerald-800">Payment is verified and your registration is confirmed.</p></div>}
+                {gatewayStatus === "paid_needs_review" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950"><p className="font-semibold">Payment received — verification required</p><p className="mt-1 text-sm text-amber-800">Do not pay again. SportPass is reviewing the payment and will update this registration.</p></div>}
+                {gatewayStatus === "refund_pending" && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4">This booking could not be confirmed. SportPass has initiated a full refund; we will email you when Cashfree confirms it.</p>}
+                {gatewayStatus === "refund_needs_review" && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4">The refund has not completed. SportPass is reviewing the provider response. Contact support with your booking reference if needed.</p>}
+                {gatewayStatus === "refunded" && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">Cashfree has confirmed a full refund for this unconfirmed booking. Your bank may take additional time to show the credit.</p>}
+                {gatewayStatus === "pending" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950"><p className="font-semibold">Payment is processing</p><p className="mt-1 text-sm text-amber-800">The bank has not provided a final result yet. Do not retry payment. Check the status again shortly.</p></div>}
+                {gatewayStatus === "failed" && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-950"><p className="font-semibold">Payment was not confirmed</p><p className="mt-1 text-sm text-red-800">Cashfree did not confirm this attempt. If your bank shows a debit, check payment status and contact support with the transaction reference before trying again. No ticket is issued until payment is verified.</p></div>}
+                {gatewayStatus === "user_dropped" && <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-950"><p className="font-semibold">Payment was not completed</p><p className="mt-1 text-sm text-blue-800">The Cashfree payment window was closed or authentication was not completed. Your registration is still reserved and you can try again.</p></div>}
+                {gatewayStatus === "expired" && <p role="status" className="rounded-xl border p-4">This payment session has expired. Contact SportPass support with your registration reference before starting another registration.</p>}
+                {gatewayStatus === "verification_pending" && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4">We could not confirm the payment status. Do not pay again yet. Use Check payment status to verify the result.</p>}
+                {!gatewayStatus || ["awaiting", "not_attempted"].includes(gatewayStatus) ? <p className="text-sm text-muted-foreground">Your registration remains pending until Cashfree confirms payment.</p> : null}
+                <div className="flex flex-wrap gap-3">
+                  {["", "awaiting", "not_attempted", "failed", "user_dropped"].includes(gatewayStatus || "") && <Button onClick={() => void payWithCashfree()} disabled={loading}>{loading ? "Checking…" : gatewayStatus === "failed" || gatewayStatus === "user_dropped" ? "Try payment again" : "Pay online"}</Button>}
+                  {["pending", "failed", "user_dropped", "verification_pending", "paid_needs_review", "refund_pending", "refund_needs_review"].includes(gatewayStatus || "") && <Button variant="outline" onClick={() => void refreshCashfreeStatus()} disabled={loading}><RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Check payment status</Button>}
+                  {gatewayStatus === "successful" && <Button onClick={() => void openVerifiedConfirmation()} disabled={loading}>View registration <ArrowRight className="ml-2 h-4 w-4" /></Button>}
+                </div>
               </section>
             )}
             {currentStep === 2 && registration && registration.paymentCollectionMethod !== "CASHFREE_MANAGED" && <section className="space-y-5"><div><h2 className="text-xl font-bold">Pay for all {participantLabel.toLowerCase()}s</h2><p className="mt-1 text-sm text-muted-foreground">One payment covers all paid entries in this order.</p></div><div className="rounded-2xl border bg-card p-5"><p className="text-sm text-muted-foreground">{registration.registrations.length} {registration.registrations.length === 1 ? "entry" : "entries"}</p><p className="mt-2 text-sm font-bold tracking-wide">{registration.registrations.map((child) => child.registrationReference).join(" · ")}</p>{registration.platformFeeBearer === "PARTICIPANT" && (registration.platformFeePaise ?? 0) > 0 && <div className="mt-4 space-y-1 text-sm text-muted-foreground"><div className="flex items-center justify-between"><span>Registration Fee</span><span>{formatPaise(registration.baseAmountPaise ?? 0)}</span></div><div className="flex items-center justify-between"><span>SportPass Fee</span><span>{formatPaise(registration.platformFeePaise ?? 0)}</span></div></div>}<p className="mt-5 text-sm text-muted-foreground">Total amount to pay</p><p className="text-3xl font-extrabold text-primary">₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings && <div className="space-y-4 rounded-2xl border bg-primary/5 p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">UPI ID</p><p className="font-bold">{registration.paymentSettings.upiId}</p><p className="text-xs text-muted-foreground">Payee: {registration.paymentSettings.payeeName}</p></div><Button variant="outline" size="sm" onClick={copyUpi}><Copy className="mr-2 h-4 w-4" /> Copy</Button></div><p className="text-sm text-muted-foreground">{registration.paymentSettings.instructions}</p><div className="flex flex-col items-center gap-3 rounded-lg bg-white p-3"><img src={registration.paymentSettings.qrDataUrl} alt="Generated UPI payment QR" className="h-56 w-56" /><p className="text-xs text-muted-foreground">Scan to pay ₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings.qrImageUrl && <div><p className="mb-2 text-xs font-medium text-muted-foreground">Organizer-provided QR</p><img src={registration.paymentSettings.qrImageUrl} alt="Organizer UPI QR" className="mx-auto max-h-56 rounded-lg" /></div>}<div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm dark:border-blue-900/50 dark:bg-blue-950/20"><p className="font-semibold text-blue-900 dark:text-blue-100">Can't scan? Pay from your UPI app directly</p><p className="mt-1 text-blue-800/80 dark:text-blue-100/80">Download the QR image below, then open your UPI app (GPay, PhonePe, Paytm, etc.), choose <span className="font-semibold">Scan QR</span> or <span className="font-semibold">Upload QR</span>, and select the downloaded image to pay ₹{totalRupees.toLocaleString("en-IN")} automatically.</p><Button type="button" variant="outline" size="sm" className="mt-3 gap-2 border-blue-300 bg-white text-blue-900 hover:bg-blue-50 dark:border-blue-800 dark:bg-transparent dark:text-blue-100" onClick={() => void downloadQrAsPng(registration.paymentSettings!.qrDataUrl, `sportpass-payment-qr-${registration.registrations[0]?.registrationReference ?? "order"}.png`).then(() => setQrDownloaded(true)).catch(() => toast.error("Could not download QR image"))}><Download className="h-4 w-4" /> Download QR image</Button>{qrDownloaded && <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400"><CheckCircle2 className="h-4 w-4 shrink-0" /> QR saved — open your UPI app, tap Scan QR or Upload QR, and pick this image to pay.</p>}</div></div>}<div className="space-y-2"><Label>UTR / transaction reference (optional)</Label><Input value={utrReference} onChange={(e) => setUtrReference(e.target.value)} placeholder="Enter it after paying in your UPI app" /><p className="text-xs text-muted-foreground">One reference will be submitted for the complete {participantLabel.toLowerCase()} group.</p></div><Button onClick={submitUtr} disabled={loading} size="lg" className="w-full">{loading ? "Saving…" : "Submit reference / continue"}</Button><p className="flex items-center justify-center gap-1 text-xs text-muted-foreground"><Shield className="h-3 w-3" /> Do not enter card details on SportPass.</p></section>}

@@ -14,6 +14,13 @@ class SportAdapter:
     supports_distance: bool = True
     supports_tournament: bool = False
     team_tournament: bool = True  # Preserve legacy team-format events.
+    # Generic event-level waiver/declaration capability. On by default so every
+    # event type may optionally enable a waiver; the content is event-level, never
+    # defined on the adapter.
+    supports_waiver: bool = True
+    # Generic event-level pickup-points capability. The points themselves are
+    # event-level logistics, not sport-specific.
+    supports_pickup_points: bool = True
     result_type: Literal["none", "match_score", "race_time"] = "none"
     number_label: str = "Bib Number"
     number_scope: str = "individual"

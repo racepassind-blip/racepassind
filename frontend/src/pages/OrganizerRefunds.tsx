@@ -44,6 +44,8 @@ interface RefundRecord {
   organizerComments: string | null;
   status: string;
   refundUtr: string | null;
+  providerRefundId?: string | null;
+  providerRefundStatus?: string | null;
   requestedAt: string;
   reviewedAt: string | null;
   refundedAt: string | null;
@@ -610,6 +612,9 @@ function RefundDetailDrawer({ refund, onClose }: { refund: RefundRecord; onClose
           <section>
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Status</p>
             <div className="flex items-center gap-2">{statusBadge(refund.status)}</div>
+            {refund.paymentProvider === "CASHFREE" && refund.providerRefundStatus && <p className="mt-2 text-muted-foreground">Cashfree: {refund.providerRefundStatus}</p>}
+            {refund.paymentProvider === "CASHFREE" && refund.providerRefundId && <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{refund.providerRefundId}</p>}
+            {refund.paymentProvider === "CASHFREE" && ["CANCELLED", "REJECTED"].includes(refund.providerRefundStatus ?? "") && <p className="mt-2 text-destructive">This refund was not completed by Cashfree. SportPass admin must resolve it; do not send a separate refund without coordination.</p>}
           </section>
           <section>
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Participant</p>
@@ -684,6 +689,7 @@ const OrganizerRefunds = () => {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [reviewTarget, setReviewTarget] = useState<RefundRecord | null>(null);
   const [markSentTarget, setMarkSentTarget] = useState<RefundRecord | null>(null);
   const [detailTarget, setDetailTarget] = useState<RefundRecord | null>(null);
@@ -713,10 +719,11 @@ const OrganizerRefunds = () => {
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load refunds"))
       .finally(() => setLoading(false));
-  }, [statusFilter, eventFilter, cursor]);
+  }, [statusFilter, eventFilter, cursor, reloadKey]);
 
   const handleRefundUpdated = (updated: RefundRecord) => {
     setRefunds((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    setReloadKey((value) => value + 1);
     setReviewTarget(null);
     setMarkSentTarget(null);
   };
@@ -741,7 +748,7 @@ const OrganizerRefunds = () => {
             <p className="mt-1 text-sm text-muted-foreground">Review and process refund requests from participants.</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setCursor(null)} className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setCursor(null); setReloadKey((value) => value + 1); }} className="gap-2">
               <RefreshCw className="h-4 w-4" /> Refresh
             </Button>
             <Button size="sm" onClick={() => setShowCreateModal(true)} className="gap-2">
@@ -754,7 +761,7 @@ const OrganizerRefunds = () => {
         <div className="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground">Status</p>
-            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCursor(null); }}>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCursor(null); setCursorHistory([]); }}>
               <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
@@ -764,7 +771,7 @@ const OrganizerRefunds = () => {
           </div>
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground">Event</p>
-            <Select value={eventFilter} onValueChange={(v) => { setEventFilter(v); setCursor(null); }}>
+            <Select value={eventFilter} onValueChange={(v) => { setEventFilter(v); setCursor(null); setCursorHistory([]); }}>
               <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All events</SelectItem>
@@ -835,10 +842,13 @@ const OrganizerRefunds = () => {
                         {!r.isManualRefund && r.status === "REQUESTED" && (
                           <Button size="sm" variant="outline" onClick={() => setReviewTarget(r)}>Review</Button>
                         )}
-                        {!r.isManualRefund && r.status === "APPROVED" && (
+                        {!r.isManualRefund && r.status === "APPROVED" && r.paymentProvider === "DIRECT_UPI" && (
                           <Button size="sm" onClick={() => setMarkSentTarget(r)}>Process refund</Button>
                         )}
-                        {r.isManualRefund || ["REFUND_SENT", "REFUNDED", "REJECTED"].includes(r.status) ? (
+                        {!r.isManualRefund && r.status === "APPROVED" && r.paymentProvider === "CASHFREE" && (
+                          <Button size="sm" variant="ghost" onClick={() => setDetailTarget(r)}>{["CANCELLED", "REJECTED"].includes(r.providerRefundStatus ?? "") ? "Needs admin review" : "Awaiting admin"}</Button>
+                        )}
+                        {r.isManualRefund || ["REFUND_SENT", "REFUNDED", "REJECTED", "FAILED", "CANCELLED"].includes(r.status) ? (
                           <Button size="sm" variant="ghost" onClick={() => setDetailTarget(r)}>View details</Button>
                         ) : null}
                       </td>

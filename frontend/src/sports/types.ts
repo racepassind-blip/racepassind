@@ -11,6 +11,19 @@ export interface SportConfig {
   supports_tournament: boolean;
   supports_checkin: boolean;
   supports_communications: boolean;
+  /**
+   * Whether this event type may enable a generic event-level Waiver &
+   * Declaration. Capability only — the waiver content lives on the event,
+   * never here. Optional for backward compatibility; treated as enabled by
+   * default where a config omits it.
+   */
+  supports_waiver?: boolean;
+  /**
+   * Whether this event type may enable generic event-level Pickup Points.
+   * Capability only — the points live on the event, never here. Optional for
+   * backward compatibility; generic events support this unless disabled.
+   */
+  supports_pickup_points?: boolean;
   // Allocation / number configuration
   numberEnabled: boolean;
   numberLabel: string;

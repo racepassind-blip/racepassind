@@ -3,9 +3,11 @@ import { AlertCircle, ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-rea
 
 import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { apiRequest } from "@/lib/api";
+import { CashfreePaymentReviews, PaymentAuditHistory, type AuditEntry } from "@/components/CashfreePaymentReviews";
 
 interface RefundRecord {
   id: string;
@@ -64,6 +66,14 @@ function statusBadge(status: string) {
   );
 }
 
+function refundBadge(refund: RefundRecord) {
+  if (refund.paymentProvider === "CASHFREE" && refund.status === "APPROVED" &&
+      (refund.providerRefundStatus === "REJECTED" || refund.providerRefundStatus === "CANCELLED")) {
+    return <span className="inline-flex rounded-full border border-red-200 bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-800">Needs resolution</span>;
+  }
+  return statusBadge(refund.status);
+}
+
 function fmt(paise: number) {
   return `₹${(paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
 }
@@ -76,11 +86,22 @@ function DetailDrawer({ refund, onClose, onUpdated }: { refund: RefundRecord; on
   const amount = refund.approvedRefundAmount ?? refund.requestedRefundAmount;
   const [processing, setProcessing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [history, setHistory] = useState<AuditEntry[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    setHistory([]); setHistoryError(null);
+    void apiRequest<{ items: AuditEntry[] }>(`/admin/refunds/${refund.id}/history`)
+      .then(data => { if (active) setHistory(data.items); })
+      .catch(() => { if (active) setHistoryError("Could not load the audit history"); });
+    return () => { active = false; };
+  }, [refund]);
   const runCashfreeRefund = async () => {
     if (processing) return;
     setProcessing(true); setActionError(null);
     try {
-      const action = refund.providerRefundId ? "reconcile" : "process";
+      const action = refund.providerRefundStatus === "CANCELLED" || refund.providerRefundStatus === "REJECTED"
+        ? "reconcile" : "process";
       await apiRequest(`/admin/refunds/${refund.id}/cashfree/${action}`, { method: "POST" });
       onUpdated(await apiRequest<RefundRecord>(`/admin/refunds/${refund.id}`));
     } catch (error) { setActionError(error instanceof Error ? error.message : "Cashfree refund could not be checked"); }
@@ -100,7 +121,7 @@ function DetailDrawer({ refund, onClose, onUpdated }: { refund: RefundRecord; on
         <div className="flex-1 space-y-5 p-5 text-sm">
           <section>
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Status</p>
-            {statusBadge(refund.status)}
+            {refundBadge(refund)}
           </section>
           <section>
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Participant</p>
@@ -158,12 +179,18 @@ function DetailDrawer({ refund, onClose, onUpdated }: { refund: RefundRecord; on
             {refund.providerRefundStatus && <p>Cashfree status: {refund.providerRefundStatus}</p>}
             {refund.providerRefundId && <p className="font-mono text-xs">{refund.providerRefundId}</p>}
             {refund.paymentProvider === "CASHFREE" && refund.status === "APPROVED" && (
+              refund.providerRefundStatus === "CANCELLED" || refund.providerRefundStatus === "REJECTED" ?
+              <p className="mt-2 text-sm text-destructive">Cashfree did not complete this refund. Recheck its final status before arranging a separate resolution; this screen will not issue a second payment.</p> : null
+            )}
+            {refund.paymentProvider === "CASHFREE" && refund.status === "APPROVED" && (
               <Button className="mt-3" disabled={processing} onClick={() => void runCashfreeRefund()}>
-                {processing ? "Checking…" : refund.providerRefundId ? "Check Cashfree refund" : `Issue Cashfree refund ${fmt(amount)}`}
+                {processing ? "Checking…" : refund.providerRefundStatus === "CANCELLED" || refund.providerRefundStatus === "REJECTED" ? "Recheck Cashfree status" : refund.providerRefundId ? "Resume / check Cashfree refund" : `Issue Cashfree refund ${fmt(amount)}`}
               </Button>
             )}
             {actionError && <p className="mt-2 text-destructive">{actionError}</p>}
           </section>
+          <section><p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Audit history</p>
+            {historyError ? <p className="text-destructive">{historyError}</p> : <PaymentAuditHistory items={history} />}</section>
         </div>
       </div>
     </div>
@@ -175,6 +202,10 @@ const AdminRefunds = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [eventFilter, setEventFilter] = useState("all");
+  const [organizerFilter, setOrganizerFilter] = useState("all");
+  const [filterSearch, setFilterSearch] = useState("");
+  const [filterOptions, setFilterOptions] = useState<{ events: { id: string; name: string }[]; organizers: { id: string; name: string }[] }>({ events: [], organizers: [] });
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -182,8 +213,20 @@ const AdminRefunds = () => {
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => {
+      void apiRequest<typeof filterOptions>(`/admin/refunds/filter-options?search=${encodeURIComponent(filterSearch)}`)
+        .then((data) => { if (active) setFilterOptions(data); })
+        .catch(() => { if (active) setFilterOptions({ events: [], organizers: [] }); });
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [filterSearch]);
+
+  useEffect(() => {
     const params = new URLSearchParams();
     if (statusFilter !== "all") params.set("refund_status", statusFilter);
+    if (eventFilter !== "all") params.set("event_id", eventFilter);
+    if (organizerFilter !== "all") params.set("organizer_id", organizerFilter);
     if (cursor) params.set("cursor", cursor);
     params.set("limit", "50");
 
@@ -198,7 +241,7 @@ const AdminRefunds = () => {
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load refunds"))
       .finally(() => setLoading(false));
-  }, [statusFilter, cursor, reloadKey]);
+  }, [statusFilter, eventFilter, organizerFilter, cursor, reloadKey]);
 
   const goPrev = () => {
     setCursor(cursorHistory[cursorHistory.length - 1] ?? null);
@@ -218,20 +261,44 @@ const AdminRefunds = () => {
             <h1 className="text-2xl font-extrabold tracking-tight">Refunds</h1>
             <p className="mt-1 text-sm text-muted-foreground">Audit trail for all refund requests across SportPass.</p>
           </div>
-          <Button variant="outline" size="sm" className="gap-2" onClick={() => setCursor(null)}>
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => { setCursor(null); setReloadKey((value) => value + 1); }}>
             <RefreshCw className="h-4 w-4" /> Refresh
           </Button>
         </div>
 
+        <CashfreePaymentReviews reloadKey={reloadKey} />
+
         {/* Filters */}
-        <div className="flex gap-3 rounded-xl border bg-card p-4">
+        <div className="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground">Status</p>
-            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCursor(null); }}>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCursor(null); setCursorHistory([]); }}>
               <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 {Object.entries(STATUS_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">Find event or organizer</p>
+            <Input className="w-56" value={filterSearch} onChange={(event) => setFilterSearch(event.target.value)} placeholder="Search names" />
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">Organizer</p>
+            <Select value={organizerFilter} onValueChange={(value) => { setOrganizerFilter(value); setCursor(null); setCursorHistory([]); }}>
+              <SelectTrigger className="w-56"><SelectValue placeholder="All organizers" /></SelectTrigger>
+              <SelectContent><SelectItem value="all">All organizers</SelectItem>
+                {filterOptions.organizers.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">Event</p>
+            <Select value={eventFilter} onValueChange={(value) => { setEventFilter(value); setCursor(null); setCursorHistory([]); }}>
+              <SelectTrigger className="w-56"><SelectValue placeholder="All events" /></SelectTrigger>
+              <SelectContent><SelectItem value="all">All events</SelectItem>
+                {filterOptions.events.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -277,7 +344,7 @@ const AdminRefunds = () => {
                       <td className="px-4 py-3 text-right font-semibold">{fmt(r.originalTotalPaid)}</td>
                       <td className="px-4 py-3 text-right font-semibold text-primary">{fmt(r.approvedRefundAmount ?? r.requestedRefundAmount)}</td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{fmtDate(r.requestedAt)}</td>
-                      <td className="px-4 py-3">{statusBadge(r.status)}</td>
+                      <td className="px-4 py-3">{refundBadge(r)}</td>
                     </tr>
                   ))}
                 </tbody>

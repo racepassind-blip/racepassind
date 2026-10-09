@@ -26,6 +26,25 @@ interface OrganizerEventOption {
   addonConfig?: { addons?: Array<{ id: string; name: string; type?: string; price_paise?: number }> } | null;
 }
 
+const PICKUP_POINT_FIELD_ID = "pickup_point_id";
+
+interface EventPickupConfig {
+  enabled?: boolean;
+  required?: boolean;
+  points?: Array<{ id: string; name: string; description?: string; address?: string }>;
+}
+
+interface OrganizerEventDetail {
+  pickupPoints?: EventPickupConfig;
+}
+
+interface PickupSummaryResponse {
+  enabled: boolean;
+  required: boolean;
+  points: Array<{ id: string; name: string; count: number }>;
+  unassignedParticipants: number;
+}
+
 type RegistrationStatus = "awaiting_payment" | "pending_verification" | "AWAITING_SPORTPASS_CREDITS" | "confirmed" | "rejected" | "expired" | "checked_in";
 type Decision = "approve" | "reject";
 type FilterKey = "eventId" | "categoryId" | "ticketId" | "status" | "paymentStatus" | "checkInStatus" | "search" | "participant" | "email" | "phone" | "registrationReference";
@@ -68,7 +87,7 @@ interface OrganizerRegistration {
   reviewedAt: string | null;
   responses: Record<string, unknown>;
   selections: Record<string, { selected?: string; qty?: number }>;
-  computedTotal: { addonTotalPaise?: number; totalPaise?: number };
+  computedTotal: { addonTotalPaise?: number; totalPaise?: number; eventWaiver?: { title?: string; text?: string; accepted?: boolean; acceptedAt?: string } };
   transferWarning?: string | null;
   // Refund info (if a refund exists for this registration)
   refundStatus?: string;
@@ -151,13 +170,14 @@ interface RegistrationDetailDrawerProps {
   registration: OrganizerRegistration | null;
   eventTickets: Array<{ id: string; name: string; categoryId: string; categoryName: string; pricePaise?: number }>;
   addonDefs: Record<string, string>;
+  pickupNameById: Map<string, string>;
   onClose: () => void;
   onTransferDone: (updated: OrganizerRegistration) => void;
   onResendEmail: (registration: OrganizerRegistration) => Promise<void>;
   resendingId: string | null;
 }
 
-function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, onClose, onTransferDone, onResendEmail, resendingId }: RegistrationDetailDrawerProps) {
+function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, pickupNameById, onClose, onTransferDone, onResendEmail, resendingId }: RegistrationDetailDrawerProps) {
   const [showTransfer, setShowTransfer] = useState(false);
   const [targetTicketId, setTargetTicketId] = useState("");
   const [transferReason, setTransferReason] = useState("");
@@ -209,8 +229,14 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, onClo
 
   const addonEntries = Object.entries(registration.selections ?? {}).filter(([, v]) => v.selected || (v.qty ?? 0) > 0);
   const responseEntries = Object.entries(registration.responses ?? {}).filter(
-    ([k]) => !["full_name","email","phone","team_name","captain_name","captain_email","captain_phone","__transfer_notes"].includes(k)
+    ([k]) => !["full_name","email","phone","team_name","captain_name","captain_email","captain_phone","__transfer_notes",PICKUP_POINT_FIELD_ID,"waiver_accepted"].includes(k)
   );
+  const pickupNameFor = (responses?: Record<string, unknown>): string | null => {
+    const value = responses?.[PICKUP_POINT_FIELD_ID];
+    if (value === undefined || value === null || String(value).trim() === "") return null;
+    const id = String(value);
+    return pickupNameById.get(id) ?? id;
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Registration detail">
@@ -241,6 +267,13 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, onClo
               {registration.participant.phone && (
                 <p className="text-sm text-muted-foreground">{registration.participant.phone}</p>
               )}
+              {(() => {
+                const primaryResponses = registration.participants && registration.participants.length > 0
+                  ? (registration.participants.find((member) => member.index === 0)?.responses ?? registration.participants[0].responses)
+                  : registration.responses;
+                const name = pickupNameFor(primaryResponses);
+                return name ? <p className="text-sm"><span className="font-medium">Pickup point:</span> {name}</p> : null;
+              })()}
               <div className="flex flex-wrap gap-2 pt-1">
                 {registration.isManualEntry && <Badge variant="outline">Manual entry</Badge>}
                 {registration.source === "manual" && !registration.isManualEntry && <Badge variant="outline">Offline</Badge>}
@@ -258,6 +291,7 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, onClo
                     <span className="font-medium">{m.participant.name}</span>
                     {m.participant.email && <span className="text-muted-foreground"> · {m.participant.email}</span>}
                     {m.participant.phone && <span className="text-muted-foreground"> · {m.participant.phone}</span>}
+                    {pickupNameFor(m.responses) && <div className="text-xs text-muted-foreground">Pickup point: {pickupNameFor(m.responses)}</div>}
                   </div>
                 ))}
               </div>
@@ -328,6 +362,17 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, onClo
               <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Payment reference (UTR)</p>
               <div className="rounded-lg border bg-muted/20 p-3">
                 <p className="font-mono text-sm">{registration.utrReference}</p>
+              </div>
+            </section>
+          )}
+
+          {registration.computedTotal.eventWaiver && (
+            <section>
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Event waiver</p>
+              <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+                <p className="font-medium">{registration.computedTotal.eventWaiver.title || "Waiver & Declaration"}</p>
+                {registration.computedTotal.eventWaiver.text && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{registration.computedTotal.eventWaiver.text}</p>}
+                <p className="text-sm font-semibold">{registration.computedTotal.eventWaiver.accepted ? "Accepted" : "Not accepted"}{registration.computedTotal.eventWaiver.acceptedAt ? ` · ${formatDate(registration.computedTotal.eventWaiver.acceptedAt)}` : ""}</p>
               </div>
             </section>
           )}
@@ -534,6 +579,12 @@ const OrganizerRegistrations = () => {
   const [exporting, setExporting] = useState(false);
   const [detailRegistration, setDetailRegistration] = useState<OrganizerRegistration | null>(null);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(() => ["category_id", "ticket_id", "payment_status", "check_in_status", "participant", "email", "phone", "registration_reference"].some((key) => searchParams.has(key)));
+  // Pickup points are an event-level config not carried by /organizer/events
+  // options, so fetch the selected event's config (which now exposes pickupPoints)
+  // to resolve id -> name and drive the client-side column/filter/summary.
+  const [pickupConfig, setPickupConfig] = useState<EventPickupConfig | null>(null);
+  const [pickupSummaryData, setPickupSummaryData] = useState<PickupSummaryResponse | null>(null);
+  const [pickupFilter, setPickupFilter] = useState("all");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -558,6 +609,7 @@ const OrganizerRegistrations = () => {
     if (filters.ticketId) params.set("ticket_id", filters.ticketId);
     if (filters.paymentStatus !== "all") params.set("payment_status", filters.paymentStatus);
     if (filters.checkInStatus !== "all") params.set("check_in_status", filters.checkInStatus);
+    if (pickupFilter !== "all") params.set("pickup_point_id", pickupFilter);
     if (filters.search.trim()) params.set("q", filters.search.trim());
     if (filters.participant.trim()) params.set("participant", filters.participant.trim());
     if (filters.email.trim()) params.set("email", filters.email.trim());
@@ -579,7 +631,33 @@ const OrganizerRegistrations = () => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [cursor, filters, refreshNonce]);
+  }, [cursor, filters, pickupFilter, refreshNonce]);
+
+  // Load the selected event's pickup-points config (id -> name) for the
+  // client-side pickup column/filter/summary. Cleared when no single event is scoped.
+  useEffect(() => {
+    if (!filters.eventId) {
+      setPickupConfig(null);
+      setPickupFilter("all");
+      return;
+    }
+    const controller = new AbortController();
+    void apiRequest<OrganizerEventDetail>(`/organizer/events/${filters.eventId}`, { signal: controller.signal })
+      .then((event) => setPickupConfig(event.pickupPoints ?? null))
+      .catch(() => {
+        if (!controller.signal.aborted) setPickupConfig(null);
+      });
+    // Authoritative, participant-correct counts across ALL registrations (the
+    // table itself is cursor-paginated, so counts must not be derived from it).
+    const summaryParams = new URLSearchParams({ status: filters.status, check_in_status: filters.checkInStatus });
+    if (filters.paymentStatus !== "all") summaryParams.set("payment_status", filters.paymentStatus);
+    void apiRequest<PickupSummaryResponse>(`/organizer/events/${filters.eventId}/pickup-summary?${summaryParams}`, { signal: controller.signal })
+      .then((summary) => setPickupSummaryData(summary))
+      .catch(() => {
+        if (!controller.signal.aborted) setPickupSummaryData(null);
+      });
+    return () => controller.abort();
+  }, [filters.eventId, filters.status, filters.paymentStatus, filters.checkInStatus, refreshNonce]);
 
   const selectedEvent = events.find((event) => event.id === filters.eventId);
   const categories = useMemo(() => selectedEvent?.categories ?? [], [selectedEvent]);
@@ -600,6 +678,43 @@ const OrganizerRegistrations = () => {
     ),
     [categories],
   );
+  // --- Pickup points (client-side column/filter/summary) --------------------
+  const pickupEnabled = Boolean(pickupConfig?.enabled) && Boolean(filters.eventId);
+  const pickupPoints = useMemo(() => pickupConfig?.points ?? [], [pickupConfig]);
+  const pickupNameById = useMemo(
+    () => new Map(pickupPoints.map((point) => [point.id, point.name] as const)),
+    [pickupPoints],
+  );
+  const pickupIdFor = (responses?: Record<string, unknown>): string | null => {
+    const value = responses?.[PICKUP_POINT_FIELD_ID];
+    return value === undefined || value === null || String(value).trim() === "" ? null : String(value);
+  };
+  // The pickup ids chosen across every participant of a registration.
+  const pickupIdsForRegistration = (registration: OrganizerRegistration): string[] => {
+    const members = registration.participants && registration.participants.length > 0
+      ? registration.participants.map((member) => member.responses)
+      : [registration.responses];
+    return members.map((responses) => pickupIdFor(responses)).filter((id): id is string => id !== null);
+  };
+  // Column shows the primary participant's pickup (fallback: first membership).
+  const primaryPickupName = (registration: OrganizerRegistration): string | null => {
+    const primaryResponses = registration.participants && registration.participants.length > 0
+      ? (registration.participants.find((member) => member.index === 0)?.responses ?? registration.participants[0].responses)
+      : registration.responses;
+    const id = pickupIdFor(primaryResponses);
+    return id === null ? null : (pickupNameById.get(id) ?? id);
+  };
+  const displayedRegistrations = registrations;
+  // Per-participant counts (not per registration) for each configured point.
+  // Sourced from the authoritative /pickup-summary endpoint which aggregates
+  // across ALL of the event's registrations, not just the loaded table page.
+  const pickupSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const point of pickupPoints) counts.set(point.id, 0);
+    for (const entry of pickupSummaryData?.points ?? []) counts.set(entry.id, entry.count);
+    return counts;
+  }, [pickupSummaryData, pickupPoints]);
+
   const activeFilterCount = [
     filters.categoryId,
     filters.ticketId,
@@ -611,6 +726,7 @@ const OrganizerRegistrations = () => {
     filters.email.trim(),
     filters.phone.trim(),
     filters.registrationReference.trim(),
+    pickupFilter !== "all" ? pickupFilter : "",
   ].filter(Boolean).length;
   const detailedFilterCount = [
     filters.categoryId,
@@ -696,6 +812,7 @@ const OrganizerRegistrations = () => {
       if (filters.status !== "all") params.set("status", filters.status);
       if (filters.paymentStatus !== "all") params.set("payment_status", filters.paymentStatus);
       if (filters.checkInStatus !== "all") params.set("check_in_status", filters.checkInStatus);
+      if (pickupFilter !== "all") params.set("pickup_point_id", pickupFilter);
       if (filters.search.trim()) params.set("q", filters.search.trim());
       if (filters.participant.trim()) params.set("participant", filters.participant.trim());
       if (filters.email.trim()) params.set("email", filters.email.trim());
@@ -724,12 +841,23 @@ const OrganizerRegistrations = () => {
     }
     setActionId(registration.id);
     try {
-      await apiRequest(`/organizer/events/${registration.event.id}/registrations/${registration.id}/${decision}`, {
+      const updated = await apiRequest<OrganizerRegistration>(`/organizer/events/${registration.event.id}/registrations/${registration.id}/${decision}`, {
         method: "POST",
         body: JSON.stringify(decision === "reject" ? { reason: reason.trim() } : {}),
         timeoutMs: decision === "approve" ? 60_000 : undefined,
       });
-      toast.success(decision === "approve" ? "Payment approved." : "Payment rejected.");
+      if (decision === "approve" && updated.status === "AWAITING_SPORTPASS_CREDITS") {
+        toast.warning("Registration is awaiting SportPass Credits", {
+          description: "Payment was not approved. Top up Credits, then retry. No ticket or confirmation was issued.",
+          action: { label: "Top up Credits", onClick: () => navigate("/organizer/credits") },
+        });
+      } else if (decision === "approve" && updated.status === "confirmed" && updated.paymentStatus === "approved") {
+        toast.success("Payment approved and registration confirmed.");
+      } else if (decision === "reject" && updated.status === "rejected") {
+        toast.success("Payment rejected.");
+      } else {
+        toast.warning("Payment decision did not complete. Reload the registration before retrying.");
+      }
       setDecisionTarget(null);
       setReason("");
       setRefreshNonce((value) => value + 1);
@@ -811,6 +939,7 @@ const OrganizerRegistrations = () => {
               <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Registration status</label><Select value={filters.status} onValueChange={(value) => updateFilter("status", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Needs review</SelectItem><SelectItem value="all">All registrations</SelectItem><SelectItem value="awaiting_payment">Awaiting payment</SelectItem><SelectItem value="pending_verification">UTR submitted</SelectItem><SelectItem value="AWAITING_SPORTPASS_CREDITS">Awaiting Credits</SelectItem><SelectItem value="confirmed">Confirmed</SelectItem><SelectItem value="checked_in">Checked in</SelectItem><SelectItem value="rejected">Rejected</SelectItem><SelectItem value="expired">Expired</SelectItem></SelectContent></Select></div>
               <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Payment</label><Select value={filters.paymentStatus} onValueChange={(value) => updateFilter("paymentStatus", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All payment states</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="reference_submitted">Reference submitted</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="rejected">Rejected</SelectItem><SelectItem value="expired">Expired</SelectItem></SelectContent></Select></div>
               <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Check-in</label><Select value={filters.checkInStatus} onValueChange={(value) => updateFilter("checkInStatus", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All check-in states</SelectItem><SelectItem value="not_checked_in">Not checked in</SelectItem><SelectItem value="checked_in">Checked in</SelectItem></SelectContent></Select></div>
+              {pickupEnabled && pickupPoints.length > 0 && <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Pickup point</label><Select value={pickupFilter} onValueChange={(value) => { setPickupFilter(value); setCursor(null); setCursorHistory([]); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All pickup points</SelectItem>{pickupPoints.map((point) => <SelectItem key={point.id} value={point.id}>{point.name}</SelectItem>)}</SelectContent></Select></div>}
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Input value={filters.participant} onChange={(event) => updateFilter("participant", event.target.value)} placeholder="Participant name" /><Input value={filters.email} onChange={(event) => updateFilter("email", event.target.value)} placeholder="Email address" type="email" /><Input value={filters.phone} onChange={(event) => updateFilter("phone", event.target.value)} placeholder="Phone number" /><Input value={filters.registrationReference} onChange={(event) => updateFilter("registrationReference", event.target.value)} placeholder="Registration number" /></div>
           </div>}
@@ -882,14 +1011,35 @@ const OrganizerRegistrations = () => {
           </div>
         )}
 
+        {pickupEnabled && pickupPoints.length > 0 && (
+          <section className="rounded-2xl border bg-card p-5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <h2 className="font-bold">Pickup points</h2>
+              <Badge variant="secondary">per participant</Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">How many participants chose each pickup point across the current status filter.</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {pickupPoints.map((point) => (
+                <div key={point.id} className="rounded-lg border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium">{point.name}</p>
+                    <Badge variant="secondary">{pickupSummary.get(point.id) ?? 0}</Badge>
+                  </div>
+                  {point.address && <p className="mt-1 text-xs text-muted-foreground">{point.address}</p>}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-            <div><div className="flex items-center gap-2"><h2 className="font-bold">Registrations</h2>{!loading && <Badge variant="secondary">{registrations.length} shown</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">Click a registration to view contact information, form answers, email status, refund details, and transfer history.</p></div>
+            <div><div className="flex items-center gap-2"><h2 className="font-bold">Registrations</h2>{!loading && <Badge variant="secondary">{displayedRegistrations.length} shown</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">Click a registration to view contact information, form answers, email status, refund details, and transfer history.</p></div>
             <Button variant="outline" onClick={() => void exportCsv()} disabled={!filters.eventId || exporting} className="w-fit gap-2"><Download className="h-4 w-4" />{exporting ? "Exporting…" : exportIsFiltered ? "Export filtered CSV" : "Export event CSV"}</Button>
           </div>
           {loading ? <div className="p-12 text-center text-sm text-muted-foreground"><RefreshCw className="mx-auto mb-3 h-5 w-5 animate-spin" />Loading registrations…</div> : error ? <div className="p-12 text-center"><p className="text-sm text-destructive">{error}</p><Button variant="outline" className="mt-4" onClick={() => setRefreshNonce((value) => value + 1)}>Try again</Button></div> : registrations.length === 0 ? <div className="p-12 text-center"><Search className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-4 font-semibold">No registrations found</p><p className="mt-1 text-sm text-muted-foreground">No records match the current search and filters.</p>{activeFilterCount > 0 && <Button variant="ghost" className="mt-3" onClick={clearAllFilters}>Clear filters</Button>}</div> : <div className="overflow-x-auto"><Table>
-            <TableHeader><TableRow><TableHead className="min-w-60">Participant</TableHead>{!eventScoped && <TableHead>Event</TableHead>}<TableHead>Category / tier</TableHead><TableHead>Amount</TableHead><TableHead>Payment</TableHead><TableHead>Registration</TableHead><TableHead>UTR/reference</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
-            <TableBody>{registrations.map((registration) => {
+            <TableHeader><TableRow><TableHead className="min-w-60">Participant</TableHead>{!eventScoped && <TableHead>Event</TableHead>}<TableHead>Category / tier</TableHead>{pickupEnabled && <TableHead>Pickup point</TableHead>}<TableHead>Amount</TableHead><TableHead>Payment</TableHead><TableHead>Registration</TableHead><TableHead>UTR/reference</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+            <TableBody>{displayedRegistrations.map((registration) => {
               const isReviewable = registration.status === "awaiting_payment" || registration.status === "pending_verification" || registration.status === "AWAITING_SPORTPASS_CREDITS";
               return <TableRow
                 key={registration.id}
@@ -903,6 +1053,7 @@ const OrganizerRegistrations = () => {
                 <TableCell><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-primary underline-offset-2 hover:underline">{registration.participant.name}</p>{registration.isManualEntry && <Badge variant="outline">Manual</Badge>}</div>{registration.participants && registration.participants.length > 1 && <p className="mt-0.5 text-xs text-muted-foreground">{registration.participants.length} participants</p>}<p className="mt-1 text-xs text-muted-foreground">{registration.participant.email ?? registration.participant.phone ?? "No contact details"}</p><p className="mt-1 font-mono text-xs font-medium text-foreground/70">{registration.registrationReference}</p></TableCell>
                 {!eventScoped && <TableCell><p className="max-w-44 truncate">{registration.event.name}</p></TableCell>}
                 <TableCell><p className="font-medium">{registration.ticket.category ?? "Uncategorised"}</p><p className="text-xs text-muted-foreground">{registration.ticket.name}</p></TableCell>
+                {pickupEnabled && <TableCell>{primaryPickupName(registration) ? <span className="text-sm">{primaryPickupName(registration)}</span> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>}
                 <TableCell className="font-semibold"><p>{formatINR(registration.amountPaise)}</p>{registration.receivedAmountPaise !== null && <p className="text-xs font-normal text-accent">Received {formatINR(registration.receivedAmountPaise)}</p>}</TableCell>
                 <TableCell>{paymentBadge(registration.paymentStatus)}</TableCell>
                 <TableCell><div className="space-y-1">{registrationBadge(registration.status)}<p className="text-xs text-muted-foreground">{formatDate(registration.createdAt)}</p></div></TableCell>
@@ -920,6 +1071,7 @@ const OrganizerRegistrations = () => {
       <RegistrationDetailDrawer
         registration={detailRegistration}
         eventTickets={eventTicketsForTransfer}
+        pickupNameById={pickupNameById}
         addonDefs={Object.fromEntries(
           (selectedEvent?.addonConfig?.addons ?? []).map((a) => [a.id, a.name])
         )}

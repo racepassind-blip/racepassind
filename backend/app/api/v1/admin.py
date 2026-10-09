@@ -14,7 +14,7 @@ from app.api.deps import require_csrf, require_roles
 from app.services.admin_dashboard_service import get_admin_dashboard
 from app.services.admin_organizers_service import get_admin_organizers_overview
 from app.services.audit_service import record_audit
-from app.services.credit_service import CreditValidationError, add_credits, approve_topup, credit_event_discount, event_settlement_summary, get_credit_payment_settings, reject_topup, settle_event_credits, update_credit_payment_settings
+from app.services.credit_service import CreditValidationError, add_credits, approve_topup, credit_event_discount, get_credit_payment_settings, reject_topup, update_credit_payment_settings
 from app.services.auth_service import hash_password, normalize_email, normalize_phone, public_user, utc_now, validate_required_phone
 from app.services.communication_service import (
     get_communication_settings,
@@ -669,6 +669,39 @@ def organizers_overview(
 
 class DirectUpiAccessIn(BaseModel):
     allow: bool
+
+
+@router.put("/organizations/{organization_id}/cashfree")
+def update_cashfree_access(
+    organization_id: UUID,
+    payload: DirectUpiAccessIn,
+    admin: User = Depends(require_roles("admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    organization = db.scalar(select(Organization).where(Organization.id == organization_id).with_for_update())
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if payload.allow and organization.paid_verification_status != "VERIFIED":
+        raise HTTPException(status_code=409, detail="Paid verification must be verified before enabling Cashfree")
+    active_events = []
+    if not payload.allow and organization.allow_cashfree:
+        active_events = [{"id": str(event_id), "name": name} for event_id, name in db.execute(
+            select(Event.id, Event.name).where(
+                Event.organization_id == organization_id,
+                Event.payment_collection_method == "CASHFREE_MANAGED",
+                Event.status == "published",
+                Event.archived_at.is_(None),
+            )
+        ).all()]
+    previous = organization.allow_cashfree
+    organization.allow_cashfree = payload.allow
+    record_audit(db, actor_user_id=admin.id, action="cashfree_access_updated",
+        resource_type="organization", resource_id=organization.id,
+        metadata={"allowCashfree": payload.allow, "previousValue": previous})
+    db.commit()
+    return {"organizationId": str(organization.id), "allowCashfree": organization.allow_cashfree,
+            "activeCashfreeEvents": active_events}
 
 
 @router.put("/organizations/{organization_id}/direct-upi")
@@ -1353,7 +1386,7 @@ def admin_adjust_credits(payload: CreditAdjustmentIn, admin: User = Depends(requ
 
 
 @router.put("/organizations/{organization_id}/credit-deduction-mode")
-def update_credit_deduction_mode(organization_id: UUID, mode: Literal["AUTOMATIC_PER_REGISTRATION", "MANUAL_EVENT_SETTLEMENT"], _: User = Depends(require_roles("admin")), __: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+def update_credit_deduction_mode(organization_id: UUID, mode: Literal["AUTOMATIC_PER_REGISTRATION"], _: User = Depends(require_roles("admin")), __: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
     organization = db.scalar(select(Organization).where(Organization.id == organization_id).with_for_update())
     if organization is None:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -1361,23 +1394,6 @@ def update_credit_deduction_mode(organization_id: UUID, mode: Literal["AUTOMATIC
     db.commit()
     return {"organizationId": str(organization.id), "creditDeductionMode": mode}
 
-
-@router.post("/credits/events/{event_id}/settle")
-def settle_event_credit_debit(event_id: UUID, admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
-    try:
-        row = settle_event_credits(db, event_id=event_id, created_by=admin.id); db.commit()
-        return {"transactionId": str(row.id), "amountPaise": row.amount_paise, "balanceAfterPaise": row.balance_after_paise}
-    except CreditValidationError as exc:
-        db.rollback(); raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-@router.get("/credits/events/{event_id}/settlement-preview")
-def preview_event_credit_settlement(event_id: UUID, _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
-    try:
-        summary = event_settlement_summary(db, event_id=event_id)
-        summary.pop("organizationId", None)
-        return summary
-    except CreditValidationError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/credits/events/{event_id}/discount")

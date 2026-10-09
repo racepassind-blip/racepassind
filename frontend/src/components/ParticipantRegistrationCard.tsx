@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Clock3, MapPin, MessageCircle, QrCode, Ticket, Trophy, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -9,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { ParticipantRegistration } from "@/hooks/useParticipantRegistrations";
+import { participantRegistrationsQueryKey, type ParticipantRegistration } from "@/hooks/useParticipantRegistrations";
 import { apiRequest } from "@/lib/api";
 import { formatRegistrationAmount, formatRegistrationDate, registrationStatusDetails } from "@/lib/registration-format";
 
@@ -67,6 +68,7 @@ export function ParticipantRegistrationCard({
   registration: ParticipantRegistration;
   onRefundUpdated?: (registrationId: string, refund: RefundResult) => void;
 }) {
+  const queryClient = useQueryClient();
   const checkedInLabel =
     registration.checkInStatus === "checked_in"
       ? `Checked in${registration.checkedInAt ? ` · ${new Date(registration.checkedInAt).toLocaleString("en-IN")}` : ""}`
@@ -92,6 +94,7 @@ export function ParticipantRegistrationCard({
       toast.success("Refund request submitted. The organizer will review it shortly.");
       setShowRefundForm(false);
       onRefundUpdated?.(registration.id, result.refund ?? result as unknown as RefundResult);
+      void queryClient.invalidateQueries({ queryKey: participantRegistrationsQueryKey });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not submit refund request");
     } finally {
@@ -109,6 +112,7 @@ export function ParticipantRegistrationCard({
       });
       toast.success("Refund receipt confirmed. Thank you!");
       onRefundUpdated?.(registration.id, result);
+      void queryClient.invalidateQueries({ queryKey: participantRegistrationsQueryKey });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not confirm refund receipt");
     } finally {

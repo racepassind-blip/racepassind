@@ -10,7 +10,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.services.payment_service import normalize_upi_id
-from app.services.registration_config_service import normalize_addon_config, normalize_field_config, normalize_team_field_config, is_team_field_config
+from app.services.registration_config_service import normalize_addon_config, normalize_field_config, normalize_team_field_config, is_team_field_config, normalize_waiver_config, normalize_pickup_points_config
 
 
 class TicketCreateIn(BaseModel):
@@ -97,6 +97,10 @@ class OrganizerEventCreateV1(BaseModel):
     field_config: dict[str, Any] = Field(default_factory=lambda: normalize_field_config(None))
     addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
     sport_config: dict[str, Any] = Field(default_factory=dict)
+    # Generic event-level waiver/declaration. Optional; disabled when omitted.
+    waiver: dict[str, Any] = Field(default_factory=dict)
+    # Generic event-level pickup points. Optional; disabled when omitted.
+    pickup_points: dict[str, Any] = Field(default_factory=dict)
     payment_collection_method: Literal["DIRECT_UPI", "CASHFREE_MANAGED"] = Field(default="DIRECT_UPI")
     platform_fee_bearer: Literal["ORGANIZER", "PARTICIPANT"] = Field(default="ORGANIZER")
     # Refund policy (all optional — refund_policy_enabled defaults to false)
@@ -126,6 +130,24 @@ class OrganizerEventCreateV1(BaseModel):
         self.sport_config = adapter.normalize_event_config(self.sport_config)
         for category in self.categories:
             category.distance = adapter.category_distance(category.distance)
+        return self
+
+    @model_validator(mode="after")
+    def validate_waiver(self):
+        normalized = normalize_waiver_config(self.waiver)
+        # Capability gate: a sport that does not support waivers cannot enable one.
+        if normalized.get("enabled") and not get_adapter(self.sport).supports_waiver:
+            raise ValueError("This event type does not support a waiver")
+        self.waiver = normalized
+        return self
+
+    @model_validator(mode="after")
+    def validate_pickup_points(self):
+        normalized = normalize_pickup_points_config(self.pickup_points)
+        # Capability gate: a sport that does not support pickup points cannot enable them.
+        if normalized.get("enabled") and not get_adapter(self.sport).supports_pickup_points:
+            raise ValueError("This event type does not support pickup points")
+        self.pickup_points = normalized
         return self
 
     @model_validator(mode="after")
@@ -216,6 +238,10 @@ class OrganizerEventUpdateV1(BaseModel):
     field_config: dict[str, Any] = Field(default_factory=lambda: normalize_field_config(None))
     addon_config: dict[str, Any] = Field(default_factory=lambda: normalize_addon_config(None))
     sport_config: dict[str, Any] = Field(default_factory=dict)
+    # Generic event-level waiver/declaration. Omitting it preserves the stored value.
+    waiver: dict[str, Any] = Field(default_factory=dict)
+    # Generic event-level pickup points. Omitting it preserves the stored value.
+    pickup_points: dict[str, Any] = Field(default_factory=dict)
     payment_collection_method: Literal["DIRECT_UPI", "CASHFREE_MANAGED"] | None = None
     platform_fee_bearer: Literal["ORGANIZER", "PARTICIPANT"] | None = None
     # Refund policy (all optional)
@@ -246,6 +272,24 @@ class OrganizerEventUpdateV1(BaseModel):
             self.sport_config = adapter.normalize_event_config(self.sport_config)
         for category in self.categories:
             category.distance = adapter.category_distance(category.distance)
+        return self
+
+    @model_validator(mode="after")
+    def validate_waiver(self):
+        if "waiver" in self.model_fields_set:
+            normalized = normalize_waiver_config(self.waiver)
+            if normalized.get("enabled") and not get_adapter(self.sport).supports_waiver:
+                raise ValueError("This event type does not support a waiver")
+            self.waiver = normalized
+        return self
+
+    @model_validator(mode="after")
+    def validate_pickup_points(self):
+        if "pickup_points" in self.model_fields_set:
+            normalized = normalize_pickup_points_config(self.pickup_points)
+            if normalized.get("enabled") and not get_adapter(self.sport).supports_pickup_points:
+                raise ValueError("This event type does not support pickup points")
+            self.pickup_points = normalized
         return self
 
     @model_validator(mode="after")

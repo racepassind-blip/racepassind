@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, uploadFile } from "@/lib/api";
 import type { AddonDefinition, EventAddonConfig, EventFieldConfig, ParticipantFieldConfig, ParticipantFieldType } from "@/data/mockEvents";
 import { TeamFieldEditor, DEFAULT_MAIN_REGISTRANT_FIELDS, DEFAULT_PARTICIPANT_FIELDS, type TeamFieldEditorItem } from "@/components/TeamFieldEditor";
-import { getSportConfig, sportOptions, normalizeSport } from "@/data/sportConfig";
+import { getSportConfig, sportOptions, normalizeSport, eventSupportsWaiver, eventSupportsPickupPoints } from "@/data/sportConfig";
 import type { CommunicationEvent } from "@/lib/eventCommunication";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -163,6 +163,8 @@ interface OrganizerEventResponse {
   schedule: ScheduleItem[];
   fieldConfig: EventFieldConfig;
   sportConfig?: { tournament_format?: string; ball_type?: string; overs_per_innings?: number; minimum_players?: number; maximum_players?: number };
+  waiver?: { enabled?: boolean; title?: string; text?: string };
+  pickupPoints?: { enabled?: boolean; required?: boolean; points?: Array<{ id: string; name: string; description?: string; address?: string }> };
   addonConfig: EventAddonConfig;
   categories: Array<{
     id: string;
@@ -182,6 +184,7 @@ interface OrganizerEventResponse {
   paymentCollectionMethod: "DIRECT_UPI" | "CASHFREE_MANAGED";
   platformFeeBearer?: "ORGANIZER" | "PARTICIPANT";
   platformFeeBearerLocked?: boolean;
+  paymentCollectionMethodLocked?: boolean;
 }
 
 interface OrganizerOrganizationOption {
@@ -191,6 +194,7 @@ interface OrganizerOrganizationOption {
   state: string | null;
   status: string;
   allowDirectUpi?: boolean;
+  allowCashfree?: boolean;
 }
 
 const MAX_IMAGE_BYTES = 2_000_000;
@@ -258,6 +262,14 @@ const OrganizerEventCreate = () => {
   const [description, setDescription] = useState("");
   const [sport, setSport] = useState("");
   const [cricketConfig, setCricketConfig] = useState({ tournament_format: "league", ball_type: "tennis", overs_per_innings: "10", minimum_players: "11", maximum_players: "15" });
+  // Generic event-level Waiver & Declaration (capability-gated per sport).
+  const [waiverEnabled, setWaiverEnabled] = useState(false);
+  const [waiverTitle, setWaiverTitle] = useState("");
+  const [waiverText, setWaiverText] = useState("");
+  // Generic event-level Pickup Points (capability-gated per sport, default-OFF).
+  const [pickupEnabled, setPickupEnabled] = useState(false);
+  const [pickupRequired, setPickupRequired] = useState(false);
+  const [pickupPoints, setPickupPoints] = useState<Array<{ id: string; name: string; description: string; address: string }>>([]);
   const [location, setLocation] = useState("");
   const [whatsappGroupUrl, setWhatsappGroupUrl] = useState("");
   const [address, setAddress] = useState("");
@@ -285,6 +297,8 @@ const OrganizerEventCreate = () => {
       .catch(() => setCashfreeEnabled(false));
   }, []);
   const [allowDirectUpi, setAllowDirectUpi] = useState(false);
+  const [allowCashfree, setAllowCashfree] = useState(false);
+  const [paymentMethodLocked, setPaymentMethodLocked] = useState(false);
   const [paymentDestinationStatus, setPaymentDestinationStatus] = useState<"NOT_SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "LEGACY_APPROVED">("NOT_SUBMITTED");
   const [platformFeeBearer, setPlatformFeeBearer] = useState<"ORGANIZER" | "PARTICIPANT">("ORGANIZER");
   // Set once the loaded event already had this bearer persisted; used to lock the
@@ -305,6 +319,8 @@ const OrganizerEventCreate = () => {
   const [addonEditors, setAddonEditors] = useState<AddonEditor[]>(defaultAddonEditors);
   const currentSportConfig = getSportConfig(sport);
   const supportsDistance = currentSportConfig.supports_distance;
+  const waiverSupported = eventSupportsWaiver(sport);
+  const pickupSupported = eventSupportsPickupPoints(sport);
   // Build combined distance strings for the category_distance registration dropdown
   const categoryDistances = useMemo(
     () => categories
@@ -394,9 +410,8 @@ const OrganizerEventCreate = () => {
           const organization = activeOrganizations[0];
           setOrganizationId(organization.id);
           setAllowDirectUpi(organization.allowDirectUpi ?? false);
-          if (!(organization.allowDirectUpi ?? false)) {
-            setPaymentCollectionMethod("CASHFREE_MANAGED");
-          }
+          setAllowCashfree(organization.allowCashfree ?? false);
+          setPaymentCollectionMethod(organization.allowDirectUpi ? "DIRECT_UPI" : "CASHFREE_MANAGED");
         } else {
           setOrganizationId("");
           setAllowDirectUpi(false);
@@ -414,6 +429,7 @@ const OrganizerEventCreate = () => {
     const organization = organizationOptions.find((option) => option.id === nextOrganizationId);
     setOrganizationId(nextOrganizationId);
     setAllowDirectUpi(organization?.allowDirectUpi ?? false);
+    setAllowCashfree(organization?.allowCashfree ?? false);
     setPaymentCollectionMethod(organization?.allowDirectUpi ? "DIRECT_UPI" : "CASHFREE_MANAGED");
   };
 
@@ -437,6 +453,17 @@ const OrganizerEventCreate = () => {
             maximum_players: String(event.sportConfig.maximum_players ?? 15),
           });
         }
+        setWaiverEnabled(Boolean(event.waiver?.enabled));
+        setWaiverTitle(event.waiver?.title ?? "");
+        setWaiverText(event.waiver?.text ?? "");
+        setPickupEnabled(Boolean(event.pickupPoints?.enabled));
+        setPickupRequired(Boolean(event.pickupPoints?.required));
+        setPickupPoints((event.pickupPoints?.points ?? []).map((point) => ({
+          id: point.id,
+          name: point.name ?? "",
+          description: point.description ?? "",
+          address: point.address ?? "",
+        })));
         setLocation(event.location.name ?? "");
         setAddress(event.location.address ?? "");
         setCity(event.location.city ?? "");
@@ -484,6 +511,7 @@ const OrganizerEventCreate = () => {
         setPayeeName(event.paymentSettings?.payeeName ?? "");
         setPaymentInstructions(event.paymentSettings?.instructions ?? "Pay the exact amount using UPI, then submit your UTR/reference.");
         setPaymentCollectionMethod(event.paymentCollectionMethod);
+        setPaymentMethodLocked(Boolean(event.paymentCollectionMethodLocked));
         setPlatformFeeBearer(event.platformFeeBearer ?? "ORGANIZER");
         setFeeBearerLocked(Boolean(event.platformFeeBearerLocked));
         // Refund policy
@@ -494,8 +522,8 @@ const OrganizerEventCreate = () => {
         setPlatformFeeRefundable(Boolean(event.platformFeeRefundable));
         setRefundPolicyText(event.refundPolicyText ?? "");
         // Also fetch org to know if Direct UPI is allowed
-        apiRequest<{ allowDirectUpi?: boolean }>(`/organizer/organizations/${event.organizationId}`)
-          .then((org) => setAllowDirectUpi(org.allowDirectUpi ?? false))
+        apiRequest<{ allowDirectUpi?: boolean; allowCashfree?: boolean }>(`/organizer/organizations/${event.organizationId}`)
+          .then((org) => { setAllowDirectUpi(org.allowDirectUpi ?? false); setAllowCashfree(org.allowCashfree ?? false); })
           .catch(() => undefined);
         apiRequest<{ paymentDestinationStatus: typeof paymentDestinationStatus }>(`/organizer/events/${event.id}/payment-settings`)
           .then((settings) => setPaymentDestinationStatus(settings.paymentDestinationStatus))
@@ -852,6 +880,10 @@ const OrganizerEventCreate = () => {
       toast.error("Add UPI ID and payee name for paid ticket tiers.");
       return false;
     }
+    if (step === 5 && hasPaidTickets && !paymentMethodLocked && (paymentCollectionMethod === "DIRECT_UPI" ? !allowDirectUpi : !allowCashfree || !cashfreeEnabled)) {
+      toast.error("This payment method must be enabled for your organizer by SportPass before publishing.");
+      return false;
+    }
     return true;
   };
 
@@ -874,6 +906,10 @@ const OrganizerEventCreate = () => {
     }
     if (hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI" && (!upiId || !payeeName)) {
       toast.error("Add UPI payment details for paid ticket tiers.");
+      return;
+    }
+    if (hasPaidTickets && !paymentMethodLocked && (paymentCollectionMethod === "DIRECT_UPI" ? !allowDirectUpi : !allowCashfree || !cashfreeEnabled)) {
+      toast.error("Ask SportPass to enable this payment method for your organizer.");
       return;
     }
     if (categories.some((category) => !category.name.trim() || (supportsDistance && !category.distanceValue.trim()) || category.tickets.some((ticket) => !ticket.name.trim() || ticket.price.trim() === "" || ticket.quantity.trim() === ""))) {
@@ -941,6 +977,14 @@ const OrganizerEventCreate = () => {
       toast.error("Complete every add-on with a valid name and price.");
       return;
     }
+    if (pickupSupported && pickupEnabled && (pickupPoints.length === 0 || pickupPoints.some((point) => !point.name.trim()))) {
+      toast.error("Add a name for every pickup point, or disable pickup points.");
+      return;
+    }
+    if (waiverSupported && waiverEnabled && (!waiverTitle.trim() || !waiverText.trim())) {
+      toast.error("Add a title and text for the waiver, or disable it.");
+      return;
+    }
 
     // Synchronous guard — blocks double-clicks before React re-renders the disabled state
     if (savingRef.current) return;
@@ -967,6 +1011,21 @@ const OrganizerEventCreate = () => {
         field_config: fieldConfig,
         addon_config: addonConfig,
         sport_config: isCricket ? { ...cricketConfig, overs_per_innings: Number(cricketConfig.overs_per_innings), minimum_players: Number(cricketConfig.minimum_players), maximum_players: Number(cricketConfig.maximum_players) } : eventId && sport === "badminton" ? undefined : {},
+        waiver: waiverSupported && waiverEnabled
+          ? { enabled: true, title: waiverTitle.trim(), text: waiverText.trim() }
+          : { enabled: false },
+        pickup_points: pickupSupported && pickupEnabled
+          ? {
+              enabled: true,
+              required: pickupRequired,
+              points: pickupPoints.map((point) => ({
+                id: point.id,
+                name: point.name.trim(),
+                description: point.description.trim() || undefined,
+                address: point.address.trim() || undefined,
+              })),
+            }
+          : { enabled: false },
         payment_collection_method: paymentCollectionMethod,
         platform_fee_bearer: platformFeeBearer,
         refund_policy_enabled: refundPolicyEnabled,
@@ -1230,6 +1289,68 @@ const OrganizerEventCreate = () => {
             </div>
           </section>}
 
+          {currentStep === 3 && waiverSupported && <section className="space-y-4 rounded-xl border bg-card p-5 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold">Waiver &amp; Declaration</h2>
+                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Optionally require participants to read and accept a declaration after they complete the registration form. Leave it off to skip this step entirely.</p>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-sm font-medium">
+                <input type="checkbox" checked={waiverEnabled} onChange={(event) => setWaiverEnabled(event.target.checked)} /> Enable waiver
+              </label>
+            </div>
+            {waiverEnabled && <div className="space-y-4">
+              <div className="space-y-2"><Label>Waiver title *</Label><Input value={waiverTitle} onChange={(event) => setWaiverTitle(event.target.value)} placeholder="e.g. Trekking Waiver & Declaration" maxLength={200} /></div>
+              <div className="space-y-2"><Label>Waiver text *</Label><Textarea value={waiverText} onChange={(event) => setWaiverText(event.target.value)} placeholder="Describe the risks and the declaration participants must accept." className="min-h-40" maxLength={10000} /><p className="text-xs text-muted-foreground">Participants must tick an acceptance checkbox before completing registration.</p></div>
+            </div>}
+          </section>}
+
+          {currentStep === 3 && pickupSupported && <section className="space-y-4 rounded-xl border bg-card p-5 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold">Pickup Points</h2>
+                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Optionally offer a set of pickup locations each participant can choose from during registration. Leave it off to skip this entirely.</p>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-sm font-medium">
+                <input type="checkbox" checked={pickupEnabled} onChange={(event) => setPickupEnabled(event.target.checked)} /> Enable pickup points
+              </label>
+            </div>
+            {pickupEnabled && <div className="space-y-4">
+              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+                <input type="checkbox" checked={pickupRequired} onChange={(event) => setPickupRequired(event.target.checked)} /> Require every participant to choose a pickup point
+              </label>
+              <div className="space-y-3">
+                {pickupPoints.map((point, index) => (
+                  <div key={point.id} className="space-y-2 rounded-lg border bg-background p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label>Pickup point {index + 1}</Label>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setPickupPoints((points) => points.filter((_, i) => i !== index))}>Remove</Button>
+                    </div>
+                    <Input
+                      value={point.name}
+                      onChange={(event) => setPickupPoints((points) => points.map((p, i) => i === index ? { ...p, name: event.target.value } : p))}
+                      placeholder="Name (e.g. Main Gate) *"
+                      maxLength={120}
+                    />
+                    <Input
+                      value={point.description}
+                      onChange={(event) => setPickupPoints((points) => points.map((p, i) => i === index ? { ...p, description: event.target.value } : p))}
+                      placeholder="Description (optional)"
+                      maxLength={500}
+                    />
+                    <Input
+                      value={point.address}
+                      onChange={(event) => setPickupPoints((points) => points.map((p, i) => i === index ? { ...p, address: event.target.value } : p))}
+                      placeholder="Address (optional)"
+                      maxLength={300}
+                    />
+                  </div>
+                ))}
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => setPickupPoints((points) => [...points, { id: crypto.randomUUID(), name: "", description: "", address: "" }])}>+ Add pickup point</Button>
+            </div>}
+          </section>}
+
           {currentStep === 4 && <section className="space-y-6 rounded-xl border bg-card p-5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -1386,10 +1507,11 @@ const OrganizerEventCreate = () => {
             <div><h2 className="text-lg font-bold">Payment details</h2><p className="text-sm text-muted-foreground">{hasPaidTickets ? (paymentCollectionMethod === "CASHFREE_MANAGED" ? "Participants pay online through Cashfree. No organizer UPI details are required." : "Participants pay your verified UPI destination, submit a UTR, and you approve payment.") : "All ticket tiers are free. Participants can register without payment details."}</p></div>
             <div className="space-y-3">
               <Label>Payment Collection Method {hasPaidTickets ? "*" : "(optional)"}</Label>
+              {paymentMethodLocked && <p className="text-xs text-amber-700">This event already has registrations. Its payment method cannot be changed; create a new event to use the other method.</p>}
               <div className="space-y-2">
                 {allowDirectUpi ? (
                   <div className="flex items-center gap-3 rounded-lg border p-3">
-                    <input type="radio" name="paymentCollectionMethod" value="DIRECT_UPI" checked={paymentCollectionMethod === "DIRECT_UPI"} onChange={() => setPaymentCollectionMethod("DIRECT_UPI")} className="h-4 w-4 text-primary focus:ring-primary" />
+                    <input type="radio" name="paymentCollectionMethod" value="DIRECT_UPI" checked={paymentCollectionMethod === "DIRECT_UPI"} onChange={() => setPaymentCollectionMethod("DIRECT_UPI")} disabled={paymentMethodLocked} className="h-4 w-4 text-primary focus:ring-primary" />
                     <div>
                       <div className="font-medium">Direct UPI — Available Now</div>
                       <div className="text-xs text-muted-foreground">Use your UPI ID for manual payment collection. Participants submit UTR and you approve payment.</div>
@@ -1397,19 +1519,19 @@ const OrganizerEventCreate = () => {
                   </div>
                 ) : (
                   <div className="flex items-center gap-3 rounded-lg border border-dashed p-3 opacity-60 cursor-not-allowed">
-                    <input type="radio" name="paymentCollectionMethod" value="DIRECT_UPI" disabled className="h-4 w-4 text-muted-foreground" />
+                    <input type="radio" name="paymentCollectionMethod" value="DIRECT_UPI" checked={paymentCollectionMethod === "DIRECT_UPI"} disabled className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <div className="font-medium flex items-center gap-2">Direct UPI <span className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">Not enabled</span></div>
                       <div className="text-xs text-muted-foreground">Contact SportPass to request Direct UPI access for your organization.</div>
                     </div>
                   </div>
                 )}
-                <div className={`flex items-center gap-3 rounded-lg border p-3 ${cashfreeEnabled ? "" : "opacity-70"}`}>
-                  <input type="radio" name="paymentCollectionMethod" value="CASHFREE_MANAGED" checked={paymentCollectionMethod === "CASHFREE_MANAGED"} onChange={() => setPaymentCollectionMethod("CASHFREE_MANAGED")} disabled={!cashfreeEnabled} className="h-4 w-4 text-muted-foreground focus:ring-muted-foreground" />
+                <div className={`flex items-center gap-3 rounded-lg border p-3 ${cashfreeEnabled && allowCashfree ? "" : "opacity-70"}`}>
+                  <input type="radio" name="paymentCollectionMethod" value="CASHFREE_MANAGED" checked={paymentCollectionMethod === "CASHFREE_MANAGED"} onChange={() => setPaymentCollectionMethod("CASHFREE_MANAGED")} disabled={!cashfreeEnabled || !allowCashfree || paymentMethodLocked} className="h-4 w-4 text-muted-foreground focus:ring-muted-foreground" />
                   <div className="flex-1">
                     <div className="font-medium flex items-center gap-2">
                       <span>Online Payment Gateway</span>
-                      <span className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cashfreeEnabled ? "Available" : "Coming Soon"}</span>
+                      <span className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{!cashfreeEnabled ? "Gateway unavailable" : allowCashfree ? "Enabled" : "Admin approval required"}</span>
                     </div>
                     <div className="text-xs text-muted-foreground">Online payment through Cashfree, with manual organizer settlements.</div>
                   </div>

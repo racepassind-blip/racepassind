@@ -76,7 +76,7 @@ class CreditServiceTests(unittest.TestCase):
             with self.assertRaises(IntegrityError):
                 db.commit()
 
-    def test_manual_settlement_excludes_cashfree_payments(self):
+    def test_manual_settlement_cannot_debit_credits(self):
         with Session(self.engine) as db:
             organization = Organization(name="Association", status="active", credit_deduction_mode="MANUAL_EVENT_SETTLEMENT")
             db.add(organization)
@@ -99,7 +99,7 @@ class CreditServiceTests(unittest.TestCase):
                 db.flush()
                 db.add(Payment(order_id=order.id, registration_id=registration.id, amount=500, expected_amount_paise=50000, method=gateway, currency="INR", payment_gateway=gateway, status="approved"))
             add_credits(db, organization_id=organization.id, amount=10000, description="seed")
-            transaction = settle_event_credits(db, event_id=event.id, created_by=uuid.uuid4())
+            with self.assertRaisesRegex(CreditValidationError, "disabled"):
+                settle_event_credits(db, event_id=event.id, created_by=uuid.uuid4())
             db.commit()
-            self.assertEqual(transaction.amount_paise, 2000)
-            self.assertEqual(get_balance(db, organization.id), 8000)
+            self.assertEqual(get_balance(db, organization.id), 10000)

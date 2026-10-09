@@ -14,6 +14,7 @@ from app.services.registration_service import (
     CsvExportTooLargeError,
     export_organizer_registrations_csv,
     list_organizer_registrations,
+    pickup_point_summary,
 )
 from db import Base
 from models import (
@@ -26,6 +27,7 @@ from models import (
     Participant,
     Payment,
     Registration,
+    RegistrationParticipant,
     Ticket,
     User,
 )
@@ -241,6 +243,52 @@ class OrganizerRegistrationManagementTests(unittest.TestCase):
             finally:
                 registration_service._MAX_CSV_EXPORT_ROWS = original_limit
             self.assertIsNotNone(other_user)
+
+    def test_pickup_summary_counts_participants_respects_filters_and_excludes_cancelled(self) -> None:
+        with Session(self.engine) as db:
+            organizer, organization = self._user_and_org(db, "PickupOwner")
+            event, category, ticket = self._event(db, organization)
+            event.field_config = {"pickup_points": {"enabled": True, "required": False, "points": [
+                {"id": "north", "name": "North Gate"}, {"id": "south", "name": "South Gate"},
+            ]}}
+            first = self._registration(db, event=event, category=category, ticket=ticket, index=1)
+            first.responses = {"pickup_point_id": "north"}
+            second = self._registration(db, event=event, category=category, ticket=ticket, index=2)
+            second.responses = {"pickup_point_id": "south"}
+            cancelled = self._registration(db, event=event, category=category, ticket=ticket, index=3, status="cancelled")
+            cancelled.responses = {"pickup_point_id": "north"}
+            db.commit()
+
+            summary = pickup_point_summary(db, organizer, event.id)
+            self.assertEqual([(item["id"], item["count"]) for item in summary["points"]], [("north", 1), ("south", 1)])
+            filtered = pickup_point_summary(db, organizer, event.id, payment_status="approved", check_in_status="checked_in")
+            self.assertEqual(sum(item["count"] for item in filtered["points"]), 0)
+
+    def test_pickup_summary_counts_each_team_member_and_csv_uses_point_names(self) -> None:
+        with Session(self.engine) as db:
+            organizer, organization = self._user_and_org(db, "PickupTeamOwner")
+            event, category, ticket = self._event(db, organization)
+            event.field_config = {"pickup_points": {"enabled": True, "required": True, "points": [
+                {"id": "north", "name": "North Gate"},
+            ]}}
+            registration = self._registration(db, event=event, category=category, ticket=ticket, index=4)
+            registration.participant_count = 2
+            registration.responses = {"pickup_point_id": "north"}
+            member = Participant(name="Team member", email="member@example.test", normalized_email="member@example.test")
+            db.add(member)
+            db.flush()
+            db.add(RegistrationParticipant(registration_id=registration.id, participant_id=registration.participant_id,
+                                           participant_index=0, responses={"pickup_point_id": "north"}))
+            db.add(RegistrationParticipant(registration_id=registration.id, participant_id=member.id,
+                                           participant_index=1, responses={"pickup_point_id": "north"}))
+            registration.computed_total = {"pickupPoints": event.field_config["pickup_points"]}
+            db.commit()
+
+            summary = pickup_point_summary(db, organizer, event.id)
+            self.assertEqual(summary["points"][0]["count"], 2)
+            content = export_organizer_registrations_csv(db, organizer, event_id=event.id, status_filter="all")
+            self.assertIn("Pickup point", content.splitlines()[0])
+            self.assertIn("North Gate", content)
 
 
 if __name__ == "__main__":

@@ -254,10 +254,11 @@ def create_registration(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
     # Queue email after response — participant doesn't wait for SMTP.
-    background_tasks.add_task(_send_confirmation_email_background, registration.id, registration.event_id)
+    if not registration.payment or registration.payment.payment_gateway != "cashfree":
+        background_tasks.add_task(_send_confirmation_email_background, registration.id, registration.event_id)
 
     response = _confirmation_response(db, registration, confirmation_token=confirmation_token or None, claim_code=claim_code or None)
-    response["emailStatus"] = "pending"
+    response["emailStatus"] = "awaiting_payment" if registration.payment and registration.payment.payment_gateway == "cashfree" else "pending"
     return response
 
 
@@ -298,7 +299,8 @@ def create_batch_registration(
 
     # Queue one email per registration — fires after response is sent, never blocks the participant.
     for reg in registrations:
-        background_tasks.add_task(_send_confirmation_email_background, reg.id, reg.event_id)
+        if not reg.payment or reg.payment.payment_gateway != "cashfree":
+            background_tasks.add_task(_send_confirmation_email_background, reg.id, reg.event_id)
 
     response = _batch_confirmation_response(
         db,
@@ -306,7 +308,7 @@ def create_batch_registration(
         confirmation_tokens=confirmation_tokens,
         claim_codes=claim_codes,
     )
-    response["emailStatus"] = "pending"
+    response["emailStatus"] = "awaiting_payment" if any(reg.payment and reg.payment.payment_gateway == "cashfree" for reg in registrations) else "pending"
     return response
 
 

@@ -41,6 +41,8 @@ class EventOut(BaseModel):
     schedule: list[dict[str, str]]
     fieldConfig: dict
     addonConfig: dict
+    waiver: dict = {}
+    pickupPoints: dict = {}
     registrationOpen: str | None = None
     registrationClose: str | None = None
     registrationStatus: Literal["open", "closed"] = "open"

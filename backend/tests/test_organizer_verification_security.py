@@ -61,10 +61,21 @@ def test_paid_event_accepts_only_fully_approved_configuration(db):
 def test_cashfree_managed_event_does_not_require_direct_upi_access_or_destination(db):
     organization, event, _ = configured_event(db)
     organization.allow_direct_upi = False
+    organization.allow_cashfree = True
     event.payment_collection_method = "CASHFREE_MANAGED"
     event.payment_settings = None
     db.commit()
     assert assert_paid_event_available(db, event) is None
+
+
+def test_cashfree_requires_explicit_organizer_access(db):
+    organization, event, _ = configured_event(db)
+    organization.allow_cashfree = False
+    event.payment_collection_method = "CASHFREE_MANAGED"
+    event.payment_settings = None
+    db.commit()
+    with pytest.raises(ValueError, match="Paid registrations are currently unavailable"):
+        assert_paid_event_available(db, event)
 
 
 @pytest.mark.parametrize("change", [

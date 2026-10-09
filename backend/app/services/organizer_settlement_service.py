@@ -11,6 +11,7 @@ from app.services.checkout_payments import fingerprint
 from models import (
     CheckoutPayment,
     CheckoutReceipt,
+    CashfreePaymentResolution,
     ManagedRegistrationCollection,
     Event,
     OrganizerPayableAdjustment,
@@ -54,7 +55,12 @@ def post_verified_collection(db: Session, *, receipt_id: UUID) -> None:
     checkout = db.get(CheckoutPayment, receipt.checkout_payment_id)
     if checkout is None or checkout.mode != "CASHFREE_PLATFORM" or receipt.environment != "production":
         return
-    if (receipt.provider != "cashfree" or receipt.disposition != "confirmed" or checkout.status != "successful"
+    resolved = db.scalar(select(CashfreePaymentResolution.id).where(
+        CashfreePaymentResolution.checkout_payment_id == checkout.id,
+        CashfreePaymentResolution.receipt_id == receipt.id,
+        CashfreePaymentResolution.action == "FULFILL",
+        CashfreePaymentResolution.status == "FULFILLED"))
+    if (receipt.provider != "cashfree" or (receipt.disposition != "confirmed" and not resolved) or checkout.status != "successful"
             or checkout.currency != "INR" or checkout.provider_environment != receipt.environment
             or not checkout.provider_order_id or not receipt.payment_id or not receipt.account
             or checkout.provider_account != receipt.account or checkout.amount_paise != receipt.amount_paise):

@@ -37,11 +37,20 @@ const OrganizerManualParticipant = () => {
   const [members, setMembers] = useState<MemberDraft[]>([{ responses: {} }]);
   const [selections, setSelections] = useState<Record<string, Selection>>({});
   const [paymentReceived, setPaymentReceived] = useState(false);
+  const [waiverAccepted, setWaiverAccepted] = useState(false);
   const [receivedAmount, setReceivedAmount] = useState("");
   const [saving, setSaving] = useState(false);
 
   const event = data?.event;
-  const fields = useMemo(() => event?.fieldConfig?.fields?.length ? [...event.fieldConfig.fields].sort((a, b) => a.order - b.order) : FALLBACK_FIELDS, [event]);
+  const fields = useMemo(() => {
+    const configured = event?.fieldConfig?.fields?.length ? [...event.fieldConfig.fields] : FALLBACK_FIELDS;
+    const pickup = event?.pickupPoints;
+    if (pickup?.enabled && pickup.points?.length) configured.push({
+      id: "pickup_point_id", label: "Pickup point", type: "select", required: Boolean(pickup.required),
+      predefined: true, order: 10001, options: pickup.points.map((point) => point.id),
+    });
+    return configured.sort((a, b) => a.order - b.order);
+  }, [event]);
   const addons = useMemo<AddonDefinition[]>(() => event?.addonConfig?.addons ?? [], [event]);
   const tickets = useMemo(() => event?.categories.flatMap((category) => category.tickets.map((ticket) => ({
     ...ticket,
@@ -51,6 +60,7 @@ const OrganizerManualParticipant = () => {
   }))) ?? [], [event]);
   const selectedTicket = tickets.find((ticket) => ticket.id === ticketId);
   const selectedTicketId = selectedTicket?.id;
+  const waiver = event?.waiver;
   const selectedParticipantsPerEntry = selectedTicket?.participantsPerEntry ?? 1;
   const totalPaise = useMemo(() => {
     if (!selectedTicket) return 0;
@@ -98,7 +108,7 @@ const OrganizerManualParticipant = () => {
     if (field.type === "select" || field.type === "dropdown" || field.type === "yes_no") {
       const options = field.type === "yes_no" ? ["Yes", "No"] : field.options ?? [];
       const selectValue = value === undefined ? "" : field.type === "yes_no" ? value === true ? "Yes" : "No" : String(value);
-      return <Select value={selectValue} onValueChange={(next) => updateResponse(memberIndex, field, field.type === "yes_no" ? next === "Yes" : next)}><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>;
+      return <Select value={selectValue} onValueChange={(next) => updateResponse(memberIndex, field, field.type === "yes_no" ? next === "Yes" : next)}><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{field.id === "pickup_point_id" ? event?.pickupPoints?.points?.find((point) => point.id === option)?.name ?? option : option}</SelectItem>)}</SelectContent></Select>;
     }
     return <Input type={field.type === "email" ? "email" : field.type === "date" ? "date" : field.type === "number" ? "number" : field.type === "phone" ? "tel" : "text"} inputMode={field.type === "phone" ? "numeric" : undefined} value={value === undefined ? "" : String(value)} onChange={(event) => updateResponse(memberIndex, field, event.target.value)} placeholder={field.type === "phone" ? "+91 98765 43210" : undefined} />;
   };
@@ -106,6 +116,10 @@ const OrganizerManualParticipant = () => {
   const submit = async () => {
     if (!eventId || !ticketId || !selectedTicket) return;
     const sharedContactFields = new Set(["email", "phone"]);
+    if (waiver?.enabled && !waiverAccepted) {
+      toast.error("Confirm that the participant has accepted the event waiver.");
+      return;
+    }
     for (const [memberIndex, member] of members.entries()) {
       const missing = fields.find((field) => {
         if (memberIndex > 0 && sharedContactFields.has(field.id)) return false;
@@ -139,8 +153,11 @@ const OrganizerManualParticipant = () => {
           ticket_id: ticketId,
           email: primaryResponses.email,
           phone: primaryResponses.phone,
-          participants: members.map((member) => ({
-            responses: Object.fromEntries(Object.entries(member.responses).filter(([fieldId]) => !sharedContactFields.has(fieldId))),
+          participants: members.map((member, index) => ({
+            responses: {
+              ...Object.fromEntries(Object.entries(member.responses).filter(([fieldId]) => !sharedContactFields.has(fieldId))),
+              ...(index === 0 && waiver?.enabled ? { waiver_accepted: true } : {}),
+            },
           })),
           selections,
           payment_received: paymentReceived,
@@ -167,6 +184,7 @@ const OrganizerManualParticipant = () => {
           <Card><CardHeader><CardTitle>Participant details</CardTitle><CardDescription>Enter the details from the offline registration form.</CardDescription></CardHeader><CardContent className="space-y-6">
             <div className="space-y-2"><Label>Ticket / category *</Label><Select value={ticketId} onValueChange={setTicketId}><SelectTrigger><SelectValue placeholder="Select a ticket" /></SelectTrigger><SelectContent>{tickets.map((ticket) => <SelectItem key={ticket.id} value={ticket.id}>{ticket.categoryName} · {ticket.name} · {ticket.participantsPerEntry} participant{ticket.participantsPerEntry === 1 ? "" : "s"} · ₹{(ticket.pricePaise / 100).toLocaleString("en-IN")}{ticket.available < 1 ? " · Sold out" : ""}</SelectItem>)}</SelectContent></Select>{selectedTicket && <p className="text-xs text-muted-foreground">{selectedTicket.available} spots available · {selectedTicket.participantsPerEntry} participant{selectedTicket.participantsPerEntry === 1 ? "" : "s"} per entry</p>}</div>
             <div className="space-y-5">{members.map((member, memberIndex) => <section key={memberIndex} className="space-y-4 rounded-lg border p-4"><div><h3 className="font-bold">Participant {memberIndex + 1}</h3><p className="text-xs text-muted-foreground">Personal details for this member. Email and phone are collected once on Participant 1.</p></div><div className="grid gap-5 sm:grid-cols-2">{fields.filter((field) => memberIndex === 0 || (field.id !== "email" && field.id !== "phone")).map((field) => <div key={field.id} className={`space-y-2 ${field.id === "full_name" || field.id.startsWith("custom_") ? "sm:col-span-2" : ""}`}><Label>{field.label}{field.required ? " *" : ""}</Label>{fieldInput(memberIndex, field)}</div>)}</div></section>)}</div>
+            {waiver?.enabled && <section className="space-y-3 rounded-lg border p-4"><div><h3 className="font-bold">{waiver.title || "Waiver & Declaration"}</h3><p className="whitespace-pre-wrap text-sm text-muted-foreground">{waiver.text}</p></div><label className="flex items-start gap-2 text-sm"><Checkbox checked={waiverAccepted} onCheckedChange={(value) => setWaiverAccepted(value === true)} /><span>The participant has read and accepted this waiver.</span></label></section>}
             {addons.length > 0 && <section className="space-y-4 border-t pt-6"><div><h3 className="font-bold">Add-ons</h3><p className="text-sm text-muted-foreground">Apply the same add-ons available in public checkout.</p></div><div className="grid gap-4 sm:grid-cols-2">{addons.map((addon) => <div key={addon.id} className="space-y-2"><Label>{addon.name}{addon.required ? " *" : ""} <span className="text-muted-foreground">(+₹{(addon.price_paise / 100).toFixed(2)}{addon.type === "quantity" ? " each" : ""})</span></Label>{addon.type === "quantity" ? <Input type="number" min={addon.required ? 1 : 0} max={addon.max_qty ?? undefined} value={selections[addon.id]?.qty ?? 0} onChange={(event) => updateAddon(addon, event.target.value)} /> : <Select value={selections[addon.id]?.selected ?? ""} onValueChange={(value) => updateAddon(addon, value)}><SelectTrigger><SelectValue placeholder="Select an option" /></SelectTrigger><SelectContent>{(addon.options ?? []).map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select>}</div>)}</div></section>}
           </CardContent></Card>
 

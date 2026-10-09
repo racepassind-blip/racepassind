@@ -104,13 +104,13 @@ def get_email_limit_status(db: Session) -> tuple[EmailLimitStatus, int]:
     """Get current email usage and status for the 24-hour window."""
     window_start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
 
-    # Count emails sent in the last 24 hours.
-    # Status values are stored lowercase (sent, pending_limit) - match those.
+    # Count actual attempts, not queued work: counting pending_limit entries
+    # would make a full queue permanently block its own recovery.
     result = db.execute(
         select(func.count(EmailLog.id)).where(
             and_(
-                EmailLog.created_at >= window_start,
-                EmailLog.status.in_(("sent", "pending_limit")),
+                EmailLog.attempted_at >= window_start,
+                EmailLog.status.in_(("sent", "pending", "failed")),
             )
         )
     ).scalar_one()
@@ -175,6 +175,7 @@ def send_email(
     html_body: str | None = None,
     attachments: list[tuple[str, bytes]] | None = None,
     is_resend: bool = False,
+    dedupe: bool = False,
 ) -> SendEmailResult:
     """Send an email using the configured Gmail account.
 
@@ -193,6 +194,16 @@ def send_email(
         .where(CommunicationConfig.channel == "EMAIL")
         .with_for_update()
     )
+
+    if dedupe:
+        existing = db.scalar(select(EmailLog).where(
+            EmailLog.recipient == recipient,
+            EmailLog.reference_type == reference_type,
+            EmailLog.reference_id == reference_id,
+        ).order_by(EmailLog.created_at.desc()).limit(1))
+        if existing is not None:
+            return SendEmailResult(existing.status == "sent", existing.status.upper(),
+                                   "Notification already recorded", existing)
 
     if config is None or not config.enabled:
         logger.warning("Email configuration %s", "missing; save sender settings in Admin Communication" if config is None else "disabled")
@@ -437,7 +448,10 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
     Rebuilds the message body since only the subject/recipient are persisted.
     Never creates a new log record.
     """
-    config = db.scalar(select(CommunicationConfig).where(CommunicationConfig.channel == "EMAIL"))
+    config = db.scalar(select(CommunicationConfig).where(CommunicationConfig.channel == "EMAIL").with_for_update())
+    db.refresh(email_log, with_for_update=True)
+    if email_log.status != "pending_limit":
+        return SendEmailResult(False, "SKIPPED", "Email already processed", email_log)
     if config is None or not config.enabled:
         return SendEmailResult(False, "SKIPPED_DISABLED", "Email disabled", email_log)
 
@@ -445,10 +459,9 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
     sender_name = config_data.get("sender_name", "")
     gmail_address = config_data.get("gmail_address", "")
     if not sender_name or not gmail_address or not gmail_api_configured():
-        email_log.status = "failed"
         email_log.failure_reason = FAILURE_REASON_AUTH_FAILED
         db.commit()
-        return SendEmailResult(False, "FAILED", "Gmail API credentials not configured", email_log)
+        return SendEmailResult(False, "PENDING_LIMIT", "Gmail API credentials not configured", email_log)
 
     attempted_at = dt.datetime.now(dt.timezone.utc)
 
@@ -463,7 +476,89 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
             "If this relates to a registration, your registration is confirmed and safely recorded.\n\n"
             "This email was sent via SportPass India."
         )
-        if email_log.reference_type == "PRODUCT_ORDER":
+        if email_log.reference_type in {"CASHFREE_REVIEW_REFUND_SUCCESS", "CASHFREE_REVIEW_REFUND_ISSUE", "CASHFREE_REVIEW_REFUND_PENDING"}:
+            from models import CashfreePaymentResolution, CheckoutPayment
+            payment_id = UUID(str(email_log.reference_id))
+            resolution = db.scalar(select(CashfreePaymentResolution).where(CashfreePaymentResolution.checkout_payment_id == payment_id))
+            checkout = db.get(CheckoutPayment, payment_id)
+            expected_status = {"CASHFREE_REVIEW_REFUND_SUCCESS": "REFUNDED", "CASHFREE_REVIEW_REFUND_ISSUE": "NEEDS_REVIEW",
+                               "CASHFREE_REVIEW_REFUND_PENDING": "PENDING"}[email_log.reference_type]
+            if resolution is None or checkout is None or resolution.status != expected_status:
+                email_log.status = "skipped_disabled"
+                db.commit()
+                return SendEmailResult(False, "SKIPPED", "Refund status has changed", email_log)
+            outcome = {
+                "REFUNDED": "Cashfree has confirmed the full refund. Your bank or payment method may take additional time to reflect the credit.",
+                "NEEDS_REVIEW": "Cashfree has not completed this refund. SportPass is reviewing it; the refund is not yet confirmed.",
+                "PENDING": "SportPass has initiated a full refund. We will email you once Cashfree confirms the result.",
+            }[resolution.status]
+            body = (f"Your booking could not be confirmed. {outcome}\n\n"
+                    f"Refund amount: {_fmt_paise(resolution.amount_paise)}\n"
+                    f"SportPass order: {checkout.event_order_id}\nRefund reference: {resolution.provider_refund_id}\n\n"
+                    "No ticket has been issued for this payment. Contact SportPass support with the order reference if needed.")
+            msg.attach(MIMEText(body, "plain", "utf-8"))
+        elif email_log.reference_type in {"CASHFREE_PAYMENT_REVIEW_PARTICIPANT", "CASHFREE_PAYMENT_REVIEW_ADMIN"}:
+            from models import CheckoutPayment, OrderItem
+            order_id = UUID(str(email_log.reference_id))
+            checkout = db.scalar(select(CheckoutPayment).where(CheckoutPayment.event_order_id == order_id))
+            from models import CashfreePaymentResolution
+            resolution = db.scalar(select(CashfreePaymentResolution.id).where(CashfreePaymentResolution.checkout_payment_id == checkout.id)) if checkout else None
+            registration = db.scalar(select(Registration).join(OrderItem, OrderItem.registration_id == Registration.id)
+                                     .where(OrderItem.order_id == order_id).limit(1))
+            if checkout is None or checkout.status != "paid_needs_review" or registration is None or resolution:
+                email_log.status = "skipped_disabled"
+                db.commit()
+                return SendEmailResult(False, "SKIPPED", "Payment review no longer required", email_log)
+            event_name = registration.event.name if registration.event else "your event"
+            amount = _fmt_paise(checkout.amount_paise)
+            if email_log.reference_type == "CASHFREE_PAYMENT_REVIEW_ADMIN":
+                body = (f"Cashfree verified a payment of {amount} for {event_name}, but the booking could not be confirmed.\n"
+                        f"SportPass order: {order_id}\nCashfree order: {checkout.provider_order_id}\n\n"
+                        "Investigate the payment and booking before issuing a ticket or refund. Do not ask the customer to pay again.")
+            else:
+                body = (f"Cashfree confirmed receipt of your payment of {amount} for {event_name}, but your booking needs SportPass review.\n"
+                        f"SportPass order: {order_id}\n\n"
+                        "Your ticket has not been issued yet. Please do not pay again. "
+                        "SportPass will review this payment and update you; contact support with the order reference if needed.")
+            msg.attach(MIMEText(body, "plain", "utf-8"))
+        elif email_log.reference_type in {"CASHFREE_REFUND_ADMIN_APPROVED",
+                                        "CASHFREE_REFUND_SUCCESS_PARTICIPANT", "CASHFREE_REFUND_SUCCESS_ORGANIZER",
+                                        "CASHFREE_REFUND_ISSUE_PARTICIPANT", "CASHFREE_REFUND_ISSUE_ORGANIZER",
+                                        "CASHFREE_REFUND_ISSUE_ADMIN"}:
+            from models import Refund
+            refund = db.get(Refund, UUID(str(email_log.reference_id)))
+            if refund is None or refund.payment_provider != "CASHFREE":
+                raise ValueError("Cashfree refund unavailable")
+            amount = _fmt_paise(refund.approved_refund_amount or 0)
+            event_name = refund.event.name if refund.event else "your event"
+            if email_log.reference_type == "CASHFREE_REFUND_ADMIN_APPROVED":
+                if refund.status != "APPROVED":
+                    email_log.status = "skipped_disabled"
+                    db.commit()
+                    return SendEmailResult(False, "SKIPPED", "Approval no longer awaiting processing", email_log)
+                body = (f"An organizer approved a Cashfree refund of {amount} for {event_name}.\n"
+                        f"Refund ID: {refund.id}\n\n"
+                        "Open Admin → Refunds, verify the request and process it there.")
+            elif "SUCCESS" in email_log.reference_type and refund.status != "REFUNDED":
+                raise ValueError("Confirmed Cashfree refund unavailable")
+            elif "ISSUE" in email_log.reference_type:
+                if refund.status == "REFUNDED" or refund.provider_refund_status not in {"REJECTED", "CANCELLED"}:
+                    email_log.status = "skipped_disabled"
+                    db.commit()
+                    return SendEmailResult(False, "SKIPPED", "Provider issue resolved", email_log)
+                body = (f"Cashfree has not completed the approved refund of {amount} for {event_name}.\n"
+                        f"Refund reference: {refund.provider_refund_id}\n\n"
+                        "SportPass admin is reviewing the provider outcome. Do not assume the refund has been credited.")
+            elif email_log.reference_type.endswith("PARTICIPANT"):
+                body = (f"Cashfree has confirmed your refund of {amount} for {event_name}.\n"
+                        f"Refund reference: {refund.provider_refund_id}\n\n"
+                        "Your bank or payment method may take additional time to reflect the credit.")
+            elif "SUCCESS" in email_log.reference_type:
+                body = (f"Cashfree has confirmed a refund of {amount} for {event_name}.\n"
+                        f"Refund reference: {refund.provider_refund_id}\n\n"
+                        "The participant has been notified. View the refund in your SportPass dashboard.")
+            msg.attach(MIMEText(body, "plain", "utf-8"))
+        elif email_log.reference_type == "PRODUCT_ORDER":
             from models import ProductOrder
             from app.services.product_order_email import build_product_order_confirmation
             order = db.get(ProductOrder, UUID(str(email_log.reference_id)))
@@ -475,9 +570,35 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
             alternative.attach(MIMEText(body, "plain", "utf-8"))
             alternative.attach(MIMEText(content["html_body"], "html", "utf-8"))
             msg.attach(alternative)
+        elif email_log.reference_type in {REFERENCE_TYPE_REGISTRATION, "CASHFREE_BOOKING"}:
+            from app.services.registration_email_content import build_registration_confirmation_content
+            if email_log.reference_type == "CASHFREE_BOOKING":
+                from app.services.registration_email_content import build_cashfree_booking_content
+                content = build_cashfree_booking_content(db, UUID(str(email_log.reference_id)), email_log.recipient)
+            else:
+                registration = db.get(Registration, UUID(str(email_log.reference_id)))
+                if registration is None:
+                    raise ValueError("Registration unavailable")
+                if registration.payment and registration.payment.payment_gateway == "cashfree" and registration.status not in {"confirmed", "checked_in"}:
+                    raise ValueError("Cashfree payment is not confirmed")
+                content = build_registration_confirmation_content(db, registration)
+            alternative = MIMEMultipart("alternative")
+            alternative.attach(MIMEText(content["body"], "plain", "utf-8"))
+            alternative.attach(MIMEText(content["html_body"], "html", "utf-8"))
+            msg.attach(alternative)
+            for filename, file_bytes in content["attachments"]:
+                attachment = MIMEApplication(file_bytes, _subtype="pdf")
+                attachment.add_header("Content-Disposition", "attachment", filename=filename)
+                msg.attach(attachment)
         else:
             msg.attach(MIMEText(body, "plain", "utf-8"))
 
+        # Persist the send attempt before the external call. If the worker
+        # stops after Gmail accepts it, leave an ambiguous attempt for manual
+        # review instead of automatically sending the same ticket again.
+        email_log.status = "pending"
+        email_log.attempted_at = attempted_at
+        db.commit()
         send_gmail_message(msg)
 
         email_log.status = "sent"
@@ -487,12 +608,18 @@ def _deliver_existing_log(db: Session, email_log: EmailLog) -> SendEmailResult:
         return SendEmailResult(True, "SENT", "Email sent successfully", email_log)
 
     except GmailDeliveryError as exc:
-        email_log.status = "failed"
+        safe_retry = exc.reason in {FAILURE_REASON_AUTH_FAILED, "PROVIDER_LIMIT_REACHED", "API_NOT_ENABLED"}
+        email_log.status = "pending_limit" if safe_retry else "failed"
         email_log.attempted_at = attempted_at
         email_log.failure_reason = exc.reason
         db.commit()
-        return SendEmailResult(False, "FAILED", str(exc), email_log)
+        return SendEmailResult(False, "PENDING_LIMIT" if safe_retry else "FAILED", str(exc), email_log)
     except Exception as exc:
+        if email_log.status == "pending_limit":
+            # Nothing has been sent: template/PDF generation may safely retry.
+            email_log.failure_reason = FAILURE_REASON_UNKNOWN_ERROR
+            db.commit()
+            return SendEmailResult(False, "PENDING_LIMIT", "Ticket preparation will retry", email_log)
         email_log.status = "failed"
         email_log.attempted_at = attempted_at
         email_log.failure_reason = FAILURE_REASON_UNKNOWN_ERROR
@@ -513,6 +640,10 @@ def send_registration_confirmation(
     the registration.email_status field.
     """
     from app.services.registration_email_content import build_registration_confirmation_content
+
+    if (registration.payment and registration.payment.payment_gateway == "cashfree"
+            and registration.status not in {"confirmed", "checked_in"}):
+        return SendEmailResult(False, "SKIPPED", "Cashfree payment is not confirmed")
 
     content = build_registration_confirmation_content(db, registration)
 
@@ -708,15 +839,20 @@ def send_refund_approved_notification(db: Session, refund) -> SendEmailResult:
     amount = _fmt_paise(refund.approved_refund_amount or refund.requested_refund_amount)
 
     subject = f"Refund approved — {event_name}"
+    next_step = (
+        "SportPass will submit the approved refund to Cashfree. We will email you once Cashfree confirms success."
+        if refund.payment_provider == "CASHFREE" else
+        "The organizer will send your refund manually. Please confirm receipt on your dashboard once received."
+    )
     body = (
         f"Your refund request for {event_name} has been approved.\n\n"
         f"Approved refund amount: {amount}\n\n"
-        f"The organizer will process your refund shortly. You will receive another notification once it has been sent."
+        f"{next_step}"
     )
     html_body = f"""
 <p>Your refund request for <strong>{event_name}</strong> has been <strong>approved</strong>.</p>
 <p style="font-size:1.2em;font-weight:600;">Approved refund: {amount}</p>
-<p>The organizer will process your refund shortly. You will receive another notification once it has been sent.</p>
+<p>{next_step}</p>
 """
     return send_email(
         db,
@@ -802,3 +938,96 @@ def send_refund_sent_notification(db: Session, refund) -> SendEmailResult:
         reference_id=str(refund.id),
         event_id=refund.event_id,
     )
+
+
+def send_cashfree_refund_success_notifications(db: Session, refund) -> None:
+    """Notify both parties once, only after a verified Cashfree SUCCESS."""
+    if refund.payment_provider != "CASHFREE" or refund.status != "REFUNDED":
+        raise ValueError("Cashfree refund has not been confirmed")
+    from models import OrganizationMember, User
+    event_name = refund.event.name if refund.event else "your event"
+    amount = _fmt_paise(refund.approved_refund_amount or 0)
+    organizer_members = db.scalars(select(OrganizationMember).where(
+        OrganizationMember.organization_id == refund.organizer_id,
+        OrganizationMember.member_role == "organizer",
+    )).all()
+    for member in organizer_members:
+        organizer = db.get(User, member.user_id)
+        if organizer and organizer.email:
+            send_email(
+                db, recipient=organizer.email,
+                subject=f"Cashfree refund confirmed — {event_name}",
+                body=(f"Cashfree has confirmed a refund of {amount} for {event_name}.\n"
+                      f"Refund reference: {refund.provider_refund_id}\n\n"
+                      "You can view the refund in your SportPass dashboard."),
+                email_type=EMAIL_TYPE_REFUND,
+                reference_type="CASHFREE_REFUND_SUCCESS_ORGANIZER",
+                reference_id=str(refund.id), event_id=refund.event_id, dedupe=True,
+            )
+    participant_email = refund.participant.email if refund.participant else None
+    if participant_email:
+        send_email(
+            db, recipient=participant_email,
+            subject=f"Cashfree refund confirmed — {event_name}",
+            body=(f"Cashfree has confirmed your refund of {amount} for {event_name}.\n"
+                  f"Refund reference: {refund.provider_refund_id}\n\n"
+                  "Your bank or payment method may take additional time to reflect the credit. "
+                  "You can check its status in your SportPass dashboard."),
+            email_type=EMAIL_TYPE_REFUND,
+            reference_type="CASHFREE_REFUND_SUCCESS_PARTICIPANT",
+            reference_id=str(refund.id), event_id=refund.event_id, dedupe=True,
+        )
+
+
+def send_cashfree_refund_issue_notifications(db: Session, refund) -> None:
+    """Explain a provider-rejected/cancelled refund without implying money moved."""
+    if refund.payment_provider != "CASHFREE" or refund.provider_refund_status not in {"REJECTED", "CANCELLED"}:
+        raise ValueError("Cashfree refund is not in a provider issue state")
+    from models import OrganizationMember, User
+    event_name = refund.event.name if refund.event else "your event"
+    amount = _fmt_paise(refund.approved_refund_amount or 0)
+    body = (f"Cashfree has not completed the approved refund of {amount} for {event_name}.\n"
+            f"Refund reference: {refund.provider_refund_id}\n\n"
+            "SportPass admin is reviewing the provider outcome. Do not assume the refund has been credited.")
+    for admin in db.scalars(select(User).where(User.role == "admin", User.email.is_not(None))).all():
+        send_email(db, recipient=admin.email,
+                   subject=f"Cashfree refund requires resolution — {event_name}",
+                   body=(f"Cashfree returned {refund.provider_refund_status} for an approved refund of {amount} "
+                         f"for {event_name}.\nRefund ID: {refund.id}\n"
+                         f"Provider reference: {refund.provider_refund_id}\n\n"
+                         "Review Admin → Refunds. Do not issue a second payment without verifying Cashfree's final state."),
+                   email_type=EMAIL_TYPE_REFUND, reference_type="CASHFREE_REFUND_ISSUE_ADMIN",
+                   reference_id=str(refund.id), event_id=refund.event_id, dedupe=True)
+    for member in db.scalars(select(OrganizationMember).where(
+        OrganizationMember.organization_id == refund.organizer_id,
+        OrganizationMember.member_role == "organizer",
+    )).all():
+        organizer = db.get(User, member.user_id)
+        if organizer and organizer.email:
+            send_email(db, recipient=organizer.email,
+                       subject=f"Cashfree refund needs review — {event_name}", body=body,
+                       email_type=EMAIL_TYPE_REFUND, reference_type="CASHFREE_REFUND_ISSUE_ORGANIZER",
+                       reference_id=str(refund.id), event_id=refund.event_id, dedupe=True)
+    participant_email = refund.participant.email if refund.participant else None
+    if participant_email:
+        send_email(db, recipient=participant_email,
+                   subject=f"Cashfree refund needs review — {event_name}", body=body,
+                   email_type=EMAIL_TYPE_REFUND, reference_type="CASHFREE_REFUND_ISSUE_PARTICIPANT",
+                   reference_id=str(refund.id), event_id=refund.event_id, dedupe=True)
+
+
+def send_cashfree_refund_admin_approval_notification(db: Session, refund) -> None:
+    """Alert admins that an organizer-approved Cashfree refund needs processing."""
+    if refund.payment_provider != "CASHFREE" or refund.status != "APPROVED":
+        return
+    from models import User
+    event_name = refund.event.name if refund.event else "an event"
+    amount = _fmt_paise(refund.approved_refund_amount or 0)
+    for admin in db.scalars(select(User).where(User.role == "admin", User.email.is_not(None))).all():
+        send_email(db, recipient=admin.email,
+                   subject=f"Cashfree refund awaiting processing — {event_name}",
+                   body=(f"An organizer approved a Cashfree refund of {amount} for {event_name}.\n"
+                         f"Refund ID: {refund.id}\n\n"
+                         "Open Admin → Refunds, verify the request and process it there."),
+                   email_type=EMAIL_TYPE_REFUND, reference_type="CASHFREE_REFUND_ADMIN_APPROVED",
+                   reference_id=str(refund.id), event_id=refund.event_id, dedupe=True)

@@ -202,7 +202,7 @@ def reconcile_gateway_success(db, payment, *, provider: PaymentProvider, account
         if existing.checkout_payment_id != payment.id or existing.amount_paise != receipt.amount_paise:
             raise ValueError("Payment receipt already belongs to another order")
         return existing.disposition
-    if payment.status in {"successful", "paid_needs_review"}:
+    if payment.status in {"successful", "paid_needs_review", "refunded"}:
         disposition = "duplicate_payment"
     else:
         savepoint = db.begin_nested()
@@ -221,6 +221,10 @@ def reconcile_gateway_success(db, payment, *, provider: PaymentProvider, account
         environment=environment, payment_id=receipt.payment_id, amount_paise=receipt.amount_paise, disposition=disposition)
     db.add(receipt_row)
     db.flush()
+    from app.services.audit_service import record_audit
+    record_audit(db, actor_user_id=None, action="cashfree_payment_verified", resource_type="checkout_payment",
+                 resource_id=payment.id, metadata={"receiptId": str(receipt_row.id), "disposition": disposition,
+                    "amountPaise": receipt.amount_paise, "providerPaymentId": receipt.payment_id})
     if payment.event_order_id and environment == "production" and disposition == "confirmed" and payment.mode == "CASHFREE_PLATFORM":
         from app.services.organizer_settlement_service import post_verified_collection
         post_verified_collection(db, receipt_id=receipt_row.id)

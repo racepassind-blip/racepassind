@@ -58,7 +58,38 @@ def register(db, event, name="Player"):
         full_name=name, email=f"{uuid4()}@example.test"), idempotency_key=str(uuid4()))[0]
 
 
-@pytest.mark.parametrize("sport", ["badminton", "table_tennis", "running", "cycling", "hiking", "tennis", "squash", "triathlon", "swimming", "walkathon", "obstacle_course"])
+def test_payment_method_locks_after_first_registration(db):
+    from fastapi import HTTPException
+    event, user, payload = make_event(db, "running")
+    register(db, event)
+    event.organization.allow_cashfree = True
+    payload.pop("organization_id")
+    payload["categories"][0]["id"] = event.categories[0].id
+    payload["categories"][0]["tickets"][0]["id"] = event.categories[0].tickets[0].id
+    payload["payment_collection_method"] = "CASHFREE_MANAGED"
+    with pytest.raises(HTTPException) as exc:
+        update_event(event.id, OrganizerEventUpdateV1.model_validate(payload), user=user, db=db, storage=None)
+    assert exc.value.status_code == 409
+    db.refresh(event)
+    assert event.payment_collection_method == "DIRECT_UPI"
+
+
+def test_paid_cashfree_event_requires_admin_grant(db):
+    from fastapi import HTTPException
+    event, user, payload = make_event(db, "running")
+    payload["name"] = "Paid Cashfree race"
+    payload["categories"][0]["tickets"][0]["price_rupees"] = "100"
+    payload["payment_collection_method"] = "CASHFREE_MANAGED"
+    event.organization.paid_verification_status = "VERIFIED"
+    with pytest.raises(HTTPException) as exc:
+        create_event(OrganizerEventCreateV1.model_validate(payload), user=user, db=db, storage=None)
+    assert exc.value.status_code == 403
+    event.organization.allow_cashfree = True
+    created = create_event(OrganizerEventCreateV1.model_validate(payload), user=user, db=db, storage=None)
+    assert created["paymentCollectionMethod"] == "CASHFREE_MANAGED"
+
+
+@pytest.mark.parametrize("sport", ["badminton", "table_tennis", "running", "cycling", "trekking", "tennis", "squash", "triathlon", "swimming", "walkathon", "obstacle_course"])
 def test_adapter_contract_and_event_registration_roundtrip(db, sport):
     adapter = get_adapter(sport)
     assert isinstance(adapter, SportAdapter)
@@ -81,7 +112,7 @@ def test_adapter_contract_and_event_registration_roundtrip(db, sport):
     assert _event_response(db.get(Event, event.id))["sport"] == sport
 
 
-@pytest.mark.parametrize("alias,key", [("Table Tennis", "table_tennis"), ("table-tennis", "table_tennis"), (" Trekking ", "hiking")])
+@pytest.mark.parametrize("alias,key", [("Table Tennis", "table_tennis"), ("table-tennis", "table_tennis"), (" Trekking ", "trekking")])
 def test_legacy_aliases(alias, key):
     assert get_adapter(alias) is get_adapter(key)
 
@@ -430,7 +461,7 @@ def test_tournament_registration_fixture_score_public_flow(db, sport, points):
 
 
 def test_trekking_seat_limit(db):
-    event, _, _ = make_event(db, "hiking", quantity=1)
+    event, _, _ = make_event(db, "trekking", quantity=1)
     assert register(db, event).payment_status == "not_required"
     with pytest.raises(ValueError, match="sold out"):
         register(db, event)
@@ -445,10 +476,12 @@ def test_sport_specific_score_limit_is_not_a_shared_schema_limit():
 
 
 def test_trekking_manual_payment_confirmation_and_capacity(db):
+    from app.services.credit_service import add_credits, get_balance
     from app.services.registration_service import decide_registration_payment
     from models import EventPaymentSettings, OrganizationPaymentDestination
     event, user, _ = make_event(db, "trekking", quantity=1)
     event.organization.credit_deduction_mode = "MANUAL_EVENT_SETTLEMENT"
+    add_credits(db, organization_id=event.organization_id, amount=100000, description="seed")
     ticket = event.categories[0].tickets[0]
     ticket.price = 10000
     event.organization.status = "active"
@@ -469,8 +502,55 @@ def test_trekking_manual_payment_confirmation_and_capacity(db):
     assert registration.status == "confirmed"
     assert registration.payment_status == "approved"
     assert registration.payment.status == "approved"
+    assert get_balance(db, event.organization_id) == 100000 - registration.platform_fee_paise
     assert ticket.quantity_sold == 1
     assert ticket.quantity_reserved == 0
+
+
+def test_direct_upi_insufficient_credits_keeps_registration_pending_until_topup(db):
+    from app.services.credit_service import add_credits, get_balance
+    from app.services.registration_service import decide_registration_payment
+    from models import CreditTransaction, EventPaymentSettings, OrganizationPaymentDestination
+
+    event, user, _ = make_event(db, "running", quantity=1)
+    ticket = event.categories[0].tickets[0]
+    ticket.price = 10000
+    event.organization.paid_verification_status = "VERIFIED"
+    destination = OrganizationPaymentDestination(
+        organization_id=event.organization_id, upi_id="guard@bank",
+        payee_name="Test organizer", status="APPROVED",
+    )
+    db.add(destination)
+    db.flush()
+    event.payment_settings = EventPaymentSettings(
+        method="manual_upi", upi_id=destination.upi_id, payee_name=destination.payee_name,
+        is_active=True, payment_destination_id=destination.id,
+    )
+    db.commit()
+
+    registration = register(db, event)
+    blocked, _ = decide_registration_payment(db, user, event.id, registration.id, decision="approve")
+    assert blocked.status == "AWAITING_SPORTPASS_CREDITS"
+    assert blocked.payment_status != "approved"
+    assert blocked.ticket_token_hash is None
+    assert ticket.quantity_sold == 0
+    assert ticket.quantity_reserved == 1
+    assert get_balance(db, event.organization_id) == 0
+    assert db.scalars(select(CreditTransaction).where(CreditTransaction.registration_id == registration.id)).all() == []
+
+    fee = registration.platform_fee_paise
+    add_credits(db, organization_id=event.organization_id, amount=fee, description="Approved top-up")
+    db.commit()
+    confirmed, _ = decide_registration_payment(db, user, event.id, registration.id, decision="approve")
+    assert confirmed.status == "confirmed"
+    assert confirmed.payment_status == "approved"
+    assert confirmed.ticket_token_hash is not None
+    assert ticket.quantity_sold == 1
+    assert ticket.quantity_reserved == 0
+    debits = db.scalars(select(CreditTransaction).where(CreditTransaction.registration_id == registration.id)).all()
+    assert len(debits) == 1
+    assert debits[0].amount_paise == registration.platform_fee_paise
+    assert get_balance(db, event.organization_id) == 0
 
 
 def test_paid_registration_service_rechecks_access_and_preserves_existing_registration(db):

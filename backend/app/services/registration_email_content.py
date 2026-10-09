@@ -9,6 +9,8 @@ from content, so switching providers later requires no changes here.
 from __future__ import annotations
 
 import datetime as dt
+from html import escape
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -24,7 +26,7 @@ def _format_datetime(value: dt.datetime | None) -> str:
         return "To be announced"
     if value.tzinfo is None:
         value = value.replace(tzinfo=dt.timezone.utc)
-    return value.strftime("%d %b %Y, %I:%M %p")
+    return value.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p IST")
 
 
 def _event_location(event: Event) -> str:
@@ -64,13 +66,14 @@ def build_registration_confirmation_content(
     location = _event_location(event) if event is not None else "To be announced"
     start = _format_datetime(event.start_date) if event is not None else "To be announced"
     reference = registration.registration_reference or ""
+    attachment_reference = reference or str(registration.id)
     ticket_name = registration.ticket.name if registration.ticket is not None else "General"
     category = (
         registration.ticket.category.name
         if registration.ticket is not None and registration.ticket.category is not None
         else None
     )
-    total_paid = _money(registration.total_amount_paise)
+    total_paid = _money(registration.participant_total_paise if registration.participant_total_paise is not None else registration.total_amount_paise)
     whatsapp_url = event.whatsapp_group_url if event is not None else None
 
     is_confirmed = registration.status in {"confirmed", "checked_in"}
@@ -106,6 +109,11 @@ def build_registration_confirmation_content(
     body = "\n".join(lines)
 
     # HTML body
+    event_name, participant_name, reference, ticket_name, location, start = (
+        escape(str(value)) for value in (event_name, participant_name, reference, ticket_name, location, start)
+    )
+    category = escape(str(category)) if category else None
+    whatsapp_url = escape(whatsapp_url, quote=True) if whatsapp_url and whatsapp_url.startswith("https://") else None
     whatsapp_html = (
         f'<p><a href="{whatsapp_url}" style="color:#16a34a;font-weight:bold;">Join the event WhatsApp community</a></p>'
         if whatsapp_url
@@ -119,7 +127,9 @@ def build_registration_confirmation_content(
         status_para = "<p>We've received your registration. Your <strong>payment is under review</strong> — once confirmed, you'll receive a follow-up email with your ticket PDF and QR code.</p>"
         qr_para = '<p style="color:#666;font-size:13px;margin-top:16px;">Your QR code ticket will be sent once your payment is confirmed.</p>'
 
-    html_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111;">
+    html_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:28px;line-height:1.6;">
+  <p style="color:#f97316;font-size:20px;font-weight:bold;margin:0;">SportPass India</p>
+  <p style="color:#047857;font-size:12px;font-weight:bold;letter-spacing:1px;">{"REGISTRATION CONFIRMED" if is_confirmed else "REGISTRATION RECEIVED"}</p>
   <h2 style="color:#111;">{"Your ticket for" if is_confirmed else "Registration received —"} {event_name}</h2>
   <p>Hi {participant_name},</p>
   {status_para}
@@ -145,11 +155,12 @@ def build_registration_confirmation_content(
             qr_payload = verified_ticket_qr_payload(registration)
             if qr_payload is not None:
                 pdf = build_ticket_pdf(registration, event, qr_payload)
-                safe_ref = reference or str(registration.id)
-                attachments.append((f"SportPass-Ticket-{safe_ref}.pdf", pdf))
+                attachments.append((f"SportPass-Ticket-{attachment_reference}.pdf", pdf))
         except (RuntimeError, ValueError):
-            # PDF unavailable (e.g. unconfirmed) - send email without attachment.
-            attachments = []
+            if is_confirmed:
+                raise
+    if is_confirmed and not attachments:
+        raise ValueError("Confirmed ticket PDF unavailable; do not send an empty ticket email")
 
     return {
         "recipient": recipient,
@@ -158,4 +169,26 @@ def build_registration_confirmation_content(
         "html_body": html_body,
         "attachments": attachments,
         "event": event,
+    }
+
+
+def cashfree_booking_registrations(db: Session, order_id, recipient: str):
+    from models import OrderItem
+    registrations = db.scalars(select(Registration).join(OrderItem).where(
+        OrderItem.order_id == order_id).order_by(Registration.id)).all()
+    return [registration for registration in registrations
+            if registration.payment and registration.payment.payment_gateway == "cashfree"
+            and str((registration.responses or {}).get("email") or registration.participant.email or "").strip().lower()
+            == recipient.strip().lower()]
+
+
+def build_cashfree_booking_content(db: Session, order_id, recipient: str) -> dict:
+    registrations = cashfree_booking_registrations(db, order_id, recipient)
+    if not registrations or any(r.status not in {"confirmed", "checked_in"} for r in registrations):
+        raise ValueError("Confirmed booking unavailable")
+    contents = [build_registration_confirmation_content(db, r) for r in registrations]
+    return {
+        "body": "\n\n".join(content["body"] for content in contents),
+        "html_body": "<br>".join(content["html_body"] for content in contents),
+        "attachments": [attachment for content in contents for attachment in content["attachments"]],
     }

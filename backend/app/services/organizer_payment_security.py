@@ -61,6 +61,8 @@ def assert_paid_event_available(db, event: Event) -> OrganizationPaymentDestinat
         event.payment_collection_method not in {"DIRECT_UPI", "CASHFREE_MANAGED"}):
         raise ValueError(PUBLIC_UNAVAILABLE_MESSAGE)
     if event.payment_collection_method == "CASHFREE_MANAGED":
+        if not organization.allow_cashfree:
+            raise ValueError(PUBLIC_UNAVAILABLE_MESSAGE)
         return None
     if (not organization.allow_direct_upi or settings is None or not settings.is_active or
             settings.method != "manual_upi" or settings.payment_destination_id is None):

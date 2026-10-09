@@ -88,6 +88,12 @@ def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: in
         "schedule": event.schedule or [],
         "fieldConfig": field_config,
         "addonConfig": addon_config,
+        # Waiver CONTENT only (enabled/title/text) for the registration flow.
+        # Per-participant acceptance is never part of this public payload.
+        "waiver": (event.field_config or {}).get("waiver", {"enabled": False}),
+        # Pickup point OPTIONS only (enabled/required/points). Participant
+        # selections are never part of this public payload.
+        "pickupPoints": (event.field_config or {}).get("pickup_points", {"enabled": False}),
         "tiers": tiers,
         "platformFeeBearer": event.platform_fee_bearer,
         "paymentCollectionMethod": event.payment_collection_method,

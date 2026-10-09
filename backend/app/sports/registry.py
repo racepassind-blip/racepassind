@@ -40,7 +40,9 @@ class SportAdapterRegistry:
 registry = SportAdapterRegistry()
 for adapter in (badminton, table_tennis, running, cycling, cricket):
     registry.register(adapter)
-registry.register(trekking, "trekking")
+# Keep the old persisted "hiking" category readable while new events use
+# the canonical "trekking" key.
+registry.register(trekking, "hiking")
 # Existing generic game-scoring behavior is retained for tennis/squash.
 registry.register(SportAdapter(key="tennis", distance_required=False, supports_distance=False,
     supports_tournament=True, result_type="match_score", number_label="Player ID",

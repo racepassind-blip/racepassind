@@ -24,7 +24,7 @@ describe("sport policy isolation", () => {
   });
   it("supports legacy aliases and unknown event rendering", () => {
     expect(getSportConfig(" Table Tennis ")).toEqual(getSportConfig("table_tennis"));
-    expect(getSportConfig("trekking")).toEqual(getSportConfig("hiking"));
+    expect(getSportConfig("trekking").result_type).toBe("none");
     expect(getSportConfig("old_custom_sport").result_type).toBe("none");
     expect(getSportConfig(null).numberLabel).toBe("Bib Number");
   });
@@ -32,7 +32,7 @@ describe("sport policy isolation", () => {
     expect(eventSupportsTournament("table-tennis")).toBe(true);
     expect(eventSupportsTournament("badminton")).toBe(true);
     expect(eventSupportsTournament("running")).toBe(false);
-    expect(eventSupportsTournament("hiking")).toBe(false);
+    expect(eventSupportsTournament("trekking")).toBe(false);
     expect(eventSupportsTournament("legacy", [{ entryType: "team" }])).toBe(true);
     expect(eventSupportsTournament("legacy")).toBe(false);
   });

@@ -6,10 +6,10 @@ import badminton from "@/sports/badminton";
 import table_tennis from "@/sports/table_tennis";
 import tennis from "@/sports/tennis";
 import squash from "@/sports/squash";
-import hiking from "@/sports/hiking";
+import trekking from "@/sports/trekking";
 import cricket from "@/sports/cricket";
 
-export const sportConfig = { running, cycling, badminton, table_tennis, tennis, squash, hiking, cricket } as const satisfies Record<string, SportConfig>;
+export const sportConfig = { running, cycling, badminton, table_tennis, tennis, squash, trekking, cricket } as const satisfies Record<string, SportConfig>;
 
 
 export type ConfiguredSport = keyof typeof sportConfig;
@@ -25,11 +25,23 @@ const DEFAULT_SPORT_CONFIG: SportConfig = {
   numberLabel: "Bib Number",
   scope: "individual",
   result_type: "none",
+  supports_waiver: true,
+  supports_pickup_points: true,
 };
 
+/** Whether an event type may enable the generic Waiver & Declaration. */
+export function eventSupportsWaiver(sport: string | null | undefined): boolean {
+  return getSportConfig(sport).supports_waiver !== false;
+}
+
+/** Whether an event type may enable generic event-level Pickup Points. */
+export function eventSupportsPickupPoints(sport: string | null | undefined): boolean {
+  return getSportConfig(sport).supports_pickup_points !== false;
+}
+
 export function normalizeSport(sport: string | null | undefined): string {
-  const key = (sport ?? "").trim().toLowerCase().replace(/[- ]/g, "_");
-  return key === "trekking" ? "hiking" : key;
+  const normalized = (sport ?? "").trim().toLowerCase().replace(/[- ]/g, "_");
+  return normalized === "hiking" ? "trekking" : normalized;
 }
 
 export const sportOptions = [
@@ -39,7 +51,7 @@ export const sportOptions = [
   { value: "table_tennis", label: "Table Tennis" },
   { value: "triathlon", label: "Triathlons/Duathlons" },
   { value: "swimming", label: "Swimming (open water/mass swims)" },
-  { value: "hiking", label: "Trekking/Hiking events" },
+  { value: "trekking", label: "Trekking" },
   { value: "obstacle_course", label: "Obstacle course races (Spartan-style, mud runs)" },
   { value: "walkathon", label: "Walkathons/charity walks" },
   { value: "cricket", label: "Cricket" },

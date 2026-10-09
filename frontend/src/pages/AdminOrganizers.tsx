@@ -30,6 +30,7 @@ interface OrganizerOverview {
   approvedRevenuePaise: number;
   paidVerificationStatus: VerificationStatus;
   allowDirectUpi: boolean;
+  allowCashfree: boolean;
 }
 
 interface VerificationDetail {
@@ -283,6 +284,27 @@ const AdminOrganizers = () => {
     }
   };
 
+  const toggleCashfree = async (allow: boolean) => {
+    if (!manageOrg) return;
+    setUpiToggleBusy(true);
+    try {
+      const result = await apiRequest<{ allowCashfree: boolean; activeCashfreeEvents: Array<{ id: string; name: string }> }>(
+        `/admin/organizations/${manageOrg.organizationId}/cashfree`,
+        { method: "PUT", body: JSON.stringify({ allow }) },
+      );
+      setRows((previous) => previous.map((row) => row.organizationId === manageOrg.organizationId ? { ...row, allowCashfree: result.allowCashfree } : row));
+      setManageOrg((previous) => previous ? { ...previous, allowCashfree: result.allowCashfree } : null);
+      if (!allow && result.activeCashfreeEvents.length) {
+        toast.warning(`New paid registrations blocked for: ${result.activeCashfreeEvents.map((event) => event.name).join(", ")}. Existing checkouts can still complete.`);
+      }
+      toast.success(allow ? "Cashfree enabled for this organizer." : "Cashfree access removed for new registrations.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update Cashfree access.");
+    } finally {
+      setUpiToggleBusy(false);
+    }
+  };
+
   return (
     <AdminDashboardLayout>
       <div className="mx-auto max-w-[1500px] space-y-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -329,7 +351,7 @@ const AdminOrganizers = () => {
                     return <button key={row.organizationId} type="button" onClick={() => void openManage(row)} className="group rounded-2xl border bg-background p-5 text-left transition hover:border-primary/40 hover:shadow-md">
                       <div className="flex items-start justify-between gap-4"><div className="min-w-0"><h3 className="truncate text-lg font-bold">{row.organizationName}</h3><p className="truncate text-sm text-muted-foreground">{row.responsiblePerson ?? "Responsible person not set"}{row.email ? ` · ${row.email}` : ""}</p><p className="text-xs text-muted-foreground">{[row.city, row.state].filter(Boolean).join(", ") || "Location not set"}</p></div><span className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition group-hover:border-primary group-hover:text-primary">Manage</span></div>
                       <div className="mt-5 grid grid-cols-3 gap-2"><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Events</p><p className="font-bold">{row.eventsPublished} / {row.eventsTotal}</p></div><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Participants</p><p className="font-bold">{row.totalParticipants.toLocaleString("en-IN")}</p></div><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Sales</p><p className="font-bold">{formatINR(row.approvedRevenuePaise)}</p></div></div>
-                      <div className="mt-4 flex flex-wrap gap-2"><Badge variant="outline" className={`gap-1 ${meta.className}`}>{row.paidVerificationStatus === "VERIFIED" ? <BadgeCheck className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "UNDER_REVIEW" ? <Clock className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "REJECTED" ? <XCircle className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}{meta.label}</Badge><Badge variant="outline" className={row.allowDirectUpi ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}><Banknote className="mr-1 h-3 w-3" />UPI {row.allowDirectUpi ? "allowed" : "restricted"}</Badge></div>
+                      <div className="mt-4 flex flex-wrap gap-2"><Badge variant="outline" className={`gap-1 ${meta.className}`}>{row.paidVerificationStatus === "VERIFIED" ? <BadgeCheck className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "UNDER_REVIEW" ? <Clock className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "REJECTED" ? <XCircle className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}{meta.label}</Badge><Badge variant="outline" className={row.allowDirectUpi ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}><Banknote className="mr-1 h-3 w-3" />UPI {row.allowDirectUpi ? "allowed" : "restricted"}</Badge><Badge variant="outline" className={row.allowCashfree ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}>Cashfree {row.allowCashfree ? "allowed" : "restricted"}</Badge></div>
                     </button>;
                   })}
                 </div>
@@ -425,7 +447,7 @@ const AdminOrganizers = () => {
                   <p className="font-semibold text-sm">Allow Direct UPI Payments</p>
                   <p className="text-xs text-muted-foreground mt-1">
                     Direct UPI sends participant registration payments directly to the organizer.
-                    SportPass platform fees are billed separately.
+                    SportPass platform fees are deducted from organizer Credits when registrations are approved.
                     Enable this only for approved or trusted organizers.
                   </p>
                 </div>
@@ -446,6 +468,13 @@ const AdminOrganizers = () => {
             </section>
 
             <section className="rounded-xl border p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div><p className="font-semibold text-sm">Allow Cashfree Payments</p><p className="mt-1 text-xs text-muted-foreground">Admin approval is required before this organizer can collect new registrations through Cashfree. Existing payments and refunds can still be reconciled.</p></div>
+                <button type="button" role="switch" aria-label="Allow Cashfree Payments" aria-checked={manageOrg?.allowCashfree ?? false} disabled={upiToggleBusy} onClick={() => void toggleCashfree(!(manageOrg?.allowCashfree ?? false))} className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${manageOrg?.allowCashfree ? "bg-emerald-500" : "bg-muted-foreground/30"}`}><span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform ${manageOrg?.allowCashfree ? "translate-x-5" : "translate-x-0"}`} /></button>
+              </div>
+            </section>
+
+            <section className="rounded-xl border p-4 space-y-3">
               <div><p className="font-semibold text-sm">Payment destinations</p><p className="mt-1 text-xs text-muted-foreground">Only an approved destination can receive new Direct UPI registrations or merchandise orders.</p></div>
               {destinations.length === 0 ? <p className="text-xs text-muted-foreground">No UPI destination submitted.</p> : destinations.map((destination) => (
                 <div key={destination.id} className="rounded-lg border bg-muted/20 p-3 text-sm">
@@ -462,7 +491,7 @@ const AdminOrganizers = () => {
             {upiWarningEvents.length > 0 && (
               <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 space-y-2">
                 <p className="font-semibold">⚠ This organizer has {upiWarningEvents.length} active event{upiWarningEvents.length > 1 ? "s" : ""} using Direct UPI.</p>
-                <p className="text-xs">Access has been removed. New registrations on these events will be blocked at the backend. Existing registrations and historical payments are not affected. Switch the event's payment method before next registration opens.</p>
+                <p className="text-xs">Access has been removed. New paid registrations on these events will be blocked. Existing payments remain reconcilable. If registrations already exist, the event cannot switch payment methods; re-enable access or create a new event.</p>
                 <ul className="mt-1 space-y-1 text-xs">
                   {upiWarningEvents.map((ev) => <li key={ev.id} className="font-medium">• {ev.name}</li>)}
                 </ul>

@@ -180,6 +180,20 @@ def on_startup() -> None:
 
         Base.metadata.create_all(bind=engine)
 
+    from db import SessionLocal
+    from app.services.cashfree_recovery import start_recovery_worker
+    app.state.cashfree_recovery = start_recovery_worker(SessionLocal, engine)
+
+
+@app.on_event("shutdown")
+def stop_cashfree_recovery() -> None:
+    recovery = getattr(app.state, "cashfree_recovery", None)
+    if recovery:
+        stop, worker = recovery
+        stop.set()
+        if worker.is_alive():
+            worker.join(timeout=2)
+
 
 @app.get("/health")
 def health() -> dict[str, str]:

@@ -343,6 +343,150 @@ def normalize_addon_config(config: dict[str, Any] | None) -> dict[str, list[dict
     return {"addons": normalized}
 
 
+# ---------------------------------------------------------------------------
+# Generic event-level Waiver & Declaration
+#
+# The waiver is a reusable, capability-gated event setting (not sport-specific).
+# Its content (title/text) belongs to the individual event and is stored as a
+# sibling key inside the event's field_config JSON — the same pattern already
+# used for ``sport_config`` — so no new table/column is required.
+#
+# Acceptance is captured per registration through the ordinary participant
+# response pipeline: when a waiver is enabled, ``WAIVER_ACCEPTANCE_FIELD`` is
+# injected as a required yes/no field for the primary registrant, so existing
+# required-field validation and response storage apply unchanged.
+# ---------------------------------------------------------------------------
+
+WAIVER_ACCEPTANCE_FIELD_ID = "waiver_accepted"
+_WAIVER_MAX_TITLE = 200
+_WAIVER_MAX_TEXT = 10000
+
+
+def default_waiver_config() -> dict[str, Any]:
+    return {"enabled": False}
+
+
+def normalize_waiver_config(config: dict[str, Any] | None) -> dict[str, Any]:
+    """Validate an event-level waiver configuration.
+
+    Disabled waivers normalise to ``{"enabled": False}`` and carry no content.
+    Enabled waivers require a title and text and are length-bounded.
+    """
+    if not config:
+        return default_waiver_config()
+    if not isinstance(config, dict):
+        raise ValueError("Waiver configuration is invalid")
+    if not bool(config.get("enabled", False)):
+        return default_waiver_config()
+    title = _clean_text(config.get("title"), "Waiver title", max_length=_WAIVER_MAX_TITLE)
+    raw_text = config.get("text")
+    if not isinstance(raw_text, str) or not raw_text.strip():
+        raise ValueError("Waiver text is required")
+    text = raw_text.strip()
+    if len(text) > _WAIVER_MAX_TEXT:
+        raise ValueError("Waiver text is too long")
+    return {"enabled": True, "title": title, "text": text}
+
+
+def waiver_acceptance_field(order: int = 10_000) -> dict[str, Any]:
+    """The synthetic required field used to validate/store waiver acceptance."""
+    return {
+        "id": WAIVER_ACCEPTANCE_FIELD_ID,
+        "label": "Waiver & Declaration acceptance",
+        "type": "yes_no",
+        "required": True,
+        "predefined": True,
+        "order": order,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Generic event-level Pickup Points
+#
+# Pickup points are a reusable, capability-gated event setting (not
+# sport-specific). The list of points belongs to the individual event and is
+# stored as a sibling key inside the event's field_config JSON — the same
+# pattern used for ``sport_config`` and ``waiver`` — so no new table/column is
+# required.
+#
+# A participant's selection is captured per participant through the ordinary
+# response pipeline: when pickup points are enabled, ``PICKUP_POINT_FIELD_ID``
+# is injected as a select field whose options are the configured point ids, so
+# existing required-field validation and response storage apply unchanged and an
+# invalid id is rejected automatically.
+# ---------------------------------------------------------------------------
+
+PICKUP_POINT_FIELD_ID = "pickup_point_id"
+_PICKUP_MAX_POINTS = 100
+
+
+def default_pickup_points_config() -> dict[str, Any]:
+    return {"enabled": False}
+
+
+def normalize_pickup_points_config(config: dict[str, Any] | None) -> dict[str, Any]:
+    """Validate an event-level pickup-points configuration.
+
+    Disabled configs normalise to ``{"enabled": False}`` and carry no points.
+    Enabled configs require at least one point; each point needs a stable id and
+    a name, with optional description/address.
+    """
+    if not config:
+        return default_pickup_points_config()
+    if not isinstance(config, dict):
+        raise ValueError("Pickup points configuration is invalid")
+    if not bool(config.get("enabled", False)):
+        return default_pickup_points_config()
+
+    raw_points = config.get("points")
+    if not isinstance(raw_points, list) or not raw_points:
+        raise ValueError("At least one pickup point is required")
+    if len(raw_points) > _PICKUP_MAX_POINTS:
+        raise ValueError("Too many pickup points")
+
+    normalized_points: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for raw in raw_points:
+        if not isinstance(raw, dict):
+            raise ValueError("Pickup point configuration is invalid")
+        point_id = _clean_text(raw.get("id"), "Pickup point id", max_length=64)
+        if point_id in seen_ids:
+            raise ValueError("Pickup point ids must be unique")
+        seen_ids.add(point_id)
+        name = _clean_text(raw.get("name"), "Pickup point name", max_length=120)
+        point: dict[str, Any] = {"id": point_id, "name": name}
+        raw_description = raw.get("description")
+        if raw_description not in (None, ""):
+            point["description"] = _clean_text(raw_description, f"Description for {name}", max_length=500)
+        raw_address = raw.get("address")
+        if raw_address not in (None, ""):
+            point["address"] = _clean_text(raw_address, f"Address for {name}", max_length=300)
+        normalized_points.append(point)
+
+    return {
+        "enabled": True,
+        "required": bool(config.get("required", False)),
+        "points": normalized_points,
+    }
+
+
+def pickup_point_field(point_ids: list[str], required: bool, order: int = 10_001) -> dict[str, Any]:
+    """The synthetic field used to validate/store a per-participant pickup choice.
+
+    Options are the configured point ids, so the response pipeline rejects an
+    invalid pickup id with "Select a valid value for Pickup point".
+    """
+    return {
+        "id": PICKUP_POINT_FIELD_ID,
+        "label": "Pickup point",
+        "type": "select",
+        "required": required,
+        "predefined": True,
+        "order": order,
+        "options": list(point_ids),
+    }
+
+
 def normalize_event_configs(
     field_config: dict[str, Any] | None,
     addon_config: dict[str, Any] | None,
@@ -394,6 +538,8 @@ def calculate_registration_total(
     *,
     base_fee_paise: int,
     is_team_member: bool = False,
+    extra_required_fields: list[dict[str, Any]] | None = None,
+    per_participant_fields: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Validate responses and compute the registration total.
 
@@ -401,6 +547,15 @@ def calculate_registration_total(
     > 0 so that per-member rows are validated against ``participant_fields``
     only (no email/phone contact check applies).  For participant index 0 (the
     captain) or any non-team registration, leave ``is_team_member=False``.
+
+    ``extra_required_fields`` lets a caller append entry-level fields (e.g. the
+    waiver acceptance field) to the primary registrant's validated field list.
+    They are ignored for non-primary team members, keeping entry-level items off
+    per-member rows.
+
+    ``per_participant_fields`` lets a caller append fields (e.g. the pickup-point
+    select) that apply to every participant row, including non-primary team
+    members, since the selection is captured per participant.
     """
     responses = responses or {}
     selections = selections or {}
@@ -419,6 +574,15 @@ def calculate_registration_total(
         fields = field_config["fields"]
         require_contact = True
 
+    # Entry-level required fields (e.g. waiver acceptance) apply to the primary
+    # registrant only, never to additional team members.
+    if extra_required_fields and not is_team_member:
+        fields = [*fields, *extra_required_fields]
+    # Per-participant fields (e.g. pickup point) apply to every participant row,
+    # including non-primary team members.
+    if per_participant_fields:
+        fields = [*fields, *per_participant_fields]
+
     known_fields = {field["id"]: field for field in fields}
     # ``email`` and ``phone`` are shared-contact keys merged onto every member row
     # by the registration service (see _merge_shared_contact). They are entry-level
@@ -431,6 +595,8 @@ def calculate_registration_total(
     normalized_responses: dict[str, Any] = {}
     for field in fields:
         value = responses.get(field["id"])
+        if field["id"] == WAIVER_ACCEPTANCE_FIELD_ID and value is not True:
+            raise ValueError("You must accept the waiver to register")
         if value in (None, ""):
             if field["required"]:
                 raise ValueError(f"{field['label']} is required")

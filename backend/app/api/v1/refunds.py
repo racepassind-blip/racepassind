@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
@@ -31,6 +31,7 @@ from app.services.email_service import (
     send_refund_rejected_notification,
     send_refund_requested_notification,
     send_refund_sent_notification,
+    send_cashfree_refund_admin_approval_notification,
 )
 from app.services.refund_service import (
     check_refund_eligibility,
@@ -289,11 +290,11 @@ def organizer_get_registration_refund(
 
 
 @router.get("/organizer/refunds")
-def organizer_list_refunds(    event_id: UUID | None = None,
+def organizer_list_refunds(event_id: UUID | None = None,
     refund_status: str | None = None,
     payment_provider: str | None = None,
-    limit: int = 50,
-    cursor: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: UUID | None = None,
     user: User = Depends(require_roles("organizer", "admin")),
     db: Session = Depends(get_db),
 ):
@@ -306,7 +307,7 @@ def organizer_list_refunds(    event_id: UUID | None = None,
             status=refund_status,
             payment_provider=payment_provider,
             limit=limit,
-            cursor=cursor,
+            cursor=str(cursor) if cursor else None,
         )
         has_more = len(refunds) > limit
         return {
@@ -332,7 +333,7 @@ def organizer_list_refunds(    event_id: UUID | None = None,
         status=refund_status,
         payment_provider=payment_provider,
         limit=limit,
-        cursor=cursor,
+        cursor=str(cursor) if cursor else None,
     )
     has_more = len(refunds) > limit
     return {
@@ -389,6 +390,7 @@ def organizer_review_refund(
         if loaded:
             if payload.decision == "approve":
                 send_refund_approved_notification(db, loaded)
+                send_cashfree_refund_admin_approval_notification(db, loaded)
             else:
                 send_refund_rejected_notification(db, loaded)
     except Exception:
@@ -447,8 +449,8 @@ def admin_list_refunds(
     organizer_id: UUID | None = None,
     refund_status: str | None = None,
     payment_provider: str | None = None,
-    limit: int = 50,
-    cursor: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: UUID | None = None,
     user: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
 ):
@@ -460,7 +462,7 @@ def admin_list_refunds(
         status=refund_status,
         payment_provider=payment_provider,
         limit=limit,
-        cursor=cursor,
+        cursor=str(cursor) if cursor else None,
     )
     has_more = len(refunds) > limit
     return {
@@ -468,6 +470,24 @@ def admin_list_refunds(
         "hasMore": has_more,
         "nextCursor": str(refunds[limit - 1].id) if has_more and refunds else None,
     }
+
+
+@router.get("/admin/refunds/filter-options")
+def admin_refund_filter_options(
+    search: str = Query(default="", max_length=100),
+    user: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+):
+    """Search only events and organizers that actually have refund records."""
+    pattern = f"%{search.strip()}%"
+    events = db.execute(select(Event.id, Event.name).join(Refund, Refund.event_id == Event.id)
+                        .where(Event.name.ilike(pattern)).distinct().order_by(Event.name).limit(50)).all()
+    organizers = db.execute(select(Organization.id, Organization.name)
+                            .join(Refund, Refund.organizer_id == Organization.id)
+                            .where(Organization.name.ilike(pattern)).distinct()
+                            .order_by(Organization.name).limit(50)).all()
+    return {"events": [{"id": str(identifier), "name": name} for identifier, name in events],
+            "organizers": [{"id": str(identifier), "name": name} for identifier, name in organizers]}
 
 
 @router.get("/admin/refunds/{refund_id}")

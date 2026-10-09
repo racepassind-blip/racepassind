@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from uuid import UUID
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
-from models import AllocationHistory, AuditLog
+from models import AllocationHistory, AuditLog, User
 
 _SENSITIVE_METADATA_PARTS = (
     "password",
@@ -61,8 +63,22 @@ def record_audit(
             resource_type=resource_type,
             resource_id=str(resource_id) if resource_id is not None else None,
             metadata_json=safe_audit_metadata(metadata),
+            # PostgreSQL now() is fixed at transaction start. Use each action's
+            # timestamp so transitions in one transaction display in order.
+            created_at=datetime.now(timezone.utc),
         )
     )
+
+
+def audit_history(db: Session, *, resource_type: str, resource_id) -> list[dict]:
+    """For authorized admin detail views; do not expose through public routes."""
+    rows = db.execute(select(AuditLog, User.name).outerjoin(User, User.id == AuditLog.actor_user_id)
+        .where(AuditLog.resource_type == resource_type, AuditLog.resource_id == str(resource_id))
+        .order_by(AuditLog.created_at, AuditLog.id)).all()
+    return [{"id": str(row.id), "action": row.action, "createdAt": row.created_at,
+             "actor": name or ("System" if row.actor_user_id is None else "Former user"),
+             "actorId": str(row.actor_user_id) if row.actor_user_id else None,
+             "details": row.metadata_json or {}} for row, name in rows]
 
 
 def record_allocation_change(

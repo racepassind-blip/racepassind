@@ -233,16 +233,9 @@ def event_settlement_summary(db: Session, *, event_id: UUID) -> dict:
 
 
 def settle_event_credits(db: Session, *, event_id: UUID, created_by: UUID) -> CreditTransaction:
-    event = db.scalar(select(Event).where(Event.id == event_id).with_for_update())
-    if event is None:
-        raise CreditValidationError("Event not found")
-    organization = db.scalar(select(Organization).where(Organization.id == event.organization_id).with_for_update())
-    if organization is None or organization.credit_deduction_mode != "MANUAL_EVENT_SETTLEMENT":
-        raise CreditValidationError("Event organization is not configured for manual settlement")
-    required = event_settlement_summary(db, event_id=event_id)["requiredPaise"]
-    if required <= 0:
-        raise CreditValidationError("No SportPass Credits are required for this event")
-    return debit_credits(db, organization_id=event.organization_id, amount=required, transaction_type=CREDIT_MANUAL_EVENT_DEBIT, description="Manual post-event SportPass settlement", reason="Admin event settlement", event_id=event_id, source_type="EVENT", source_id=str(event_id), created_by=created_by)
+    # Keep the historical symbol for callers, but never allow a second,
+    # event-wide debit alongside per-registration Credits.
+    raise CreditValidationError("Manual event Credits settlement is disabled; Credits are deducted when each registration is confirmed")
 
 
 def credit_event_discount(db: Session, *, event_id: UUID, amount_paise: int | Decimal, reason: str, created_by: UUID, source_id: str | None = None) -> CreditTransaction:

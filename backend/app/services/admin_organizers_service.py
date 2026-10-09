@@ -95,6 +95,7 @@ def get_admin_organizers_overview(db: Session, *, page: int = 1, page_size: int 
                 "approvedRevenuePaise": revenue_paise,
                 "paidVerificationStatus": org.paid_verification_status,
                 "allowDirectUpi": org.allow_direct_upi,
+                "allowCashfree": org.allow_cashfree,
                 "creditDeductionMode": org.credit_deduction_mode,
                 "platformPricing": get_effective_pricing(org),
             }
