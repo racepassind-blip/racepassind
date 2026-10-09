@@ -10,8 +10,8 @@ describe("trekking sport configuration", () => {
 
   it("exposes only the capabilities that apply to a trek", () => {
     const config = getSportConfig("trekking");
-    // Distance is supported; tournament/team-tournament and race results are not.
-    expect(config.supports_distance).toBe(true);
+    // Trekking uses one event-level route; participants do not choose a distance.
+    expect(config.supports_distance).toBe(false);
     expect(config.supports_tournament).toBe(false);
     expect(config.team_tournament).toBe(false);
     expect(config.result_type).toBe("none");
@@ -65,7 +65,7 @@ describe("trekking in the event creation/editing flow", () => {
   it("drives the generic form, not any sport-specific setup block", () => {
     const config = getSportConfig("trekking");
     expect(config.event_setup).toBeUndefined();       // no cricket setup block
-    expect(config.supports_distance).toBe(true);        // generic distance fields show
+    expect(config.supports_distance).toBe(false);       // no category/distance fields
     expect(eventSupportsTournament("trekking")).toBe(false); // no tournament setup
     expect(config.result_type).toBe("none");            // no race / match results
     expect(config.supports_bib).toBe(false);            // no bib configuration

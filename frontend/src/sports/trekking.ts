@@ -1,11 +1,12 @@
 import type { SportConfig } from "./types";
 
-// Canonical "trekking" sport configuration. Treks support distance/category and
-// the generic check-in + communication tooling, but never expose bib/number
+// Canonical "trekking" sport configuration. A trek has one shared event route;
+// distance/category are therefore not participant choices. It still uses the
+// generic check-in and communication tooling, but never exposes bib/number
 // allocation, tournament, court/match/draw, or race-time (pace/speed) functionality.
 export default {
     participant_label: "Trekker",
-    supports_distance: true,
+    supports_distance: false,
     supports_bib: false,
     supports_tournament: false,
     team_tournament: false,

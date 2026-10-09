@@ -58,7 +58,7 @@ const Index = () => {
               Find your next event.
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-8 text-white/80 sm:text-xl">
-              Browse races, tournaments, and community events across India. Pick a date, choose your entry, and get moving.
+              Browse races, tournaments, treks, and community events across India. Pick a date, choose your entry, and get moving.
             </p>
 
             <div className="mt-8 flex max-w-2xl flex-col gap-3 sm:flex-row">
@@ -87,8 +87,8 @@ const Index = () => {
 
         <div className="absolute inset-x-0 bottom-0 border-t border-white/15 bg-[#101b35]/80 backdrop-blur-md">
           <div className="mx-auto grid max-w-7xl grid-cols-3 divide-x divide-white/15 px-4 py-5 text-center sm:px-6 lg:px-8">
-            <div><p className="text-base font-bold sm:text-lg">Every sport</p><p className="mt-1 text-xs text-white/60 sm:text-sm">From races to tournaments</p></div>
-            <div><p className="text-base font-bold sm:text-lg">India-first</p><p className="mt-1 text-xs text-white/60 sm:text-sm">Simple registration &amp; UPI payments</p></div>
+            <div><p className="text-base font-bold sm:text-lg">Every sport</p><p className="mt-1 text-xs text-white/60 sm:text-sm">From races to treks and tournaments</p></div>
+            <div><p className="text-base font-bold sm:text-lg">India-first</p><p className="mt-1 text-xs text-white/60 sm:text-sm">Simple registration &amp; trusted payments</p></div>
             <div><p className="text-base font-bold sm:text-lg">Community-led</p><p className="mt-1 text-xs text-white/60 sm:text-sm">Built around real sporting events</p></div>
           </div>
         </div>
@@ -136,6 +136,17 @@ const Index = () => {
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+            <h3 className="text-lg font-bold">Trekking</h3>
+            <p className="mt-2 text-sm text-muted-foreground">Route-based outdoor events with the safety details participants need</p>
+            <ul className="mt-4 space-y-2 text-sm">
+              <li className="flex items-start gap-2"><span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#ff9933]" />One shared trek route</li>
+              <li className="flex items-start gap-2"><span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#ff9933]" />Waiver acknowledgement</li>
+              <li className="flex items-start gap-2"><span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#ff9933]" />Pickup and meeting points</li>
+              <li className="flex items-start gap-2"><span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#ff9933]" />Tickets and QR check-in</li>
+            </ul>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
             <h3 className="text-lg font-bold">Badminton</h3>
             <p className="mt-2 text-sm text-muted-foreground">Tournament-style events with draw management</p>
             <ul className="mt-4 space-y-2 text-sm">
@@ -148,6 +159,22 @@ const Index = () => {
               <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Scores</li>
               <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Results</li>
             </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-y bg-muted/40">
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:px-8 lg:py-20">
+          <div>
+            <p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-primary">Built for a complete event lifecycle</p>
+            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">More than a registration form.</h2>
+            <p className="mt-4 leading-7 text-muted-foreground">SportPass connects the participant journey with the organizer workflow, so the important details stay visible from signup to event day and beyond.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border bg-card p-5"><p className="font-black">Clear participant details</p><p className="mt-2 text-sm leading-6 text-muted-foreground">Collect waivers, pickup points, ticket choices, and sport-specific information in one flow.</p></div>
+            <div className="rounded-2xl border bg-card p-5"><p className="font-black">Payments with a clear status</p><p className="mt-2 text-sm leading-6 text-muted-foreground">Events use one enabled payment mode at a time: Direct UPI or Cashfree checkout.</p></div>
+            <div className="rounded-2xl border bg-card p-5"><p className="font-black">Event-day confidence</p><p className="mt-2 text-sm leading-6 text-muted-foreground">Give organizers searchable registrations, QR tickets, check-in, and operational exports.</p></div>
+            <div className="rounded-2xl border bg-card p-5"><p className="font-black">Traceable follow-through</p><p className="mt-2 text-sm leading-6 text-muted-foreground">Refunds, Credits deductions, settlements, and admin actions remain linked to the event record.</p></div>
           </div>
         </div>
       </section>

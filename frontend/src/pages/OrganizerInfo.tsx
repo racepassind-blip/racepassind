@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   CreditCard,
   ListChecks,
+  MapPin,
   Mail,
   QrCode,
   ScanLine,
@@ -25,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createWhatsAppUrl, WHATSAPP_MESSAGES } from "@/lib/whatsapp";
 
-type SportKey = "running" | "cycling" | "badminton" | "tennis" | "table-tennis";
+type SportKey = "running" | "cycling" | "trekking" | "badminton" | "tennis" | "table-tennis";
 
 interface SportFeature {
   title: string;
@@ -42,6 +43,7 @@ interface SportPlaybook {
 const sportTabs: Array<{ key: SportKey; label: string }> = [
   { key: "running", label: "Running" },
   { key: "cycling", label: "Cycling" },
+  { key: "trekking", label: "Trekking" },
   { key: "badminton", label: "Badminton" },
   { key: "tennis", label: "Tennis" },
   { key: "table-tennis", label: "Table tennis" },
@@ -66,6 +68,16 @@ const sportPlaybooks: Record<SportKey, SportPlaybook> = {
       { title: "Payment and participant control", description: "Verify UPI references, confirm riders, add offline entries, and export lists.", icon: ClipboardCheck },
       { title: "Rider check-in", description: "Use bibs, QR tickets, checkpoints, and duplicate-scan protection on event day.", icon: QrCode },
       { title: "Cycling results", description: "Publish finish times, category rankings, and average-speed calculations.", icon: Trophy },
+    ],
+  },
+  trekking: {
+    label: "Trekking and outdoor experiences",
+    summary: "Publish a clear route-based event with one shared trek distance, participant waivers, pickup points, ticket tiers, and event-day check-in.",
+    features: [
+      { title: "One shared trek route", description: "Keep the registration simple for a trek: one route, clear capacity, ticket tiers, and no artificial distance categories.", icon: MapPin },
+      { title: "Waiver before registration", description: "Collect required participant acknowledgements for safety, responsibility, and event conditions as part of the registration flow.", icon: ClipboardCheck },
+      { title: "Pickup and meeting points", description: "Show participants where to meet and help the organizer coordinate the event-day start point.", icon: CalendarDays },
+      { title: "QR check-in", description: "Confirm arrivals from the same participant list and keep the event-day record searchable.", icon: QrCode },
     ],
   },
   badminton: {
@@ -109,11 +121,13 @@ const journeySteps = [
 
 const coreFeatures = [
   { icon: Ticket, title: "One registration link", description: "Participants see the event, choose a category, pay, and submit their details in one flow." },
-  { icon: WalletCards, title: "Payments you can audit", description: "Direct UPI, UTR references, verification status, received amounts, and refunds stay attached to the registration." },
+  { icon: WalletCards, title: "Choose one payment mode per event", description: "Use admin-enabled Direct UPI with SportPass Credits or admin-enabled Cashfree checkout, with the payment status attached to every registration." },
+  { icon: ClipboardCheck, title: "Waivers and pickup points", description: "Collect event-specific acknowledgements and publish meeting or pickup instructions before participants arrive." },
   { icon: Users, title: "A usable participant list", description: "Search by name, phone, email, or registration number and export the exact view you need." },
   { icon: Mail, title: "Event communication", description: "Send confirmations and participant updates without maintaining separate contact lists." },
   { icon: QrCode, title: "Event-day tools", description: "Scan tickets, prevent duplicate check-ins, and follow participants across multiple checkpoints." },
-  { icon: BarChart3, title: "Results people can follow", description: "Publish category-specific race rankings or tournament outcomes on a clear public page." },
+  { icon: BarChart3, title: "Refunds, settlements, and audit history", description: "Keep refund decisions, manual transfers, Credits deductions, settlements, and admin actions traceable by event." },
+  { icon: Trophy, title: "Results people can follow", description: "Publish category-specific race rankings or tournament outcomes on a clear public page." },
 ];
 
 const OrganizerInfo = () => {
@@ -135,7 +149,7 @@ const OrganizerInfo = () => {
               <Button asChild size="lg" variant="outline" className="border-white/25 bg-white/5 font-bold text-white hover:bg-white/10 hover:text-white"><Link to="/signup?type=organizer">Sell your merchandise <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
               <Button asChild size="lg" variant="outline" className="border-white/25 bg-white/5 font-bold text-white hover:bg-white/10 hover:text-white"><a href={createWhatsAppUrl(WHATSAPP_MESSAGES.organizerInterest)} target="_blank" rel="noopener noreferrer">Talk to SportPass</a></Button>
             </div>
-            <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/70"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Direct UPI supported</span><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Prepaid Credits</span><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Category-specific results</span></div>
+            <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/70"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Direct UPI or Cashfree</span><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Trekking-ready forms</span><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Event-wise audit trail</span></div>
           </div>
 
           <div className="rounded-3xl border border-white/15 bg-white/10 p-4 shadow-2xl backdrop-blur-md sm:p-6">

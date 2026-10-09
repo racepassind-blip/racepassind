@@ -319,6 +319,24 @@ const OrganizerEventCreate = () => {
   const [addonEditors, setAddonEditors] = useState<AddonEditor[]>(defaultAddonEditors);
   const currentSportConfig = getSportConfig(sport);
   const supportsDistance = currentSportConfig.supports_distance;
+  const isTrekking = normalizeSport(sport) === "trekking";
+
+  const handleSportChange = (value: string) => {
+    const nextSport = normalizeSport(value);
+    setSport(nextSport);
+    if (nextSport === "trekking") {
+      setCategories((current) => current.map((category) => ({
+        ...category,
+        name: "Trekking",
+        distance: "",
+        distanceValue: "",
+        entryType: "singles",
+        participantsPerEntry: 1,
+        teamSizeMin: null,
+        teamSizeMax: null,
+      })));
+    }
+  };
   const waiverSupported = eventSupportsWaiver(sport);
   const pickupSupported = eventSupportsPickupPoints(sport);
   // Build combined distance strings for the category_distance registration dropdown
@@ -808,7 +826,7 @@ const OrganizerEventCreate = () => {
       }
     }
     if (step === 2) {
-      if (categories.some((category) => !category.name.trim() || (supportsDistance && !category.distanceValue.trim()) || category.tickets.some((ticket) => !ticket.name.trim() || ticket.price.trim() === "" || ticket.quantity.trim() === ""))) {
+      if (categories.some((category) => ((!isTrekking && !category.name.trim()) || (supportsDistance && !category.distanceValue.trim()) || category.tickets.some((ticket) => !ticket.name.trim() || ticket.price.trim() === "" || ticket.quantity.trim() === "")))) {
         toast.error("Complete every category and ticket field.");
         return false;
       }
@@ -912,7 +930,7 @@ const OrganizerEventCreate = () => {
       toast.error("Ask SportPass to enable this payment method for your organizer.");
       return;
     }
-    if (categories.some((category) => !category.name.trim() || (supportsDistance && !category.distanceValue.trim()) || category.tickets.some((ticket) => !ticket.name.trim() || ticket.price.trim() === "" || ticket.quantity.trim() === ""))) {
+    if (categories.some((category) => ((!isTrekking && !category.name.trim()) || (supportsDistance && !category.distanceValue.trim()) || category.tickets.some((ticket) => !ticket.name.trim() || ticket.price.trim() === "" || ticket.quantity.trim() === "")))) {
       toast.error("Complete every category and ticket field.");
       return;
     }
@@ -1039,14 +1057,14 @@ const OrganizerEventCreate = () => {
         banner_url: null,
         categories: categories.map((category) => ({
           ...(eventId && category.persisted ? { id: category.id } : {}),
-          name: category.name,
+          name: isTrekking ? "Trekking" : category.name,
           distance: supportsDistance ? category.distance.trim() || null : null,
           description: category.description,
           age_min: category.ageMin,
           age_max: category.ageMax,
           gender: category.gender,
-          entry_type: category.entryType,
-          participants_per_entry: category.participantsPerEntry,
+          entry_type: isTrekking ? "singles" : category.entryType,
+          participants_per_entry: isTrekking ? 1 : category.participantsPerEntry,
           ...(category.entryType === "team" ? { team_size_min: category.teamSizeMin, team_size_max: category.teamSizeMax } : {}),
           tickets: category.tickets.map((ticket) => ({
             ...(eventId && ticket.persisted ? { id: ticket.id } : {}),
@@ -1084,10 +1102,10 @@ const OrganizerEventCreate = () => {
         registrationStatus: "open",
         location: { name: location.trim(), address: address || null, city: city || null, state: state || null, country: "India" },
         categories: categories.map((category) => ({
-          name: category.name.trim(),
+          name: isTrekking ? "Trekking" : category.name.trim(),
           distance: supportsDistance ? category.distance.trim() || null : null,
-          entryType: category.entryType,
-          participantsPerEntry: category.participantsPerEntry,
+          entryType: isTrekking ? "singles" : category.entryType,
+          participantsPerEntry: isTrekking ? 1 : category.participantsPerEntry,
           tickets: category.tickets.map((ticket) => ({ name: ticket.name.trim(), pricePaise: Math.round(Number(ticket.price) * 100) })),
         })),
       };
@@ -1173,7 +1191,7 @@ const OrganizerEventCreate = () => {
               </div>}
               <div className="space-y-2 sm:col-span-2"><Label>Event name *</Label><Input value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="e.g. Bengaluru Community Sports Day" /></div>
               <div className="space-y-2 sm:col-span-2"><Label>Event description *</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Tell participants what makes this event special." /></div>
-              <div className="space-y-2"><Label>Sport *</Label><Select value={sport} onValueChange={setSport}><SelectTrigger><SelectValue placeholder="Select sport" /></SelectTrigger><SelectContent>{sports.map((sportOption) => <SelectItem key={sportOption.value} value={sportOption.value}>{sportOption.label}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Sport *</Label><Select value={sport} onValueChange={handleSportChange}><SelectTrigger><SelectValue placeholder="Select sport" /></SelectTrigger><SelectContent>{sports.map((sportOption) => <SelectItem key={sportOption.value} value={sportOption.value}>{sportOption.label}</SelectItem>)}</SelectContent></Select></div>
               {currentSportConfig.event_setup === "cricket" && <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/[0.035] p-4 sm:col-span-2"><div><h3 className="font-semibold">Cricket Setup</h3><p className="mt-1 text-sm text-muted-foreground">Basic event defaults for this cricket event.</p></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Tournament format</Label><Select value={cricketConfig.tournament_format} onValueChange={(value) => setCricketConfig((current) => ({ ...current, tournament_format: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="league">League</SelectItem><SelectItem value="knockout">Knockout</SelectItem><SelectItem value="league_knockout">League + Knockout</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Ball type</Label><Select value={cricketConfig.ball_type} onValueChange={(value) => setCricketConfig((current) => ({ ...current, ball_type: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tennis">Tennis Ball</SelectItem><SelectItem value="leather">Leather Ball</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Overs per innings</Label><Input type="number" min={1} step={1} value={cricketConfig.overs_per_innings} onChange={(event) => setCricketConfig((current) => ({ ...current, overs_per_innings: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label>Default squad size</Label><div className="grid gap-4 sm:grid-cols-2"><Input aria-label="Minimum players" type="number" min={1} value={cricketConfig.minimum_players} onChange={(event) => setCricketConfig((current) => ({ ...current, minimum_players: event.target.value }))} placeholder="Minimum players" /><Input aria-label="Maximum players" type="number" min={1} value={cricketConfig.maximum_players} onChange={(event) => setCricketConfig((current) => ({ ...current, maximum_players: event.target.value }))} placeholder="Maximum players" /></div></div></div></div>}
               <div className="sm:col-span-2 border-t pt-4"><h3 className="font-semibold">Location</h3><p className="mt-1 text-sm text-muted-foreground">Tell participants exactly where the event takes place.</p></div>
               <div className="space-y-2 sm:col-span-2"><Label>Venue or location *</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Event venue and city" /></div>
@@ -1455,10 +1473,10 @@ const OrganizerEventCreate = () => {
           </section>}
 
           {currentStep === 2 && <section className="space-y-5 rounded-xl border bg-card p-6">
-            <div className="flex items-center justify-between"><div><h2 className="text-lg font-bold">Categories and Tickets</h2><p className="text-sm text-muted-foreground">Add one or more categories and ticket options for this event.</p></div><Button variant="outline" size="sm" onClick={addCategory}><Plus className="mr-1 h-4 w-4" /> Category</Button></div>
+            <div className="flex items-center justify-between"><div><h2 className="text-lg font-bold">{isTrekking ? "Trek tickets" : "Categories and Tickets"}</h2><p className="text-sm text-muted-foreground">{isTrekking ? "This trek uses one shared route and one entry type. Add ticket tiers if needed." : "Add one or more categories and ticket options for this event."}</p></div>{!isTrekking && <Button variant="outline" size="sm" onClick={addCategory}><Plus className="mr-1 h-4 w-4" /> Category</Button>}</div>
             {categories.map((category, categoryIndex) => <div key={category.id} className="space-y-4 rounded-lg border p-4">
-              <div className="flex items-center justify-between"><p className="font-semibold">Category #{categoryIndex + 1}</p>{categories.length > 1 && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4" /></Button>}</div>
-              <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Category name *</Label><Input value={category.name} onChange={(e) => updateCategory(category.id, "name", e.target.value)} placeholder="Open category" /></div>{supportsDistance && <div className="space-y-2"><Label>Distance *</Label><div className="flex gap-2"><Input type="number" min="0" step="any" value={category.distanceValue} onChange={(e) => updateCategory(category.id, "distanceValue", e.target.value)} placeholder="e.g. 21.1" className="flex-1" /><Select value={category.distanceUnit} onValueChange={(v) => updateCategory(category.id, "distanceUnit", v)}><SelectTrigger className="w-24"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="KM"><span className="font-medium">KM</span><span className="ml-2 text-xs text-muted-foreground">Kilometers</span></SelectItem><SelectItem value="M"><span className="font-medium">M</span><span className="ml-2 text-xs text-muted-foreground">Meters</span></SelectItem></SelectContent></Select></div>{category.distanceUnit === "KM" && <p className="text-xs text-muted-foreground">KM = Kilometers (e.g. 5 KM, 21.1 KM, 42.2 KM)</p>}{category.distanceUnit === "M" && <p className="text-xs text-muted-foreground">M = Meters (e.g. 400 M, 800 M)</p>}</div>}<div className="space-y-2"><Label>Entry format *</Label><Select value={category.entryType} onValueChange={(value) => updateEntryType(category.id, value as CategoryForm["entryType"])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="singles">Singles · 1 participant</SelectItem><SelectItem value="doubles">Doubles · 2 participants</SelectItem><SelectItem value="team">Team</SelectItem></SelectContent></Select></div>{category.entryType === "team" && <div className="space-y-2 sm:col-span-2"><Label>Team size *</Label><div className="flex items-center gap-3"><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Min participants</p><Input type="number" min={2} max={50} value={category.teamSizeMin ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMin", Number(e.target.value))} placeholder="3" /></div><span className="mt-5 text-sm text-muted-foreground">—</span><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Max participants</p><Input type="number" min={2} max={50} value={category.teamSizeMax ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMax", Number(e.target.value))} placeholder="10" /></div></div><p className="text-xs text-muted-foreground">Ticket price and inventory count per complete team.</p></div>}</div>
+              {!isTrekking && <div className="flex items-center justify-between"><p className="font-semibold">Category #{categoryIndex + 1}</p>{categories.length > 1 && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4" /></Button>}</div>}
+              <div className="grid gap-4 sm:grid-cols-2">{!isTrekking && <div className="space-y-2"><Label>Category name *</Label><Input value={category.name} onChange={(e) => updateCategory(category.id, "name", e.target.value)} placeholder="Open category" /></div>}{supportsDistance && <div className="space-y-2"><Label>Distance *</Label><div className="flex gap-2"><Input type="number" min="0" step="any" value={category.distanceValue} onChange={(e) => updateCategory(category.id, "distanceValue", e.target.value)} placeholder="e.g. 21.1" className="flex-1" /><Select value={category.distanceUnit} onValueChange={(v) => updateCategory(category.id, "distanceUnit", v)}><SelectTrigger className="w-24"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="KM"><span className="font-medium">KM</span><span className="ml-2 text-xs text-muted-foreground">Kilometers</span></SelectItem><SelectItem value="M"><span className="font-medium">M</span><span className="ml-2 text-xs text-muted-foreground">Meters</span></SelectItem></SelectContent></Select></div>{category.distanceUnit === "KM" && <p className="text-xs text-muted-foreground">KM = Kilometers (e.g. 5 KM, 21.1 KM, 42.2 KM)</p>}{category.distanceUnit === "M" && <p className="text-xs text-muted-foreground">M = Meters (e.g. 400 M, 800 M)</p>}</div>}{!isTrekking && <div className="space-y-2"><Label>Entry format *</Label><Select value={category.entryType} onValueChange={(value) => updateEntryType(category.id, value as CategoryForm["entryType"])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="singles">Singles · 1 participant</SelectItem><SelectItem value="doubles">Doubles · 2 participants</SelectItem><SelectItem value="team">Team</SelectItem></SelectContent></Select></div>}{!isTrekking && category.entryType === "team" && <div className="space-y-2 sm:col-span-2"><Label>Team size *</Label><div className="flex items-center gap-3"><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Min participants</p><Input type="number" min={2} max={50} value={category.teamSizeMin ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMin", Number(e.target.value))} placeholder="3" /></div><span className="mt-5 text-sm text-muted-foreground">—</span><div className="flex-1 space-y-1"><p className="text-xs text-muted-foreground">Max participants</p><Input type="number" min={2} max={50} value={category.teamSizeMax ?? ""} onChange={(e) => updateTeamSize(category.id, "teamSizeMax", Number(e.target.value))} placeholder="10" /></div></div><p className="text-xs text-muted-foreground">Ticket price and inventory count per complete team.</p></div>}</div>
               {category.tickets.map((ticket, ticketIndex) => <div key={ticket.id} className="space-y-3 rounded-md bg-muted/40 p-4">
                 <div className="flex items-center justify-between"><p className="text-sm font-medium">Ticket #{ticketIndex + 1}</p>{category.tickets.length > 1 && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeTicket(category.id, ticket.id)}><Trash2 className="h-3.5 w-3.5" /></Button>}</div>
                 <div className="grid gap-3 sm:grid-cols-3">

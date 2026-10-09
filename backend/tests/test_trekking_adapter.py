@@ -26,7 +26,9 @@ def test_get_adapter_trekking_is_case_insensitive():
 
 def test_trekking_adapter_capabilities():
     adapter = get_adapter("trekking")
-    assert adapter.supports_distance is True
+    assert adapter.supports_distance is False
+    assert adapter.category_distance("12 KM") is None
+    assert adapter.category_distance("") is None
     assert adapter.supports_tournament is False
     assert adapter.team_tournament is False
     assert adapter.result_type == "none"

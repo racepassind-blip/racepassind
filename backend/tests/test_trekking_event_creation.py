@@ -57,9 +57,9 @@ def test_trekking_has_no_sport_specific_config():
     assert model.sport_config == {}
 
 
-def test_trekking_keeps_generic_distance_configuration():
+def test_trekking_uses_one_event_level_route_without_category_distance():
     model = OrganizerEventCreateV1.model_validate(_create_payload("trekking", distance="18.5 KM"))
-    assert model.categories[0].distance == "18.5 KM"
+    assert model.categories[0].distance is None
 
 
 # --- Trekking editing ------------------------------------------------------
