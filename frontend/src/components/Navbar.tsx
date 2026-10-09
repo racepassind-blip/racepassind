@@ -44,20 +44,20 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-border/80 bg-card/90 backdrop-blur-xl">
       <div className="h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" />
-      <div className="mx-auto flex h-[4.5rem] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link to="/" className="flex items-center gap-2.5 text-lg font-black tracking-tight sm:text-xl">
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
+        <Link to="/" className="flex shrink-0 items-center gap-2 text-lg font-black tracking-tight sm:text-xl">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/15">
             <Ticket className="h-5 w-5 text-primary" />
           </span>
           <span>SportPass <span className="text-primary">India</span></span>
         </Link>
 
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="ml-auto hidden items-center gap-0.5 rounded-xl border border-border/70 bg-muted/40 p-1 shadow-sm md:flex">
           {links.map((link) => (
             <Link
               key={link.to}
               to={link.to}
-              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${pathname === link.to ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${pathname === link.to ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}
             >
               <span>{link.label}</span>
               {link.comingSoon && <span title="Coming soon" aria-label="Coming soon" className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Soon</span>}
@@ -67,7 +67,7 @@ export function Navbar() {
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="ml-2 gap-2 px-2">
+                <Button variant="ghost" className="ml-1 gap-2 rounded-lg px-1.5 hover:bg-background">
                   <Avatar className="h-7 w-7">
                     <AvatarFallback className="bg-primary text-xs text-primary-foreground">{initials}</AvatarFallback>
                   </Avatar>
@@ -96,7 +96,7 @@ export function Navbar() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : !isLoading ? (
-            <Button variant="outline" size="sm" className="ml-2" onClick={() => navigate("/login")}>Login</Button>
+            <Button variant="outline" size="sm" className="ml-1 h-8 rounded-lg px-3" onClick={() => navigate("/login")}>Login</Button>
           ) : null}
         </nav>
 
@@ -113,13 +113,13 @@ export function Navbar() {
       </div>
 
       {open && (
-        <nav className="space-y-1 border-t bg-card px-4 pb-4 pt-2 md:hidden">
+        <nav className="space-y-0.5 border-t bg-card px-4 pb-3 pt-2 md:hidden">
           {links.map((link) => (
             <Link
               key={link.to}
               to={link.to}
               onClick={() => setOpen(false)}
-              className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium ${pathname === link.to ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium ${pathname === link.to ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
             >
               <span>{link.label}</span>
               {link.comingSoon && <span title="Coming soon" aria-label="Coming soon" className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Soon</span>}

@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { MobileNavDrawer } from "@/components/MobileNavDrawer";
 import { cn } from "@/lib/utils";
 
 type AdminDashboardLayoutProps = { children: ReactNode };
@@ -45,6 +46,47 @@ function isActivePath(pathname: string, to: string) {
   return to === "/admin" ? pathname === to : pathname === to || pathname.startsWith(`${to}/`);
 }
 
+function AdminSidebarContent() {
+  const location = useLocation();
+  return (
+    <div className="flex h-full flex-col p-4 lg:sticky lg:top-0 lg:h-screen">
+      <Link to="/admin" className="mb-7 flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-white/10">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Ticket className="h-5 w-5" /></span>
+        <span><span className="block text-sm font-black tracking-tight">SportPass <span className="text-primary">India</span></span><span className="mt-0.5 block text-xs text-slate-400">Admin workspace</span></span>
+      </Link>
+      <nav className="space-y-6">
+        {navGroups.map((group) => (
+          <div key={group.label}>
+            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{group.label}</p>
+            <div className="space-y-1">
+              {group.items.map((item) => {
+                const active = isActivePath(location.pathname, item.to);
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      active ? "bg-primary text-primary-foreground shadow-sm" : "text-slate-300 hover:bg-white/10 hover:text-white",
+                    )}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.label}</span>
+                    {active && <ChevronRight className="ml-auto hidden h-4 w-4 lg:block" />}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+      <div className="mt-auto hidden border-t border-white/10 px-3 pt-5 text-xs leading-5 text-slate-500 lg:block">
+        Review growth, unblock organizers, and keep every race moving.
+      </div>
+    </div>
+  );
+}
+
 export function AdminDashboardLayout({ children }: AdminDashboardLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -59,46 +101,15 @@ export function AdminDashboardLayout({ children }: AdminDashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-muted/30">
       <div className="flex min-h-screen flex-col lg:flex-row">
-        <aside className="w-full shrink-0 bg-slate-950 text-slate-100 lg:w-72">
-          <div className="flex h-full flex-col p-4 lg:sticky lg:top-0 lg:h-screen">
-            <Link to="/admin" className="mb-7 flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-white/10">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Ticket className="h-5 w-5" /></span>
-              <span><span className="block text-sm font-black tracking-tight">SportPass <span className="text-primary">India</span></span><span className="mt-0.5 block text-xs text-slate-400">Admin workspace</span></span>
-            </Link>
-            <nav className="flex gap-4 overflow-x-auto pb-1 lg:block lg:space-y-6 lg:overflow-visible">
-              {navGroups.map((group) => (
-                <div key={group.label} className="min-w-max lg:min-w-0">
-                  <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{group.label}</p>
-                  <div className="space-y-1">
-                    {group.items.map((item) => {
-                      const active = isActivePath(location.pathname, item.to);
-                      return (
-                        <Link
-                          key={item.to}
-                          to={item.to}
-                          className={cn(
-                            "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                            active ? "bg-primary text-primary-foreground shadow-sm" : "text-slate-300 hover:bg-white/10 hover:text-white",
-                          )}
-                        >
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.label}</span>
-                          {active && <ChevronRight className="ml-auto hidden h-4 w-4 lg:block" />}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </nav>
-            <div className="mt-auto hidden border-t border-white/10 px-3 pt-5 text-xs leading-5 text-slate-500 lg:block">
-              Review growth, unblock organizers, and keep every race moving.
-            </div>
-          </div>
+        <aside className="hidden shrink-0 bg-slate-950 text-slate-100 lg:block lg:w-72">
+          <AdminSidebarContent />
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-card/95 px-4 backdrop-blur sm:px-6 lg:px-8">
-            <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Admin control center</p><p className="mt-0.5 text-sm text-muted-foreground">Operate the marketplace and support organizers</p></div>
+          <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-2 border-b bg-card/95 px-4 backdrop-blur sm:px-6 lg:px-8">
+            <div className="flex min-w-0 items-center gap-2">
+              <MobileNavDrawer title="Admin menu"><AdminSidebarContent /></MobileNavDrawer>
+              <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Admin control center</p><p className="mt-0.5 hidden truncate text-sm text-muted-foreground sm:block">Operate the marketplace and support organizers</p></div>
+            </div>
             <div className="flex items-center gap-2 sm:gap-3">
               <Button asChild variant="ghost" size="sm" className="hidden gap-2 text-muted-foreground sm:flex"><Link to="/"><ExternalLink className="h-4 w-4" /> Public site</Link></Button>
               <DropdownMenu>

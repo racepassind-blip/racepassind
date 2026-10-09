@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { MobileNavDrawer } from "@/components/MobileNavDrawer";
 import { useOrganizerEventDashboard } from "@/hooks/useEvents";
 import { getSportConfig, eventSupportsTournament, isFreeEvent } from "@/data/sportConfig";
 import { cn } from "@/lib/utils";
@@ -95,17 +96,13 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
     navigate("/");
   };
 
-  return (
-    <div className="min-h-screen bg-muted/30">
-      <div className="flex min-h-screen flex-col lg:flex-row">
-        {showNavigation && (
-          <aside className="w-full shrink-0 bg-slate-950 text-slate-100 lg:w-72">
-            <div className="flex h-full flex-col p-4 lg:sticky lg:top-0 lg:h-screen">
+  const sidebarContent = (
+    <div className="flex h-full flex-col p-4 lg:sticky lg:top-0 lg:h-screen">
               <Link to={isAdmin ? "/admin" : "/organizer"} className="mb-6 flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-white/10">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Ticket className="h-5 w-5" /></span>
                 <span><span className="block text-sm font-black tracking-tight">SportPass <span className="text-primary">India</span></span><span className="mt-0.5 block text-xs text-slate-400">{isAdmin ? "Admin event operations" : "Organizer console"}</span></span>
               </Link>
-              <nav className="flex gap-1 overflow-x-auto lg:block lg:space-y-1">
+              <nav className="space-y-1">
                 {availableItems.map((item) => {
                   const basePath = item.to?.split("?")[0];
                   const active = basePath === "/organizer" ? location.pathname === "/organizer" : location.pathname === basePath;
@@ -114,7 +111,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
                       key={item.label}
                       to={item.to ?? "#"}
                       className={cn(
-                        "flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                         active ? "bg-primary text-primary-foreground shadow-sm" : "text-slate-300 hover:bg-white/10 hover:text-white",
                       )}
                     >
@@ -133,7 +130,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
                       key={item.label}
                       to={item.to ?? "#"}
                       className={cn(
-                        "flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors cursor-not-allowed",
+                        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors cursor-not-allowed",
                         active ? "bg-muted/40 text-muted-foreground" : "text-muted-foreground",
                       )}
                       title="Locked: upgrade to a paid event for full access"
@@ -145,7 +142,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
                   );
                 })}
               </nav>
-              <div className="mt-6 hidden border-t border-white/10 pt-5 lg:block">
+              <div className="mt-6 border-t border-white/10 pt-5">
                 <p className="px-3 pb-2 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">More tools</p>
                 <div className="space-y-1">
                   {comingSoonItems.map((item) => (
@@ -160,12 +157,23 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
               <div className="mt-auto hidden border-t border-white/10 px-3 pt-5 text-xs leading-5 text-slate-500 lg:block">
                 Keep your event operations, registrations, and race-day work in one place.
               </div>
-            </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-muted/30">
+      <div className="flex min-h-screen flex-col lg:flex-row">
+        {showNavigation && (
+          <aside className="hidden shrink-0 bg-slate-950 text-slate-100 lg:block lg:w-72">
+            {sidebarContent}
           </aside>
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-card/95 px-4 backdrop-blur sm:px-6 lg:px-8">
-            <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">{isAdmin ? "Admin event operations" : eventId ? "Event management" : "Organizer workspace"}</p><p className="mt-0.5 text-sm text-muted-foreground">{isAdmin ? "Manage events without leaving your admin account" : "Plan, publish, and run your events"}</p></div>
+          <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-2 border-b bg-card/95 px-4 backdrop-blur sm:px-6 lg:px-8">
+            <div className="flex min-w-0 items-center gap-2">
+              {showNavigation && <MobileNavDrawer title="Organizer menu">{sidebarContent}</MobileNavDrawer>}
+              <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">{isAdmin ? "Admin event operations" : eventId ? "Event management" : "Organizer workspace"}</p><p className="mt-0.5 hidden truncate text-sm text-muted-foreground sm:block">{isAdmin ? "Manage events without leaving your admin account" : "Plan, publish, and run your events"}</p></div>
+            </div>
             <div className="flex items-center gap-2 sm:gap-3">
               <Button asChild variant="ghost" size="sm" className="hidden gap-2 text-muted-foreground sm:flex"><Link to="/"><ExternalLink className="h-4 w-4" /> Public site</Link></Button>
               <DropdownMenu>

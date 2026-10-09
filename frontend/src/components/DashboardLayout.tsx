@@ -1,7 +1,8 @@
-import { ExternalLink, LayoutDashboard, LogOut, Ticket } from "lucide-react";
+import { ExternalLink, LayoutDashboard, LogOut } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { DashboardSidebar } from "@/components/DashboardSidebar";
+import { DashboardSidebar, DashboardSidebarContent } from "@/components/DashboardSidebar";
+import { MobileNavDrawer } from "@/components/MobileNavDrawer";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -22,8 +23,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen flex-col lg:flex-row">
         <DashboardSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-card/95 px-4 backdrop-blur sm:px-6 lg:px-8">
-            <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Participant workspace</p><p className="mt-0.5 text-sm text-muted-foreground">Keep your race-day plans and tickets together</p></div>
+          <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-2 border-b bg-card/95 px-4 backdrop-blur sm:px-6 lg:px-8">
+            <div className="flex min-w-0 items-center gap-2">
+              <MobileNavDrawer title="Participant menu"><DashboardSidebarContent /></MobileNavDrawer>
+              <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Participant workspace</p><p className="mt-0.5 hidden truncate text-sm text-muted-foreground sm:block">Keep your race-day plans and tickets together</p></div>
+            </div>
             <div className="flex items-center gap-2 sm:gap-3">
               <Button asChild variant="ghost" size="sm" className="hidden gap-2 text-muted-foreground sm:flex"><Link to="/"><ExternalLink className="h-4 w-4" /> Public site</Link></Button>
               <DropdownMenu>
