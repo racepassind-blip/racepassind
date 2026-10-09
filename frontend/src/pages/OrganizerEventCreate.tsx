@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { eachDayOfInterval, format, startOfDay } from "date-fns";
-import { ArrowLeft, ArrowRight, Calculator, CalendarIcon, CircleHelp, ClipboardList, Eye, Minus, Plus, Save, ShieldCheck, Shirt, Ticket, Trash2, UserRound, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, ArrowRight, Calculator, CalendarIcon, Check, CircleHelp, ClipboardList, Eye, Minus, Plus, Save, ShieldCheck, Shirt, Ticket, Trash2, UserRound, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
@@ -1163,8 +1163,41 @@ const OrganizerEventCreate = () => {
 
         {!eventId && <div className="mb-6 flex flex-col gap-3 rounded-xl border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">What are you selling?</p><p className="mt-1 text-sm text-muted-foreground">Continue here for event tickets and participant registration. Use a product storefront for breakfast, jerseys, or merchandise without tickets.</p></div><Button type="button" variant="outline" className="shrink-0 gap-2" onClick={() => navigate("/organizer/products")}><Shirt className="h-4 w-4" /> Sell products instead</Button></div>}
 
-        <div className="mb-8 overflow-x-auto pb-1">
-          <div className="grid min-w-[820px] grid-cols-6 gap-2">{wizardSteps.map((step, index) => <button key={step.title} type="button" onClick={() => index < currentStep && setCurrentStep(index)} disabled={index > currentStep} className={cn("rounded-xl border p-3 text-left transition-colors disabled:cursor-default", index === currentStep ? "border-primary bg-primary/5 shadow-sm" : index < currentStep ? "border-primary/30 bg-card hover:bg-muted" : "border-border bg-muted/30")}><div className="flex items-center gap-2"><span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold", index <= currentStep ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{index + 1}</span><span className="text-sm font-semibold">{step.title}</span></div><p className="mt-1 hidden text-xs text-muted-foreground sm:block">{step.description}</p></button>)}</div>
+        <div className="mb-8 overflow-x-auto pb-2" aria-label="Event setup progress">
+          <div className="flex min-w-[900px] items-stretch">
+            {wizardSteps.map((step, index) => {
+              const completed = index < currentStep;
+              const active = index === currentStep;
+              return <div key={step.title} className="flex min-w-0 flex-1 items-center">
+                <button
+                  type="button"
+                  onClick={() => completed && setCurrentStep(index)}
+                  disabled={!completed && !active}
+                  aria-current={active ? "step" : undefined}
+                  aria-label={`${index + 1}. ${step.title}${completed ? " — completed" : active ? " — current step" : " — upcoming"}`}
+                  className={cn(
+                    "group relative flex min-h-[92px] w-full flex-col justify-between rounded-2xl border px-3 py-3 text-left transition-all",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+                    active && "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/15",
+                    completed && "border-primary/30 bg-card hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-sm",
+                    !active && !completed && "border-border bg-muted/30 text-muted-foreground",
+                  )}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className={cn(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black",
+                      active && "bg-white text-primary",
+                      completed && "bg-emerald-600 text-white",
+                      !active && !completed && "bg-muted text-muted-foreground",
+                    )}>{completed ? <Check className="h-4 w-4" /> : index + 1}</span>
+                    <span className={cn("text-sm font-bold leading-tight", active ? "text-white" : "text-foreground")}>{step.title}</span>
+                  </div>
+                  <p className={cn("mt-2 text-xs leading-4", active ? "text-white/75" : "text-muted-foreground")}>{active ? "You are here" : completed ? "Completed" : step.description}</p>
+                </button>
+                {index < wizardSteps.length - 1 && <span aria-hidden="true" className={cn("mx-1 h-0.5 w-3 shrink-0", index < currentStep ? "bg-emerald-500" : "bg-border")} />}
+              </div>;
+            })}
+          </div>
         </div>
 
         <div className="space-y-8">
