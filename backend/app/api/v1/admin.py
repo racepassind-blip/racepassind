@@ -270,6 +270,43 @@ def list_admin_events(
     }
 
 
+@router.get("/organizations/{organization_id}/events")
+def list_organization_events(
+    organization_id: UUID,
+    archived: bool | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
+    _: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Return an admin's complete event view for one organization."""
+    organization = db.get(Organization, organization_id)
+    if organization is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    filters = [Event.organization_id == organization_id]
+    if archived is True:
+        filters.append(Event.archived_at.is_not(None))
+    elif archived is False:
+        filters.append(Event.archived_at.is_(None))
+    base_query = select(Event).where(*filters)
+    total = int(db.scalar(select(func.count()).select_from(base_query.subquery())) or 0)
+    summary = db.execute(select(
+        func.count(Event.id),
+        func.coalesce(func.sum(Event.participants), 0),
+        func.count(Event.id).filter(Event.registration_status == "open"),
+        func.count(Event.id).filter(Event.archived_at.is_not(None)),
+    ).where(Event.organization_id == organization_id)).one()
+    events = db.scalars(base_query.order_by(Event.created_at.desc(), Event.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
+    return {
+        "organization": {"id": str(organization.id), "name": organization.name, "status": organization.status},
+        "items": [_serialize_admin_event(event) for event in events],
+        "page": page,
+        "pageSize": page_size,
+        "total": total,
+        "summary": {"events": int(summary[0] or 0), "participants": int(summary[1] or 0), "openEvents": int(summary[2] or 0), "archivedEvents": int(summary[3] or 0)},
+    }
+
+
 @router.post("/events/{event_id}/restore")
 def restore_admin_event(
     event_id: UUID,

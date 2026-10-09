@@ -135,7 +135,7 @@ function LegacyAuthProvider({ children }: { children: ReactNode }) {
 
 function ClerkAuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const { isLoaded, isSignedIn, getToken, signOut } = useClerkAuth();
+  const { isLoaded, isSignedIn, userId, getToken, signOut } = useClerkAuth();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -166,6 +166,10 @@ function ClerkAuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     setAuthTokenProvider(getClerkToken);
+    // Clerk can switch between signed-in accounts without a full page reload.
+    // Drop all private query data before bootstrapping the new identity so an
+    // organizer's cached dashboard can never appear for the next account.
+    clearAccountCache(queryClient);
     try {
       const response = await apiRequest<AuthResponse>("/auth/me");
       setUser(response.user);
@@ -175,7 +179,7 @@ function ClerkAuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [clearSession, getClerkToken, isLoaded, isSignedIn]);
+  }, [clearSession, getClerkToken, isLoaded, isSignedIn, queryClient, userId]);
 
   useEffect(() => {
     setUnauthorizedHandler(clearSession);
