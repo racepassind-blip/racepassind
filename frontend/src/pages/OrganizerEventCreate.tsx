@@ -1163,41 +1163,37 @@ const OrganizerEventCreate = () => {
 
         {!eventId && <div className="mb-6 flex flex-col gap-3 rounded-xl border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">What are you selling?</p><p className="mt-1 text-sm text-muted-foreground">Continue here for event tickets and participant registration. Use a product storefront for breakfast, jerseys, or merchandise without tickets.</p></div><Button type="button" variant="outline" className="shrink-0 gap-2" onClick={() => navigate("/organizer/products")}><Shirt className="h-4 w-4" /> Sell products instead</Button></div>}
 
-        <div className="mb-8 overflow-x-auto pb-2" aria-label="Event setup progress">
-          <div className="flex min-w-[900px] items-stretch">
-            {wizardSteps.map((step, index) => {
-              const completed = index < currentStep;
-              const active = index === currentStep;
-              return <div key={step.title} className="flex min-w-0 flex-1 items-center">
-                <button
-                  type="button"
-                  onClick={() => completed && setCurrentStep(index)}
-                  disabled={!completed && !active}
-                  aria-current={active ? "step" : undefined}
-                  aria-label={`${index + 1}. ${step.title}${completed ? " — completed" : active ? " — current step" : " — upcoming"}`}
-                  className={cn(
-                    "group relative flex min-h-[92px] w-full flex-col justify-between rounded-2xl border px-3 py-3 text-left transition-all",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
-                    active && "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/15",
-                    completed && "border-primary/30 bg-card hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-sm",
-                    !active && !completed && "border-border bg-muted/30 text-muted-foreground",
-                  )}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className={cn(
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black",
-                      active && "bg-white text-primary",
-                      completed && "bg-emerald-600 text-white",
-                      !active && !completed && "bg-muted text-muted-foreground",
-                    )}>{completed ? <Check className="h-4 w-4" /> : index + 1}</span>
-                    <span className={cn("text-sm font-bold leading-tight", active ? "text-white" : "text-foreground")}>{step.title}</span>
-                  </div>
-                  <p className={cn("mt-2 text-xs leading-4", active ? "text-white/75" : "text-muted-foreground")}>{active ? "You are here" : completed ? "Completed" : step.description}</p>
-                </button>
-                {index < wizardSteps.length - 1 && <span aria-hidden="true" className={cn("mx-1 h-0.5 w-3 shrink-0", index < currentStep ? "bg-emerald-500" : "bg-border")} />}
-              </div>;
-            })}
-          </div>
+        <div className="mb-8 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6" aria-label="Event setup progress">
+          {wizardSteps.map((step, index) => {
+            const completed = index < currentStep;
+            const active = index === currentStep;
+            return <button
+              key={step.title}
+              type="button"
+              onClick={() => completed && setCurrentStep(index)}
+              disabled={!completed}
+              aria-current={active ? "step" : undefined}
+              aria-label={`${index + 1}. ${step.title}${completed ? " — completed" : active ? " — current step" : " — upcoming"}`}
+              className={cn(
+                "flex min-h-[104px] flex-col rounded-xl border px-3 py-3 text-left transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+                active && "border-primary/60 bg-primary/[0.08]",
+                completed && "border-emerald-200 bg-emerald-50/60 hover:border-emerald-300 hover:bg-emerald-50",
+                !active && !completed && "border-border bg-card",
+              )}
+            >
+              <div className="flex items-start gap-2.5">
+                <span className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                  active && "bg-primary/15 text-primary",
+                  completed && "bg-emerald-100 text-emerald-700",
+                  !active && !completed && "bg-muted text-muted-foreground",
+                )}>{completed ? <Check className="h-4 w-4" /> : index + 1}</span>
+                <span className="pt-1 text-sm font-bold leading-tight text-foreground">{step.title}</span>
+              </div>
+              <p className="mt-auto pt-3 text-xs leading-4 text-muted-foreground">{step.description}</p>
+            </button>;
+          })}
         </div>
 
         <div className="space-y-8">
