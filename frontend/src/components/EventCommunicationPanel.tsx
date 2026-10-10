@@ -1,4 +1,4 @@
-import { Check, Copy, ExternalLink, MessageCircle } from "lucide-react";
+import { Check, Copy, ExternalLink, MessageCircle, Save } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -21,17 +21,36 @@ export function EventCommunicationPanel({ event }: { event: CommunicationEvent }
   const [copied, setCopied] = useState<"link" | "message" | null>(null);
   const [templateKey, setTemplateKey] = useState<MessageTemplateKey>("announcement");
   const registrationUrl = buildRegistrationUrl(event.id);
+  const storageKey = `sportpass_message_templates_${event.id}`;
+  const readSavedMessages = () => {
+    try {
+      return JSON.parse(localStorage.getItem(storageKey) ?? "{}") as Partial<Record<MessageTemplateKey, string>>;
+    } catch {
+      return {};
+    }
+  };
 
   // Editable message — re-initialises when the template changes.
-  const [message, setMessage] = useState(() =>
-    buildMessageFromTemplate("announcement", event, registrationUrl),
-  );
+  const [message, setMessage] = useState(() => readSavedMessages().announcement ?? buildMessageFromTemplate("announcement", event, registrationUrl));
+  const [saved, setSaved] = useState(false);
 
   const isClosed = event.registrationStatus === "closed";
 
   const handleTemplateChange = (key: MessageTemplateKey) => {
     setTemplateKey(key);
-    setMessage(buildMessageFromTemplate(key, event, registrationUrl));
+    setMessage(readSavedMessages()[key] ?? buildMessageFromTemplate(key, event, registrationUrl));
+    setSaved(false);
+  };
+
+  const saveMessage = () => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ ...readSavedMessages(), [templateKey]: message }));
+      setSaved(true);
+      toast.success("Template saved for this event.");
+      window.setTimeout(() => setSaved(false), 1800);
+    } catch {
+      toast.error("Could not save this template in your browser.");
+    }
   };
 
   const copy = async (value: string, kind: "link" | "message") => {
@@ -136,6 +155,10 @@ export function EventCommunicationPanel({ event }: { event: CommunicationEvent }
 
           {/* Actions */}
           <div className="flex flex-col gap-2 sm:flex-row">
+            <Button type="button" variant="outline" className="gap-2" onClick={saveMessage}>
+              {saved ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+              {saved ? "Saved" : "Save template"}
+            </Button>
             <Button
               type="button"
               className="flex-1 gap-2"
@@ -156,7 +179,7 @@ export function EventCommunicationPanel({ event }: { event: CommunicationEvent }
           </div>
 
           <p className="text-xs text-muted-foreground">
-            You can edit the message above before copying or sending. Switching templates resets the text.
+            Edit the message, then save it to replace the default for this event and template. Your saved text will be restored the next time you open this page.
           </p>
         </CardContent>
       </Card>

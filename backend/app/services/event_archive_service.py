@@ -25,6 +25,7 @@ from models import (
     RaceResult,
     Registration,
     RegistrationParticipant,
+    Refund,
     TeamMatchScoring,
     Ticket,
     TournamentRound,
@@ -64,14 +65,21 @@ def delete_archived_event(db: Session, event: Event, actor_user_id: UUID) -> Non
     - Orders are left intact (they can span multiple events); only their
       event-specific items/payments are removed.
     """
-    from models import OrganizerSettlement, OrganizerPayableAdjustment, CheckoutPayment
+    from models import (
+        CheckoutPayment,
+        ManagedRegistrationCollection,
+        OrganizerEventBilling,
+        OrganizerPayableAdjustment,
+        OrganizerPlatformFeeBilling,
+        OrganizerSettlement,
+    )
     db.scalar(select(Event).where(Event.id == event.id).with_for_update())
     managed = db.scalar(select(Payment.id).join(Registration, Registration.id == Payment.registration_id)
         .where(Registration.event_id == event.id, Payment.payment_gateway.notin_(["manual", "manual_upi", "free", "manual_offline", "DIRECT_UPI", "direct_upi"])).limit(1))
     checkout = db.scalar(select(CheckoutPayment.id).join(Payment, Payment.order_id == CheckoutPayment.event_order_id)
         .join(Registration, Registration.id == Payment.registration_id).where(Registration.event_id == event.id,
             CheckoutPayment.mode.in_(["CASHFREE_PLATFORM", "CASHFREE_SPLIT"])).limit(1))
-    if managed or checkout or db.scalar(select(OrganizerSettlement.id).where(OrganizerSettlement.event_id == event.id).limit(1)) or db.scalar(select(OrganizerPayableAdjustment.id).where(OrganizerPayableAdjustment.event_id == event.id).limit(1)):
+    if managed or checkout or db.scalar(select(ManagedRegistrationCollection.id).where(ManagedRegistrationCollection.event_id == event.id).limit(1)) or db.scalar(select(OrganizerSettlement.id).where(OrganizerSettlement.event_id == event.id).limit(1)) or db.scalar(select(OrganizerPayableAdjustment.id).where(OrganizerPayableAdjustment.event_id == event.id).limit(1)):
         raise HTTPException(status_code=409, detail="Financial history must be retained. Keep this event archived.")
     record_audit(
         db,
@@ -94,6 +102,8 @@ def delete_archived_event(db: Session, event: Event, actor_user_id: UUID) -> Non
     # --- Payment layer (children of registrations/orders) ---
     db.execute(delete(Payment).where(Payment.registration_id.in_(reg_ids_subq)))
     db.execute(delete(OrderItem).where(OrderItem.registration_id.in_(reg_ids_subq)))
+    # Refunds reference both the event and its registrations.
+    db.execute(delete(Refund).where(Refund.event_id == event.id))
 
     # Credit ledger rows are immutable financial history. Detach nullable
     # foreign keys before deleting the operational event/registration records.
@@ -122,6 +132,8 @@ def delete_archived_event(db: Session, event: Event, actor_user_id: UUID) -> Non
     db.execute(delete(EventPaymentSettings).where(EventPaymentSettings.event_id == event.id))
     db.execute(delete(DiscountCode).where(DiscountCode.event_id == event.id))
     db.execute(delete(EventDocument).where(EventDocument.event_id == event.id))
+    db.execute(delete(OrganizerEventBilling).where(OrganizerEventBilling.event_id == event.id))
+    db.execute(delete(OrganizerPlatformFeeBilling).where(OrganizerPlatformFeeBilling.event_id == event.id))
 
     # --- Email logs: preserve history, detach from the event ---
     db.execute(update(EmailLog).where(EmailLog.event_id == event.id).values(event_id=None))

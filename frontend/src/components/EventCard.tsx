@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Calendar, MapPin, Users } from "lucide-react";
+import { Calendar, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { SportEvent } from "@/data/mockEvents";
 
@@ -57,10 +57,6 @@ export function EventCard({ event }: { event: SportEvent }) {
               {cityState}
             </span>
           )}
-          <span className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            {event.participants.toLocaleString()} / {event.maxParticipants.toLocaleString()}
-          </span>
         </div>
         <div className="flex items-center justify-between pt-2 border-t">
           <span className="text-sm text-muted-foreground">{event.distance}</span>

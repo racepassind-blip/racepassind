@@ -32,6 +32,7 @@ describe("sport policy isolation", () => {
     expect(eventSupportsTournament("table-tennis")).toBe(true);
     expect(eventSupportsTournament("badminton")).toBe(true);
     expect(eventSupportsTournament("running")).toBe(false);
+    expect(eventSupportsTournament("cycling", [{ entryType: "team" }])).toBe(false);
     expect(eventSupportsTournament("trekking")).toBe(false);
     expect(eventSupportsTournament("legacy", [{ entryType: "team" }])).toBe(true);
     expect(eventSupportsTournament("legacy")).toBe(false);

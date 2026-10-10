@@ -43,14 +43,15 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const currentSportConfig = getSportConfig(eventDashboard?.event.sport);
   const supportsTournament = eventSupportsTournament(eventDashboard?.event.sport, eventDashboard?.event.categories);
   const freeEvent = Boolean(eventId) && isFreeEvent(eventDashboard?.event);
-  // Admin override unlocks everything regardless of free/paid
+  // Admin override bypasses the free-event paywall, but it must not enable
+  // tools that the event's sport does not support.
   const adminUnlocked = Boolean(eventDashboard?.event.adminFeatureOverride);
   const unlocked = !freeEvent || adminUnlocked;
 
-  const supportsBib = adminUnlocked || (currentSportConfig.supports_bib && unlocked);
-  const supportsCheckin = adminUnlocked || (currentSportConfig.supports_checkin && unlocked);
-  const supportsCommunications = adminUnlocked || (currentSportConfig.supports_communications && unlocked);
-  const supportsTournamentUnlocked = (supportsTournament && unlocked) || adminUnlocked;
+  const supportsBib = currentSportConfig.supports_bib && unlocked;
+  const supportsCheckin = currentSportConfig.supports_checkin && unlocked;
+  const supportsCommunications = currentSportConfig.supports_communications && unlocked;
+  const supportsTournamentUnlocked = supportsTournament && unlocked;
   const supportsRaceResults = eventId ? currentSportConfig.result_type === "race_time" : false;
 
   const availableItems: NavItem[] = [

@@ -125,7 +125,11 @@ export function ParticipantRegistrationCard({
       <CardHeader className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-xl">{registration.event.name}</CardTitle>
+            <CardTitle className="text-xl">
+              <Link to={`/event/${encodeURIComponent(registration.event.id)}`} className="transition-colors hover:text-primary hover:underline">
+                {registration.event.name}
+              </Link>
+            </CardTitle>
             <CardDescription className="mt-1 flex items-center gap-1.5">
               {formatRegistrationDate(registration.event.date)}
               <span aria-hidden="true">·</span>
@@ -135,6 +139,9 @@ export function ParticipantRegistrationCard({
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <RegistrationStatusBadge status={registration.status} />
+            <Button asChild size="sm" variant="outline" className="gap-1.5">
+              <Link to={`/event/${encodeURIComponent(registration.event.id)}`}>View event</Link>
+            </Button>
             <Button asChild size="sm" variant="outline" className="gap-1.5">
               <Link to={`/event/${encodeURIComponent(registration.event.id)}/results`}>
                 <Trophy className="h-3.5 w-3.5" /> View results

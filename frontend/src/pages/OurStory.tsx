@@ -14,7 +14,6 @@ import {
   ScanLine,
   Activity,
   Target,
-  MonitorPlay,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -341,17 +340,20 @@ function ProductVisuals() {
     {
       label: "Organizer Dashboard",
       description: "Manage registrations, payments and participants from one view.",
-      placeholder: "[SCREENSHOT: organizer-dashboard]",
+      detail: "See confirmed entries, payments, capacity, and check-in progress in one place.",
+      icon: ClipboardList,
     },
     {
       label: "QR Check-In Matrix",
       description: "Scan tickets and monitor every check-in station in real time.",
-      placeholder: "[SCREENSHOT: qr-checkin-matrix]",
+      detail: "Choose a station, scan the participant’s ticket, and keep every checkpoint accountable.",
+      icon: ScanLine,
     },
     {
       label: "Live Results Page",
       description: "Scores, rankings and brackets — public the moment they're published.",
-      placeholder: "[SCREENSHOT: live-results-page]",
+      detail: "Give participants one reliable place to find times, rankings, scores, and brackets.",
+      icon: Trophy,
     },
   ];
 
@@ -363,25 +365,24 @@ function ProductVisuals() {
           The tools that replace the chaos.
         </h2>
         <p className="mt-4 max-w-xl text-base leading-7 text-white/55">
-          Every view below is live and in use by organizers today.
+          One connected workflow for the work that matters before, during, and after event day.
         </p>
 
         <div className="mt-12 grid gap-6 sm:grid-cols-3">
-          {screens.map(({ label, description, placeholder }) => (
+          {screens.map(({ label, description, detail, icon: Icon }, index) => (
             <div key={label} className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-              {/* screenshot slot */}
-              <div
-                className="flex h-48 items-center justify-center bg-white/5 text-center"
-                aria-label={`Screenshot placeholder: ${label}`}
-              >
-                <div className="space-y-2 px-4">
-                  <MonitorPlay className="mx-auto h-8 w-8 text-[#ff9933]/50" />
-                  <p className="text-[10px] font-mono text-white/30">{placeholder}</p>
+              <div className="relative flex h-48 items-center justify-center overflow-hidden bg-gradient-to-br from-white/10 to-white/[0.02]">
+                <div className="absolute inset-x-8 top-7 h-px bg-white/10" />
+                <div className="absolute inset-x-8 bottom-7 h-px bg-white/10" />
+                <div className="relative flex h-20 w-20 items-center justify-center rounded-3xl border border-[#ff9933]/40 bg-[#101b35] shadow-2xl shadow-black/30">
+                  <Icon className="h-9 w-9 text-[#ff9933]" />
                 </div>
+                <span className="absolute right-5 top-5 text-[10px] font-black uppercase tracking-[0.2em] text-white/35">0{index + 1}</span>
               </div>
               <div className="p-4">
                 <p className="text-sm font-bold text-white">{label}</p>
                 <p className="mt-1 text-xs leading-5 text-white/50">{description}</p>
+                <p className="mt-3 border-t border-white/10 pt-3 text-xs leading-5 text-white/65">{detail}</p>
               </div>
             </div>
           ))}

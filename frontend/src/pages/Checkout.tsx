@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useEvent } from "@/hooks/useEvents";
 import { useAuth } from "@/contexts/AuthContext";
 import type { AddonDefinition, ParticipantFieldConfig } from "@/data/mockEvents";
+import { getSportConfig } from "@/data/sportConfig";
 import { apiRequest } from "@/lib/api";
 import { scrollToTop } from "@/lib/scroll";
 import { computeSportPassFeePaise, formatPaise } from "@/lib/platform-fee";
@@ -126,7 +127,7 @@ const Checkout = () => {
   const navigate = useNavigate();
   const { user, isParticipant, isInitialized } = useAuth();
   const { data: event, isLoading, isError } = useEvent(eventId);
-  const participantLabel = "Participant";
+  const participantLabel = getSportConfig(event?.sport).participant_label;
   const steps = ["Tickets", `${participantLabel} details`, event?.paymentCollectionMethod === "CASHFREE_MANAGED" ? "Online Payment" : "UPI Payment"];
   const [cart] = useState<CartLine[]>(() => readCart(eventId, tierId));
   const [riders, setRiders] = useState<RiderDraft[]>([]);
@@ -282,6 +283,35 @@ const Checkout = () => {
     });
     setRiders(nextRiders);
   }, [cart, event, riders.length]);
+
+  // Signed-in participants should not have to retype their account details.
+  // Only prefill the first entry/member; teammates and additional entries
+  // still need to be entered explicitly by the person placing the order.
+  useEffect(() => {
+    if (!isParticipant || !user || riders.length === 0) return;
+    const firstRider = riders[0];
+    const firstFields = fieldsForRider(firstRider);
+    const accountValues: Record<string, string | undefined> = {
+      full_name: user.name,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      captain_name: user.name,
+      captain_email: user.email,
+      captain_phone: user.phone,
+    };
+    const autofill = Object.fromEntries(
+      firstFields
+        .map((field) => [field.id, accountValues[field.id]] as const)
+        .filter(([, value]) => Boolean(value)),
+    );
+    if (Object.keys(autofill).length === 0) return;
+    setRiders((previous) => previous.map((rider, index) => index === 0
+      ? { ...rider, responses: { ...autofill, ...rider.responses } }
+      : rider));
+  // Run once when the initial rider draft becomes available.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isParticipant, user, riders.length, fields.length, mainRegistrantFields.length, teamParticipantFields.length]);
 
   // Auto-fill captain fields from team info for the first member
   const updateResponse = (riderKey: string, field: ParticipantFieldConfig, value: ResponseValue) => {

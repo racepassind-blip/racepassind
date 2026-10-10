@@ -137,7 +137,7 @@ const App = () => (
             <Route path="/organizer/events/:eventId/race-results" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventRaceResults /></ProtectedRoute>} />
             <Route path="/event/:eventId/number-list" element={<PublicEventNumberList />} />
             <Route path="/organizer/events/:eventId" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventDashboard /></ProtectedRoute>} />
-            <Route path="/organizer/setup" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerSetup /></ProtectedRoute>} />
+            <Route path="/organizer/setup" element={<ProtectedRoute allowedRoles={["organizer"]}><OrganizerSetup /></ProtectedRoute>} />
             <Route path="/organizer/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerRefunds /></ProtectedRoute>} />
             <Route path="/organizer/credits" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerCredits /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerRefunds /></ProtectedRoute>} />

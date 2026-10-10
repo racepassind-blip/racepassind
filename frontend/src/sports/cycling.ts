@@ -6,6 +6,9 @@ export default {
     supports_distance: true,
     supports_bib: true,
     supports_tournament: false,
+    // Race-time events stay out of tournament tooling even with legacy/team
+    // category data present.
+    team_tournament: false,
     supports_checkin: true,
     supports_communications: true,
     numberEnabled: true,

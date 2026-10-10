@@ -128,7 +128,7 @@ const OrganizerEventCheckpoints = () => {
               <p className="text-xs text-muted-foreground">
                 Need custom check-in features? <a href="mailto:sportpassind@gmail.com" className="font-medium text-primary hover:underline">Contact SportPass India</a> for custom pricing.
               </p>
-              <Button variant="outline" onClick={() => navigate(`/organizer/events/${eventId}`)}>Back to event</Button>
+              <Button variant="outline" onClick={() => navigate(`/organizer/events/${eventId}/check-in`)}>Back to check-in</Button>
             </CardContent>
           </Card>
         </div>
@@ -140,7 +140,7 @@ const OrganizerEventCheckpoints = () => {
     <OrganizerDashboardLayout eventId={eventId}>
       <div className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate(`/organizer/events/${eventId}`)} aria-label="Back to event dashboard"><ArrowLeft className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" onClick={() => navigate(`/organizer/events/${eventId}/check-in`)} aria-label="Back to check-in"><ArrowLeft className="h-4 w-4" /></Button>
           <div><h1 className="text-2xl font-extrabold tracking-tight">Checkpoints</h1><p className="text-sm text-muted-foreground">Configure the physical stations for {eventName || "this event"}. The same participant QR works at every station.</p></div>
         </div>
 
