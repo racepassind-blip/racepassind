@@ -31,7 +31,13 @@ from app.services.mfa_service import (
     verify_totp_code,
 )
 from app.services.payment_service import generate_qr_data_url
-from app.services.rate_limit_service import RateLimitExceeded, enforce_account_registration_limit, enforce_login_limit
+from app.services.rate_limit_service import (
+    RateLimitExceeded,
+    enforce_account_registration_limit,
+    enforce_login_limit,
+    enforce_password_reset_attempt_limit,
+    enforce_password_reset_request_limit,
+)
 from db import get_db
 from models import AuthSession, OrganizerApplication, PasswordResetToken, User
 from app.services.email_service import send_email
@@ -301,6 +307,13 @@ def login(
 @router.post("/forgot-password")
 def forgot_password(payload: ForgotPasswordIn, request: Request, _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict[str, str]:
     email = normalize_email(payload.email)
+    client_ip = request.client.host if request.client else "unknown"
+    try:
+        enforce_password_reset_request_limit(db, email=email, client_ip=client_ip)
+        db.commit()
+    except RateLimitExceeded as exc:
+        db.rollback()
+        raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": str(exc.retry_after_seconds)}) from exc
     user = db.scalar(select(User).where(User.normalized_email == email, User.is_active.is_(True)))
     if user is not None:
         raw = secrets.token_urlsafe(48)
@@ -313,7 +326,14 @@ def forgot_password(payload: ForgotPasswordIn, request: Request, _: None = Depen
 
 
 @router.post("/reset-password")
-def reset_password(payload: ResetPasswordIn, response: Response, db: Session = Depends(get_db)) -> dict[str, str]:
+def reset_password(payload: ResetPasswordIn, response: Response, request: Request, db: Session = Depends(get_db)) -> dict[str, str]:
+    client_ip = request.client.host if request.client else "unknown"
+    try:
+        enforce_password_reset_attempt_limit(db, token=payload.token, client_ip=client_ip)
+        db.commit()
+    except RateLimitExceeded as exc:
+        db.rollback()
+        raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": str(exc.retry_after_seconds)}) from exc
     now = dt.datetime.now(dt.timezone.utc)
     token = db.scalar(select(PasswordResetToken).where(PasswordResetToken.token_hash == hashlib.sha256(payload.token.encode()).hexdigest(), PasswordResetToken.used_at.is_(None)).with_for_update())
     if token is None or token.expires_at <= now:
@@ -322,7 +342,8 @@ def reset_password(payload: ResetPasswordIn, response: Response, db: Session = D
     if user is None or not user.is_active:
         raise HTTPException(status_code=400, detail="This reset link is invalid or expired")
     user.password_hash = hash_password(payload.password)
-    token.used_at = now
+    for active_token in db.scalars(select(PasswordResetToken).where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None))).all():
+        active_token.used_at = now
     for session in db.scalars(select(AuthSession).where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))).all():
         session.revoked_at = now
     db.commit()

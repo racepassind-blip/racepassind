@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ScrollToTop } from "@/components/ScrollToTop";
+import { GlobalLoadingIndicator } from "@/components/GlobalLoadingIndicator";
 import { AuthProvider } from "@/contexts/AuthContext";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
@@ -67,12 +69,29 @@ import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
+function MarketingAttribution() {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const keys = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
+    const attribution = Object.fromEntries(keys.flatMap((key) => {
+      const value = params.get(key)?.trim();
+      return value ? [[key, value.slice(0, 160)]] : [];
+    }));
+    if (Object.keys(attribution).length > 0) {
+      sessionStorage.setItem("sportpass_utm", JSON.stringify({ ...attribution, captured_at: new Date().toISOString() }));
+    }
+  }, []);
+  return null;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <GlobalLoadingIndicator />
       <BrowserRouter>
+        <MarketingAttribution />
         <AuthProvider>
           <ScrollToTop />
           <Routes>

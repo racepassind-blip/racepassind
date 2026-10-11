@@ -1709,6 +1709,12 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
             confirmation_token_hash=hash_opaque_token(confirmation_token),
             claim_code_hash=hash_opaque_token(claim_code) if claim_code else None,
             claim_code_expires_at=now + dt.timedelta(days=7) if claim_code else None,
+            utm_source=payload.attribution.utm_source if payload.attribution else None,
+            utm_medium=payload.attribution.utm_medium if payload.attribution else None,
+            utm_campaign=payload.attribution.utm_campaign if payload.attribution else None,
+            utm_term=payload.attribution.utm_term if payload.attribution else None,
+            utm_content=payload.attribution.utm_content if payload.attribution else None,
+            attribution_captured_at=payload.attribution.captured_at if payload.attribution else None,
         )
         ticket.quantity_reserved += 1
         db.add(registration)

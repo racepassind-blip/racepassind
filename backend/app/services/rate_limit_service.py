@@ -106,6 +106,38 @@ def enforce_account_registration_limit(db: Session, *, email: str, client_ip: st
     )
 
 
+def enforce_password_reset_request_limit(db: Session, *, email: str, client_ip: str) -> None:
+    _enforce_ip_limit(
+        db,
+        prefix="password-reset-request",
+        client_ip=client_ip,
+        max_attempts=10,
+        message="Too many password reset requests. Try again later.",
+    )
+    _enforce_limit(
+        db,
+        key_hash=_rate_limit_key("password-reset-request", email, client_ip),
+        max_attempts=3,
+        message="Too many password reset requests. Try again later.",
+    )
+
+
+def enforce_password_reset_attempt_limit(db: Session, *, token: str, client_ip: str) -> None:
+    _enforce_ip_limit(
+        db,
+        prefix="password-reset-attempt",
+        client_ip=client_ip,
+        max_attempts=20,
+        message="Too many password reset attempts. Try again later.",
+    )
+    _enforce_limit(
+        db,
+        key_hash=_rate_limit_key("password-reset-attempt", token, client_ip),
+        max_attempts=5,
+        message="Too many password reset attempts. Try again later.",
+    )
+
+
 def enforce_race_registration_limit(db: Session, *, event_id: str, ticket_id: str, client_ip: str) -> None:
     _enforce_ip_limit(
         db,

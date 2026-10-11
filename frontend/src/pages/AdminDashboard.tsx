@@ -47,6 +47,13 @@ interface TopEventByEmail {
   failed: number;
   failureRate: number;
 }
+interface MarketingAttribution {
+  periodDays: number;
+  sources: Array<{ name: string; count: number }>;
+  campaigns: Array<{ name: string; count: number }>;
+  daily: Array<{ date: string; count: number }>;
+  region: { india: number; outsideIndia: number; unknown: number };
+}
 interface AdminDashboardResponse {
   generatedAt: string;
   period: { label: string; start: string; end: string };
@@ -56,6 +63,7 @@ interface AdminDashboardResponse {
   monthlyTrend: MonthlyTrend[];
   emailUsage: EmailUsage;
   topEventsByEmail: TopEventByEmail[];
+  marketingAttribution: MarketingAttribution;
 }
 
 function formatINR(paise: number) { return `₹${(paise / 100).toLocaleString("en-IN")}`; }
@@ -81,6 +89,7 @@ const AdminDashboard = () => {
 
   useEffect(() => { void load(); }, []);
   const maxRegistrations = useMemo(() => Math.max(...(data?.monthlyTrend.map((item) => item.registrations) ?? [0]), 1), [data]);
+  const maxAttribution = useMemo(() => Math.max(...(data?.marketingAttribution.daily.map((item) => item.count) ?? [0]), 1), [data]);
 
   return (
     <AdminDashboardLayout>
@@ -153,6 +162,11 @@ const AdminDashboard = () => {
           <section className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
             <Card><CardHeader className="flex flex-row items-start justify-between gap-4"><div><CardTitle>Monthly performance</CardTitle><CardDescription>Confirmed participant entries over the last six months.</CardDescription></div><Badge variant="secondary">{data.period.label}</Badge></CardHeader><CardContent><div className="flex h-56 items-end gap-2 border-b border-l px-2 pb-0 pt-5 sm:gap-4">{data.monthlyTrend.map((item) => <div key={item.month} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div className="group relative flex h-full w-full items-end justify-center"><div className="w-full max-w-12 rounded-t-lg bg-primary/80 transition-colors group-hover:bg-primary" style={{ height: `${Math.max((item.registrations / maxRegistrations) * 100, item.registrations ? 8 : 2)}%` }} title={`${item.registrations.toLocaleString("en-IN")} entries`} /></div><span className="text-[11px] text-muted-foreground">{item.label}</span></div>)}</div><div className="mt-4 flex flex-wrap gap-4 text-xs text-muted-foreground"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-primary" /> Confirmed entries</span><span>{data.metrics.registrationsThisMonth.toLocaleString("en-IN")} this month</span><span>{data.metrics.racesPublishedThisMonth.toLocaleString("en-IN")} races published</span></div></CardContent></Card>
             <Card><CardHeader><CardTitle>Needs attention</CardTitle><CardDescription>Operational items that can block growth.</CardDescription></CardHeader><CardContent className="space-y-3"><Link to="/admin/organizer-applications" className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/50"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-100 text-orange-700"><Clock3 className="h-4 w-4" /></span><span className="flex-1"><span className="block text-sm font-semibold">Pending organizer requests</span><span className="block text-xs text-muted-foreground">{data.metrics.pendingOrganizerApplications} need review</span></span><ArrowUpRight className="h-4 w-4 text-muted-foreground" /></Link><div className="flex items-center gap-3 rounded-xl border p-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-700"><Building2 className="h-4 w-4" /></span><span className="flex-1"><span className="block text-sm font-semibold">Organizations awaiting setup</span><span className="block text-xs text-muted-foreground">{data.metrics.incompleteOnboardingOrganizations} profiles incomplete</span></span></div></CardContent></Card>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+            <Card><CardHeader><CardTitle>Registration acquisition</CardTitle><CardDescription>Confirmed registrations attributed during the last {data.marketingAttribution.periodDays} days.</CardDescription></CardHeader><CardContent><div className="flex h-48 items-end gap-1 border-b border-l px-2 pt-4">{data.marketingAttribution.daily.length === 0 ? <p className="m-auto text-sm text-muted-foreground">No attributed registrations yet.</p> : data.marketingAttribution.daily.map((item) => <div key={item.date} className="group relative flex h-full min-w-1 flex-1 items-end"><div className="w-full rounded-t bg-primary/75" style={{ height: `${Math.max((item.count / maxAttribution) * 100, item.count ? 6 : 1)}%` }} title={`${item.date}: ${item.count} registrations`} /></div>)}</div><p className="mt-3 text-xs text-muted-foreground">Daily confirmed registrations. Campaign attribution starts with registrations made after this release.</p></CardContent></Card>
+            <Card><CardHeader><CardTitle>Where registrations came from</CardTitle><CardDescription>UTM source and campaign totals.</CardDescription></CardHeader><CardContent className="space-y-5"><div className="space-y-2">{data.marketingAttribution.sources.length === 0 ? <p className="text-sm text-muted-foreground">No source data yet.</p> : data.marketingAttribution.sources.slice(0, 6).map((item) => <div key={item.name} className="flex items-center justify-between gap-3 text-sm"><span className="truncate">{item.name}</span><Badge variant="secondary">{item.count.toLocaleString("en-IN")}</Badge></div>)}</div>{data.marketingAttribution.campaigns.length > 0 && <div className="border-t pt-4"><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Top campaigns</p>{data.marketingAttribution.campaigns.slice(0, 4).map((item) => <div key={item.name} className="flex items-center justify-between gap-3 py-1 text-sm"><span className="truncate">{item.name}</span><span className="font-mono">{item.count}</span></div>)}</div>}<div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">Region: {data.marketingAttribution.region.unknown.toLocaleString("en-IN")} unknown. India/outside-India reporting will remain off until a consented location source is configured.</div></CardContent></Card>
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">

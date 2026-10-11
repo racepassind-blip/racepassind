@@ -92,6 +92,25 @@ class EntryRegistrationIn(BaseModel):
         return self
 
 
+class MarketingAttributionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    utm_source: str | None = Field(default=None, max_length=160)
+    utm_medium: str | None = Field(default=None, max_length=160)
+    utm_campaign: str | None = Field(default=None, max_length=160)
+    utm_term: str | None = Field(default=None, max_length=160)
+    utm_content: str | None = Field(default=None, max_length=160)
+    captured_at: dt.datetime | None = None
+
+    @field_validator("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", mode="before")
+    @classmethod
+    def normalize_value(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+
 class BatchRegistrationCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -99,6 +118,7 @@ class BatchRegistrationCreateIn(BaseModel):
     # Limit tickets per transaction; doubles participants share one ticket.
     entries: list[EntryRegistrationIn] | None = Field(default=None, min_length=1, max_length=15)
     riders: list[RiderRegistrationIn] | None = Field(default=None, min_length=1, max_length=15)
+    attribution: MarketingAttributionIn | None = None
 
     @model_validator(mode="after")
     def require_one_payload(self) -> "BatchRegistrationCreateIn":

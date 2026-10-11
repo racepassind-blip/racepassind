@@ -51,6 +51,22 @@ def test_empty_batch_is_rejected():
         BatchRegistrationCreateIn(event_id=uuid4(), entries=[])
 
 
+def test_marketing_attribution_is_trimmed_and_limited():
+    payload = BatchRegistrationCreateIn(
+        event_id=uuid4(),
+        entries=[entry(uuid4())],
+        attribution={"utm_source": "  instagram  ", "utm_campaign": "october-run"},
+    )
+    assert payload.attribution is not None
+    assert payload.attribution.utm_source == "instagram"
+    with pytest.raises(ValidationError):
+        BatchRegistrationCreateIn(
+            event_id=uuid4(),
+            entries=[entry(uuid4())],
+            attribution={"utm_source": "x" * 161},
+        )
+
+
 @pytest.mark.parametrize("field", ["entries", "riders"])
 @pytest.mark.parametrize("count", [16, 20])
 def test_transaction_limit_rejects_oversized_orders(field, count):

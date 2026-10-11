@@ -12,17 +12,21 @@ settings = get_settings()
 DATABASE_URL = settings.database_url
 
 connect_args = {}
+engine_options = {"pool_pre_ping": True}
 if DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
+else:
+    engine_options.update(
+        pool_size=10,
+        max_overflow=20,
+        pool_timeout=30,
+        pool_recycle=1800,
+    )
 
 engine = create_engine(
     DATABASE_URL,
     connect_args=connect_args,
-    pool_pre_ping=True,
-    pool_size=10,        # base connections kept open
-    max_overflow=20,     # extra connections allowed under burst (total cap = 30)
-    pool_timeout=30,     # seconds to wait for a connection before raising
-    pool_recycle=1800,   # recycle connections every 30 min to avoid stale Neon connections
+    **engine_options,
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()

@@ -520,6 +520,14 @@ const Checkout = () => {
         headers: { "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({
           event_id: eventId,
+          attribution: (() => {
+            try {
+              const raw = sessionStorage.getItem("sportpass_utm");
+              return raw ? JSON.parse(raw) : undefined;
+            } catch {
+              return undefined;
+            }
+          })(),
           entries: entryGroups.map((group) => {
             const primaryResponses = group[0].responses;
             // Main-registrant-only fields live on the captain (index 0). They must

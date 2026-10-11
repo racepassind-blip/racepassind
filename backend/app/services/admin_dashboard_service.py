@@ -171,6 +171,37 @@ def _top_events_by_email_volume(db: Session, limit: int = 5) -> list[dict]:
     ]
 
 
+def _marketing_attribution(db: Session, now: dt.datetime) -> dict:
+    start = now - dt.timedelta(days=30)
+    base_conditions = (
+        Registration.created_at >= start,
+        Registration.status.in_(_CONFIRMED_REGISTRATION_STATUSES),
+        Registration.payment_status.in_(_CONFIRMED_PAYMENT_STATUSES),
+    )
+    source_rows = db.execute(
+        select(
+            func.coalesce(Registration.utm_source, "Direct / unknown").label("name"),
+            func.count(Registration.id).label("count"),
+        ).where(*base_conditions).group_by("name").order_by(desc("count")).limit(10)
+    ).all()
+    campaign_rows = db.execute(
+        select(Registration.utm_campaign.label("name"), func.count(Registration.id).label("count"))
+        .where(*base_conditions, Registration.utm_campaign.is_not(None))
+        .group_by(Registration.utm_campaign).order_by(desc("count")).limit(10)
+    ).all()
+    daily_rows = db.execute(
+        select(func.date(Registration.created_at).label("day"), func.count(Registration.id).label("count"))
+        .where(*base_conditions).group_by("day").order_by("day")
+    ).all()
+    return {
+        "periodDays": 30,
+        "sources": [{"name": row.name, "count": _number(row.count)} for row in source_rows],
+        "campaigns": [{"name": row.name, "count": _number(row.count)} for row in campaign_rows],
+        "daily": [{"date": str(row.day), "count": _number(row.count)} for row in daily_rows],
+        "region": {"india": 0, "outsideIndia": 0, "unknown": sum(_number(row.count) for row in source_rows)},
+    }
+
+
 def get_admin_dashboard(db: Session) -> dict:
     now = utc_now()
     month_start, next_month_start = _date_range(now)
@@ -229,4 +260,5 @@ def get_admin_dashboard(db: Session) -> dict:
         "monthlyTrend": _monthly_trend(db, month_start),
         "emailUsage": _email_usage(db),
         "topEventsByEmail": _top_events_by_email_volume(db),
+        "marketingAttribution": _marketing_attribution(db, now),
     }

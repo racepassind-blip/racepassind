@@ -54,7 +54,7 @@ const AdminCommunication = () => {
     setSaving(true);
     try {
       // Only send fields that have changed
-      const payload: any = {};
+      const payload: Partial<Pick<CommunicationSettings, "sender_name" | "gmail_address" | "enabled">> = {};
       if (settings.sender_name !== null && settings.sender_name !== undefined) {
         payload.sender_name = settings.sender_name;
       }
@@ -108,7 +108,7 @@ const AdminCommunication = () => {
     }
   };
 
-  const updateSetting = (key: keyof CommunicationSettings, value: any) => {
+  const updateSetting = (key: keyof CommunicationSettings, value: CommunicationSettings[keyof CommunicationSettings]) => {
     setSettings((prev) => (prev ? { ...prev, [key]: value } : null));
     setTestStatus(null);
     setTestMessage("");

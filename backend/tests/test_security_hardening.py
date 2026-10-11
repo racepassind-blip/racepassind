@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.services.audit_service import safe_audit_metadata
-from app.services.rate_limit_service import RateLimitExceeded, enforce_login_limit
+from app.services.rate_limit_service import RateLimitExceeded, enforce_login_limit, enforce_password_reset_request_limit
 from db import Base, get_db
 from main import app
 
@@ -81,6 +81,16 @@ class SecurityHardeningTests(unittest.TestCase):
             with self.assertRaises(RateLimitExceeded) as context:
                 enforce_login_limit(db, email="person@example.test", client_ip="198.51.100.10")
             self.assertEqual(context.exception.retry_after_seconds, 600)
+
+    def test_password_reset_request_rate_limit(self) -> None:
+        engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+        Base.metadata.create_all(engine)
+        with Session(engine) as db:
+            for _ in range(3):
+                enforce_password_reset_request_limit(db, email="person@example.test", client_ip="198.51.100.11")
+                db.commit()
+            with self.assertRaises(RateLimitExceeded):
+                enforce_password_reset_request_limit(db, email="person@example.test", client_ip="198.51.100.11")
 
     def test_audit_metadata_redacts_sensitive_values(self) -> None:
         safe = safe_audit_metadata(

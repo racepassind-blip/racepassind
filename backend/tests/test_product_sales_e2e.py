@@ -191,7 +191,10 @@ class ProductSalesE2ETests(unittest.TestCase):
             db.commit()
             result = delete_order(LISTING_ID, order_id, db=db, user=Mock())
             self.assertTrue(result["deleted"])
-            self.assertIsNone(db.get(ProductOrder, order_id))
+            self.assertTrue(result["archived"])
+            archived = db.get(ProductOrder, order_id)
+            self.assertIsNotNone(archived)
+            self.assertIsNotNone(archived.archived_at)
 
     def test_payment_reference_is_required_before_review(self):
         order = self.place_test_order()

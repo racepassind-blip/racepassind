@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import ipaddress
 import secrets
 import time
 import uuid
+from collections import defaultdict, deque
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -64,6 +66,50 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Request-ID", "Idempotency-Key", "X-Order-Token"],
 )
+
+# Lightweight application-level guard for public reads. This is intentionally
+# conservative; Cloudflare should still enforce the distributed WAF limit at
+# the edge. On the production custom domain Cloudflare supplies its validated
+# connecting-IP header; the direct socket address is used elsewhere.
+_PUBLIC_READ_LIMIT = 120
+_PUBLIC_READ_WINDOW_SECONDS = 60.0
+_public_read_hits: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+_public_read_last_sweep = 0.0
+
+
+def _public_client_ip(request: Request) -> str:
+    candidate = request.headers.get("CF-Connecting-IP") if settings.is_production else None
+    candidate = candidate or (request.client.host if request.client else "unknown")
+    try:
+        return str(ipaddress.ip_address(candidate.strip()))
+    except ValueError:
+        return "unknown"
+
+
+@app.middleware("http")
+async def public_read_rate_limit(request: Request, call_next):
+    global _public_read_last_sweep
+    is_public_read = request.method == "GET" and (
+        request.url.path.startswith("/api/v1/") or request.url.path in {"/events"} or request.url.path.startswith("/events/")
+    ) and not request.url.path.startswith("/api/v1/admin/")
+    if is_public_read:
+        client_ip = _public_client_ip(request)
+        key = (client_ip, request.url.path)
+        now = time.monotonic()
+        if now - _public_read_last_sweep >= _PUBLIC_READ_WINDOW_SECONDS:
+            stale_keys = [stored_key for stored_key, stored_hits in _public_read_hits.items() if not stored_hits or now - stored_hits[-1] >= _PUBLIC_READ_WINDOW_SECONDS]
+            for stale_key in stale_keys:
+                _public_read_hits.pop(stale_key, None)
+            _public_read_last_sweep = now
+        hits = _public_read_hits[key]
+        while hits and now - hits[0] >= _PUBLIC_READ_WINDOW_SECONDS:
+            hits.popleft()
+        if len(hits) >= _PUBLIC_READ_LIMIT:
+            response = JSONResponse(status_code=429, content={"detail": "Too many requests. Please try again shortly."})
+            response.headers["Retry-After"] = str(int(_PUBLIC_READ_WINDOW_SECONDS))
+            return response
+        hits.append(now)
+    return await call_next(request)
 
 
 def _safe_request_id(value: str | None) -> str:
@@ -148,6 +194,16 @@ async def security_and_observability_middleware(request: Request, call_next):
 
 def _run_migrations() -> None:
     if not settings.auto_migrate:
+        return
+
+    # Local SQLite is an isolated development/test database. Several historical
+    # PostgreSQL migrations use ALTER CONSTRAINT operations SQLite cannot run;
+    # create the current metadata directly instead of leaving local tests unable
+    # to start. Production is already required to use PostgreSQL.
+    if settings.database_url.startswith("sqlite") and not settings.is_production:
+        from db import Base
+
+        Base.metadata.create_all(bind=engine)
         return
 
     from alembic import command
