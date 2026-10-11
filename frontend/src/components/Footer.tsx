@@ -58,9 +58,14 @@ export function Footer() {
         <div className="mt-10 pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <span>© 2026 SportPass India. Built for India, built in Mysuru.</span>
           <div className="flex gap-4">
-            <span className="hover:text-foreground cursor-pointer">Twitter</span>
-            <span className="hover:text-foreground cursor-pointer">Instagram</span>
-            <span className="hover:text-foreground cursor-pointer">LinkedIn</span>
+            <a
+              href="https://www.instagram.com/sportpassindia/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground transition-colors"
+            >
+              Instagram
+            </a>
           </div>
         </div>
       </div>

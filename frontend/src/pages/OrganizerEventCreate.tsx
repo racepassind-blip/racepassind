@@ -1150,7 +1150,7 @@ const OrganizerEventCreate = () => {
 
   return (
     <OrganizerDashboardLayout eventId={eventId} showNavigation={Boolean(eventId)}>
-      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-6xl min-w-0 px-4 py-10 sm:px-6 lg:px-8">
         {isLoadingEvent ? <p className="py-20 text-center text-muted-foreground">Loading event…</p> : <>
         <div className="mb-6 flex items-start gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/organizer")} aria-label="Back to organizer dashboard"><ArrowLeft className="h-4 w-4" /></Button>
@@ -1163,7 +1163,7 @@ const OrganizerEventCreate = () => {
 
         {!eventId && <div className="mb-6 flex flex-col gap-3 rounded-xl border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">What are you selling?</p><p className="mt-1 text-sm text-muted-foreground">Continue here for event tickets and participant registration. Use a product storefront for breakfast, jerseys, or merchandise without tickets.</p></div><Button type="button" variant="outline" className="shrink-0 gap-2" onClick={() => navigate("/organizer/products")}><Shirt className="h-4 w-4" /> Sell products instead</Button></div>}
 
-        <div className="mb-8 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6" aria-label="Event setup progress">
+        <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-6" aria-label="Event setup progress">
           {wizardSteps.map((step, index) => {
             const completed = index < currentStep;
             const active = index === currentStep;
@@ -1175,23 +1175,23 @@ const OrganizerEventCreate = () => {
               aria-current={active ? "step" : undefined}
               aria-label={`${index + 1}. ${step.title}${completed ? " — completed" : active ? " — current step" : " — upcoming"}`}
               className={cn(
-                "flex min-h-[104px] flex-col rounded-xl border px-3 py-3 text-left transition-colors",
+                "flex min-w-0 min-h-[128px] flex-col rounded-xl border p-4 text-left transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
                 active && "border-primary/60 bg-primary/[0.08]",
                 completed && "border-emerald-200 bg-emerald-50/60 hover:border-emerald-300 hover:bg-emerald-50",
                 !active && !completed && "border-border bg-card",
               )}
             >
-              <div className="flex items-start gap-2.5">
+              <div className="flex min-w-0 flex-col items-start gap-2">
                 <span className={cn(
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold",
                   active && "bg-primary/15 text-primary",
                   completed && "bg-emerald-100 text-emerald-700",
                   !active && !completed && "bg-muted text-muted-foreground",
                 )}>{completed ? <Check className="h-4 w-4" /> : index + 1}</span>
-                <span className="pt-1 text-sm font-bold leading-tight text-foreground">{step.title}</span>
+                <span className="min-w-0 break-words text-sm font-bold leading-tight text-foreground">{step.title}</span>
               </div>
-              <p className="mt-auto pt-3 text-xs leading-4 text-muted-foreground">{step.description}</p>
+              <p className="mt-auto min-w-0 break-words pt-3 text-xs leading-4 text-muted-foreground">{step.description}</p>
             </button>;
           })}
         </div>
