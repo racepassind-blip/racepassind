@@ -44,8 +44,11 @@ export function Navbar() {
     .join("")
     .toUpperCase() ?? "";
 
+  const isActive = (to: string) => pathname === to || (to !== "/" && pathname.startsWith(`${to}/`));
+
   return (
     <header className="sticky top-0 z-50 border-b border-border/80 bg-card/90 backdrop-blur-xl">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-[110] focus:rounded-lg focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:shadow-lg">Skip to content</a>
       <div className="h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" />
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
         <Link to="/" className="flex shrink-0 items-center gap-2 text-lg font-black tracking-tight sm:text-xl">
@@ -60,7 +63,8 @@ export function Navbar() {
             <Link
               key={link.to}
               to={link.to}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${pathname === link.to ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}
+              aria-current={isActive(link.to) ? "page" : undefined}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${isActive(link.to) ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}
             >
               <span>{link.label}</span>
               {link.comingSoon && <span title="Coming soon" aria-label="Coming soon" className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Soon</span>}
@@ -108,7 +112,7 @@ export function Navbar() {
           <SheetContent side="right" className="flex w-[min(22rem,90vw)] flex-col overflow-y-auto p-5 xl:hidden">
             <SheetTitle className="border-b pb-4 text-left text-lg font-black">SportPass <span className="text-primary">India</span></SheetTitle>
             <nav aria-label="Mobile navigation" className="flex flex-1 flex-col gap-1 pt-3">
-              {links.map((link) => <Link key={link.to} to={link.to} onClick={() => setOpen(false)} aria-current={pathname === link.to ? "page" : undefined} className={`flex min-h-11 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-semibold ${pathname === link.to ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}><span>{link.label}</span>{link.comingSoon && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">Soon</span>}</Link>)}
+              {links.map((link) => <Link key={link.to} to={link.to} onClick={() => setOpen(false)} aria-current={isActive(link.to) ? "page" : undefined} className={`flex min-h-11 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-semibold ${isActive(link.to) ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}><span>{link.label}</span>{link.comingSoon && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">Soon</span>}</Link>)}
               <div className="mt-auto border-t pt-4">
                 {user ? <><p className="truncate px-4 pb-2 text-xs text-muted-foreground">Signed in as {user.name}</p><button type="button" onClick={() => { setOpen(false); void handleLogout(); }} className="flex min-h-11 w-full items-center gap-2 rounded-xl px-4 text-left text-sm font-semibold text-destructive hover:bg-muted"><LogOut className="h-4 w-4" /> Log out</button></> : !isLoading ? <Button asChild className="w-full"><Link to="/login" onClick={() => setOpen(false)}>Log in</Link></Button> : null}
               </div>

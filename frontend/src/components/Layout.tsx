@@ -6,7 +6,7 @@ export function Layout({ children, raisedSupportButton = false }: { children: Re
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
-      <main className="flex-1">{children}</main>
+      <main id="main-content" tabIndex={-1} className="flex-1 outline-none">{children}</main>
       <Footer />
       <WhatsAppSupportButton raisedOnMobile={raisedSupportButton} />
     </div>
