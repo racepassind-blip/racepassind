@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/api";
-import { ArrowLeft, ArrowRight, Banknote, CalendarRange, IndianRupee, RefreshCw, Search, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, Banknote, CalendarRange, IndianRupee, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
 
 type Summary = {
   eventId: string; recoverablePaise: number; reservationShortfallPaise: number;
@@ -55,6 +55,11 @@ export default function AdminSettlements() {
       <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900"><span className="font-semibold">Manual ledger</span><br />Always verify the bank or UPI receipt before marking paid.</div>
     </div>
 
+    <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
+      <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+      <div><p className="font-semibold">Production collections only</p><p className="mt-0.5 leading-5 text-blue-900/80">This ledger records verified production Cashfree collections and manual transfers. Cashfree sandbox payments stay out of organizer balances so test money can never be settled.</p></div>
+    </div>
+
     <div className="grid gap-3 sm:grid-cols-3">
       <OverviewMetric icon={CalendarRange} label="Events" value={String(total)} />
       <OverviewMetric icon={Banknote} label="Managed on this page" value={String(managed)} />
@@ -67,7 +72,7 @@ export default function AdminSettlements() {
         <div className="relative w-full sm:w-80"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" aria-label="Search events or organizers" placeholder="Search event or organizer" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} /></div>
       </div>
       {error && <div role="alert" className="m-4 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
-      <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[860px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">Event</th><th className="px-4 py-3 font-semibold">Registrations</th><th className="px-4 py-3 font-semibold">Settled</th><th className="px-4 py-3 font-semibold">Pending</th><th className="px-4 py-3 font-semibold">Outstanding</th><th className="px-5 py-3" /></tr></thead>
           <tbody className="divide-y divide-slate-100">{events.map(event => <tr className="group bg-white transition-colors hover:bg-orange-50/35" key={event.eventId}>
@@ -80,9 +85,16 @@ export default function AdminSettlements() {
           </tr>)}</tbody>
         </table>
       </div>
+      <div className="divide-y md:hidden">
+        {events.map(event => <button key={event.eventId} type="button" onClick={() => setSelected(event.eventId)} className="block w-full p-4 text-left transition-colors hover:bg-orange-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary">
+          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold text-slate-950">{event.eventName}</p><p className="mt-0.5 truncate text-sm text-muted-foreground">{event.organizerName || "Organizer unavailable"}</p></div><ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" /></div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs"><span className={`rounded-full px-2 py-1 font-semibold ${event.paymentMode === "CASHFREE_MANAGED" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{event.paymentMode === "CASHFREE_MANAGED" ? "Managed payments" : "Direct UPI"}</span><span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">{event.paidRegistrationCount} paid registrations</span></div>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-muted-foreground">Available to settle</p><p className="mt-0.5 font-bold tabular-nums text-orange-700">{money(event.availableToSettlePaise)}</p></div><div><p className="text-xs text-muted-foreground">Outstanding</p><p className={`mt-0.5 font-bold tabular-nums ${event.outstandingAmountPaise > 0 ? "text-orange-700" : "text-slate-700"}`}>{money(event.outstandingAmountPaise)}</p></div></div>
+        </button>)}
+      </div>
       {loading && <div className="py-14 text-center text-sm text-muted-foreground">Loading settlement balances…</div>}
       {!loading && !events.length && !error && <div className="py-14 text-center"><Banknote className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 font-medium">No events found</p><p className="mt-1 text-sm text-muted-foreground">Try a different event or organizer name.</p></div>}
-      <div className="flex items-center justify-between border-t bg-slate-50/70 px-4 py-3"><p className="text-sm text-muted-foreground">Page {page} of {Math.max(1, Math.ceil(total / 20))} · {total} events</p><div className="flex gap-2"><Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Previous</Button><Button size="sm" variant="outline" disabled={page * 20 >= total} onClick={() => setPage(p => p + 1)}>Next</Button></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-slate-50/70 px-4 py-3"><p className="text-sm text-muted-foreground">Page {page} of {Math.max(1, Math.ceil(total / 20))} · {total} events</p><div className="flex gap-2"><Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Previous</Button><Button size="sm" variant="outline" disabled={page * 20 >= total} onClick={() => setPage(p => p + 1)}>Next</Button></div></div>
     </Card>
   </div></AdminDashboardLayout>;
 }
@@ -202,7 +214,7 @@ function EventLedger({ selectedEventId, onBack }: { selectedEventId: string; onB
       <Card><CardHeader><CardTitle>Verified collections</CardTitle><CardDescription>Frozen registration allocations from verified production payments. Gateway integration is separate; legacy payment approvals are not imported.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr><th>Registration / payment</th><th>Collected</th><th>Platform fee</th><th>Organizer share</th></tr></thead><tbody>{collections.map(c => <tr key={c.id} className="border-b"><td className="py-3 break-all">{c.registrationId}<p>{c.providerPaymentId}</p></td><td>{money(c.totalPaidPaise)}</td><td>{money(c.platformFeePaise)}</td><td>{money(c.organizerPayablePaise)}</td></tr>)}</tbody></table></div>{!collections.length && <p>No verified managed collections.</p>}<div className="mt-4 flex gap-3"><Button disabled={collectionPage === 1} onClick={() => setCollectionPage(p => p - 1)}>Previous collections</Button><span>{collectionTotal} collections</span><Button disabled={collectionPage * 50 >= collectionTotal} onClick={() => setCollectionPage(p => p + 1)}>Next collections</Button></div></CardContent></Card>
       <Card><CardHeader><CardTitle>Settlement history</CardTitle><CardDescription>Original paid amounts are preserved. Linked reversals appear in correction history and reduce the net settled total.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b"><th className="py-3">Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Status</th><th>Notes / recorded by</th><th></th></tr></thead><tbody>{rows.map(row => <tr key={row.id} className="border-b"><td className="py-3">{row.settlementDate}</td><td>{money(row.amountPaise)}</td><td>{row.method.replace("_", " ")}</td><td>{row.referenceNumber || "—"}</td><td>{row.status}</td><td>{row.notes}<p>{row.createdByName}</p>{row.createdAt && <small>{new Date(row.createdAt).toLocaleString()}</small>}</td><td className="text-right">{row.status === "PENDING" && <Button disabled={busy} size="sm" variant="outline" onClick={() => edit(row)}>Edit</Button>}</td></tr>)}</tbody></table>{rows.length === 0 && <p className="py-8 text-center text-muted-foreground">No settlements recorded.</p>}</div></CardContent></Card>
     </>}
-    {message && <p className="text-sm text-muted-foreground">{message}</p>}
+    {message && <p role="status" className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-muted-foreground">{message}</p>}
   </div></AdminDashboardLayout>;
 }
 
