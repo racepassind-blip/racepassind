@@ -3,7 +3,7 @@ import { AlertCircle, ArrowLeft, BarChart3, CalendarDays, ClipboardList, Copy, E
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
 import { Badge } from "@/components/ui/badge";
@@ -143,7 +143,7 @@ const OrganizerEventDashboard = () => {
         </div>
 
         <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
-          <div className="grid lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px]">
             <div className="p-5 sm:p-7 lg:p-8">
               <div className="flex flex-wrap items-center gap-2"><Badge variant={event.status === "published" ? "default" : "secondary"} className="capitalize">{event.status}</Badge><Badge variant={event.registrationStatus === "open" ? "outline" : "secondary"}>{event.registrationStatus === "open" ? "Registration open" : "Registration closed"}</Badge><Badge variant="outline">{isPastEvent ? "Completed" : "Upcoming"}</Badge>{event.eventDate === new Date().toISOString().slice(0, 10) && <Badge variant="outline">Today</Badge>}</div>
               <h1 className="mt-4 break-words text-3xl font-black tracking-tight sm:text-4xl">{event.name}</h1>
@@ -170,7 +170,7 @@ const OrganizerEventDashboard = () => {
                 </DropdownMenu>
               </div>
             </div>
-            <div className="relative min-h-52 overflow-hidden border-t bg-muted lg:min-h-full lg:border-l lg:border-t-0">
+            <div className="relative min-h-52 overflow-hidden border-t bg-muted xl:min-h-full xl:border-l xl:border-t-0">
               <img src={event.bannerUrl ?? "/placeholder.svg"} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(image) => { image.currentTarget.onerror = null; image.currentTarget.src = "/placeholder.svg"; }} />
               <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/5 to-transparent" />
               <div className="absolute inset-x-5 bottom-5 flex items-end justify-between gap-4 text-white"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/70">Confirmed participants</p><p className="mt-1 text-3xl font-black">{overview.confirmedParticipants.toLocaleString()}</p></div><Badge className="border-white/20 bg-black/45 text-white hover:bg-black/45">{salesPercent}% filled</Badge></div>
@@ -222,7 +222,30 @@ const OrganizerEventDashboard = () => {
         </Card>
 
         <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-          <Card><CardHeader className="flex-row items-center justify-between space-y-0"><div><CardTitle>Recent registrations</CardTitle><CardDescription>Latest participant activity. Select a row to inspect details.</CardDescription></div><Button variant="outline" size="sm" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}>View all</Button></CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Participant</TableHead><TableHead>Category</TableHead><TableHead>Registered</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{recentRegistrations.map((registration) => <TableRow key={registration.id} className="cursor-pointer hover:bg-muted/50" tabIndex={0} onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all&registration_reference=${encodeURIComponent(registration.registrationReference)}`)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/organizer/registrations?event_id=${event.id}&status=all&registration_reference=${encodeURIComponent(registration.registrationReference)}`); }}><TableCell><p className="font-semibold text-primary">{registration.participant.name}</p><p className="text-xs text-muted-foreground">{registration.registrationReference}</p></TableCell><TableCell>{registration.ticket.category || registration.ticket.name}</TableCell><TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatDateTime(registration.createdAt)}</TableCell><TableCell>{registration.amountPaise === 0 ? "Free" : formatINR(registration.amountPaise)}</TableCell><TableCell>{registrationBadge(registration.status)}</TableCell></TableRow>)}{recentRegistrations.length === 0 && <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">No registrations yet.</TableCell></TableRow>}</TableBody></Table></div></CardContent></Card>
+          <Card>
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+              <div className="min-w-0"><CardTitle>Recent registrations</CardTitle><CardDescription>Select a participant to find their registration.</CardDescription></div>
+              <Button variant="outline" size="sm" className="shrink-0" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}>View all</Button>
+            </CardHeader>
+            <CardContent>
+              <div className="divide-y md:hidden">
+                {recentRegistrations.map((registration) => <Link key={registration.id} to={`/organizer/registrations?event_id=${event.id}&status=all&registration_reference=${encodeURIComponent(registration.registrationReference)}`} className="block space-y-2 rounded-lg py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <p className="break-words font-semibold text-primary">{registration.participant.name}</p>
+                  <p className="break-all font-mono text-xs text-muted-foreground">{registration.registrationReference}</p>
+                  <p className="break-words text-sm text-muted-foreground">{registration.ticket.category || registration.ticket.name} · {formatDateTime(registration.createdAt)}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">{registrationBadge(registration.status)}<span className="text-sm font-semibold">{registration.amountPaise === 0 ? "Free" : formatINR(registration.amountPaise)}</span></div>
+                </Link>)}
+                {recentRegistrations.length === 0 && <p className="py-6 text-sm text-muted-foreground">No registrations yet.</p>}
+              </div>
+              <div className="hidden overflow-x-auto md:block"><Table>
+                <TableHeader><TableRow><TableHead>Participant</TableHead><TableHead>Category</TableHead><TableHead>Registered</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                <TableBody>{recentRegistrations.map((registration) => <TableRow key={registration.id}>
+                  <TableCell><Link className="font-semibold text-primary hover:underline" to={`/organizer/registrations?event_id=${event.id}&status=all&registration_reference=${encodeURIComponent(registration.registrationReference)}`}>{registration.participant.name}</Link><p className="text-xs text-muted-foreground">{registration.registrationReference}</p></TableCell>
+                  <TableCell>{registration.ticket.category || registration.ticket.name}</TableCell><TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatDateTime(registration.createdAt)}</TableCell><TableCell>{registration.amountPaise === 0 ? "Free" : formatINR(registration.amountPaise)}</TableCell><TableCell>{registrationBadge(registration.status)}</TableCell>
+                </TableRow>)}{recentRegistrations.length === 0 && <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">No registrations yet.</TableCell></TableRow>}</TableBody>
+              </Table></div>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader><CardTitle>Event tools</CardTitle><CardDescription>Shortcuts for setup and event-day operations.</CardDescription></CardHeader>

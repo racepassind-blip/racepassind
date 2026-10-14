@@ -171,16 +171,16 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
         )}
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-2 border-b bg-card/95 px-4 backdrop-blur sm:px-6 lg:px-8">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               {showNavigation && <MobileNavDrawer title="Organizer menu">{sidebarContent}</MobileNavDrawer>}
-              <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">{isAdmin ? "Admin event operations" : eventId ? "Event management" : "Organizer workspace"}</p><p className="mt-0.5 hidden truncate text-sm text-muted-foreground sm:block">{isAdmin ? "Manage events without leaving your admin account" : "Plan, publish, and run your events"}</p></div>
+              <div className="min-w-0"><p className="truncate text-xs font-bold uppercase tracking-[0.12em] text-primary">{isAdmin ? "Admin event operations" : eventId ? "Event management" : "Organizer workspace"}</p><p className="mt-0.5 hidden truncate text-sm text-muted-foreground sm:block">{isAdmin ? "Manage events without leaving your admin account" : "Plan, publish, and run your events"}</p></div>
             </div>
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <Button asChild variant="ghost" size="sm" className="hidden gap-2 text-muted-foreground sm:flex"><Link to="/"><ExternalLink className="h-4 w-4" /> Public site</Link></Button>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild><Button variant="ghost" className="h-auto gap-2 px-2 py-1"><Avatar className="h-8 w-8"><AvatarFallback className="bg-primary text-xs text-primary-foreground">{initials}</AvatarFallback></Avatar><span className="max-w-44 text-left"><span className="hidden truncate text-sm font-medium md:block">{user?.name ?? "Organizer"}</span><span className="block truncate text-xs font-semibold text-primary">{creditLabel}</span></span></Button></DropdownMenuTrigger>
+                <DropdownMenuTrigger asChild><Button variant="ghost" aria-label="Open account menu" className="h-11 min-w-11 gap-2 px-1.5 sm:px-2"><Avatar className="h-8 w-8"><AvatarFallback className="bg-primary text-xs text-primary-foreground">{initials}</AvatarFallback></Avatar><span className="hidden max-w-36 text-left sm:block"><span className="hidden truncate text-sm font-medium md:block">{user?.name ?? "Organizer"}</span><span className="block truncate text-xs font-semibold text-primary">{creditLabel}</span></span></Button></DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  <div className="px-2 py-1.5"><p className="text-sm font-medium">{user?.name ?? "Organizer"}</p><p className="text-xs text-muted-foreground">{user?.email ?? ""}</p></div>
+                  <div className="break-words px-2 py-1.5"><p className="text-sm font-medium">{user?.name ?? "Organizer"}</p><p className="text-xs text-muted-foreground">{user?.email ?? ""}</p></div>
                   <DropdownMenuSeparator />
                   {isAdmin && <DropdownMenuItem onClick={() => navigate("/admin")}><Gauge className="mr-2 h-4 w-4" />Admin dashboard</DropdownMenuItem>}
                   <DropdownMenuItem onClick={() => navigate("/organizer")}><CalendarDays className="mr-2 h-4 w-4" />All events</DropdownMenuItem>

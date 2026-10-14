@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiRequest } from "@/lib/api";
 import { scrollToTop } from "@/lib/scroll";
@@ -239,22 +240,18 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Registration detail">
-      {/* backdrop */}
-      <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      {/* panel */}
-      <div className="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l bg-card shadow-2xl">
+    <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <SheetContent side="right" aria-describedby={undefined} className="flex w-full max-w-full flex-col gap-0 overflow-y-auto bg-card p-0 sm:max-w-lg">
 
         {/* header */}
-        <div className="flex items-center justify-between border-b px-5 py-4">
+        <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b bg-card px-5 py-4 pr-16">
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-primary">Registration</p>
-            <p className="mt-0.5 font-mono text-sm font-semibold">{registration.registrationReference}</p>
+            <SheetTitle className="text-xs font-bold uppercase tracking-widest text-primary">Registration detail</SheetTitle>
+            <p className="mt-0.5 break-all font-mono text-sm font-semibold">{registration.registrationReference}</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted" aria-label="Close"><X className="h-4 w-4" /></button>
         </div>
 
-        <div className="flex-1 space-y-6 p-5">
+        <div className="min-w-0 flex-1 space-y-6 break-words p-5">
 
           {/* ── Participant ───────────────────────────────────── */}
           <section>
@@ -537,8 +534,8 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
             </section>
           )}
         </div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -892,6 +889,15 @@ const OrganizerRegistrations = () => {
     setDetailRegistration(updated);
   };
 
+  const reviewActions = (registration: OrganizerRegistration) => {
+    const isReviewable = ["awaiting_payment", "pending_verification", "AWAITING_SPORTPASS_CREDITS"].includes(registration.status);
+    if (!isReviewable) return null;
+    return <>
+      <Button variant="outline" size="sm" className="min-h-11 gap-1 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800" onClick={() => { setDecisionTarget({ id: registration.id, decision: "approve" }); setReason(""); }} disabled={actionId !== null}><Check className="h-3.5 w-3.5" /> Approve</Button>
+      <Button variant="ghost" size="sm" className="min-h-11 gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => { setDecisionTarget({ id: registration.id, decision: "reject" }); setReason(""); }} disabled={actionId !== null}><X className="h-3.5 w-3.5" /> Reject</Button>
+    </>;
+  };
+
   return (
     <OrganizerDashboardLayout eventId={filters.eventId || undefined}>
       <div className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -901,7 +907,7 @@ const OrganizerRegistrations = () => {
               <Button variant="ghost" size="icon" className="mt-0.5 shrink-0" onClick={() => navigate(eventScoped ? `/organizer/events/${filters.eventId}` : "/organizer")} aria-label={eventScoped ? "Back to event dashboard" : "Back to organizer dashboard"}><ArrowLeft className="h-4 w-4" /></Button>
               <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Registration workspace</p><h1 className="mt-1 truncate text-2xl font-black tracking-tight sm:text-3xl">{eventScoped ? selectedEvent?.name ?? "Event registrations" : "All registrations"}</h1><p className="mt-1 text-sm text-muted-foreground">Review payments, confirm participants, and keep each registration’s audit details in one place.</p></div>
             </div>
-            <div className="flex flex-wrap gap-2 pl-12 lg:pl-0">
+            <div className="flex flex-wrap gap-2 sm:pl-12 lg:pl-0">
               {eventScoped && <Button variant="outline" onClick={() => navigate(`/organizer/events/${filters.eventId}/check-in`)} className="h-11 gap-2"><ScanLine className="h-4 w-4" /> Check-in matrix</Button>}
               {eventScoped && <Button onClick={() => navigate(`/organizer/events/${filters.eventId}/participants/new`)} className="h-11 gap-2"><UserPlus className="h-4 w-4" /> Add participant</Button>}
             </div>
@@ -911,7 +917,7 @@ const OrganizerRegistrations = () => {
         {eventsError && <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{eventsError}</div>}
         <div className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative w-full lg:max-w-xl"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder="Search participant, email, phone, or registration number" className="h-11 pl-9" /></div>
+            <div className="relative w-full lg:max-w-xl"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label="Search registrations" value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder="Search name, email, phone or reference" className="h-11 pl-9" /></div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant={moreFiltersOpen ? "secondary" : "outline"} className="gap-2" onClick={() => setMoreFiltersOpen((open) => !open)}><SlidersHorizontal className="h-4 w-4" /> More filters{detailedFilterCount > 0 ? ` (${detailedFilterCount})` : ""}</Button>
               <Button type="button" variant="outline" size="icon" onClick={() => setRefreshNonce((value) => value + 1)} disabled={loading} aria-label="Refresh registrations" title="Refresh registrations"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></Button>
@@ -957,7 +963,7 @@ const OrganizerRegistrations = () => {
 
         {decisionTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
-            <div className="w-full max-w-md overflow-hidden rounded-2xl border bg-card shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl border bg-card shadow-2xl animate-in fade-in zoom-in duration-200">
               <div className="p-6">
                 <h3 className="text-lg font-bold">
                   {decisionTarget.decision === "reject" 
@@ -1049,7 +1055,24 @@ const OrganizerRegistrations = () => {
             <div><div className="flex items-center gap-2"><h2 className="font-bold">Registrations</h2>{!loading && <Badge variant="secondary">{displayedRegistrations.length} shown</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">Click a registration to view contact information, form answers, email status, refund details, and transfer history.</p></div>
             <Button variant="outline" onClick={() => void exportCsv()} disabled={!filters.eventId || exporting} className="w-fit gap-2"><Download className="h-4 w-4" />{exporting ? "Exporting…" : exportIsFiltered ? "Export filtered CSV" : "Export event CSV"}</Button>
           </div>
-          {loading ? <div className="p-12 text-center text-sm text-muted-foreground"><RefreshCw className="mx-auto mb-3 h-5 w-5 animate-spin" />Loading registrations…</div> : error ? <div className="p-12 text-center"><p className="text-sm text-destructive">{error}</p><Button variant="outline" className="mt-4" onClick={() => setRefreshNonce((value) => value + 1)}>Try again</Button></div> : registrations.length === 0 ? <div className="p-12 text-center"><Search className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-4 font-semibold">No registrations found</p><p className="mt-1 text-sm text-muted-foreground">No records match the current search and filters.</p>{activeFilterCount > 0 && <Button variant="ghost" className="mt-3" onClick={clearAllFilters}>Clear filters</Button>}</div> : <div className="overflow-x-auto"><Table>
+          {loading ? <div className="p-12 text-center text-sm text-muted-foreground"><RefreshCw className="mx-auto mb-3 h-5 w-5 animate-spin" />Loading registrations…</div> : error ? <div className="p-12 text-center"><p className="text-sm text-destructive">{error}</p><Button variant="outline" className="mt-4" onClick={() => setRefreshNonce((value) => value + 1)}>Try again</Button></div> : registrations.length === 0 ? <div className="p-12 text-center"><Search className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-4 font-semibold">No registrations found</p><p className="mt-1 text-sm text-muted-foreground">No records match the current search and filters.</p>{activeFilterCount > 0 && <Button variant="ghost" className="mt-3" onClick={clearAllFilters}>Clear filters</Button>}</div> : <>
+            <div className="divide-y md:hidden">
+              {displayedRegistrations.map((registration) => <article key={registration.id} className="min-w-0 space-y-3 p-4">
+                <button type="button" onClick={() => setDetailRegistration(registration)} className="block w-full rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <span className="block break-words font-semibold text-primary">{registration.participant.name}</span>
+                  <span className="mt-1 block break-all font-mono text-xs text-muted-foreground">{registration.registrationReference}</span>
+                  <span className="mt-2 block break-words text-sm">{registration.ticket.category ?? registration.ticket.name}</span>
+                  {!eventScoped && <span className="mt-1 block break-words text-xs text-muted-foreground">{registration.event.name}</span>}
+                  <span className="mt-1 block text-xs text-muted-foreground">{formatDate(registration.createdAt)}{(registration.participantCount ?? registration.participants?.length ?? 1) > 1 ? ` · ${registration.participantCount ?? registration.participants?.length} participants` : ""}</span>
+                </button>
+                <div className="flex flex-wrap gap-2">{registrationBadge(registration.status)}{registration.isManualEntry && <Badge variant="outline">Manual</Badge>}</div>
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/40 p-3"><div><p className="text-xs text-muted-foreground">Payment</p><p className="mt-1 font-semibold">{formatINR(registration.amountPaise)}</p></div>{paymentBadge(registration.paymentStatus)}</div>
+                {registration.utrReference && <p className="break-all text-xs text-muted-foreground">UTR / reference: <span className="font-mono text-foreground">{registration.utrReference}</span></p>}
+                {pickupEnabled && primaryPickupName(registration) && <p className="break-words text-xs text-muted-foreground">Pickup: {primaryPickupName(registration)}</p>}
+                <div className="flex flex-wrap items-center gap-2"><Button variant="outline" size="sm" className="min-h-11" onClick={() => setDetailRegistration(registration)}>View details</Button>{reviewActions(registration)}</div>
+              </article>)}
+            </div>
+            <div className="hidden overflow-x-auto md:block"><Table>
             <TableHeader><TableRow><TableHead className="min-w-60">Participant</TableHead>{!eventScoped && <TableHead>Event</TableHead>}<TableHead>Category / tier</TableHead>{pickupEnabled && <TableHead>Pickup point</TableHead>}<TableHead>Amount</TableHead><TableHead>Payment</TableHead><TableHead>Registration</TableHead><TableHead>UTR/reference</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
             <TableBody>{displayedRegistrations.map((registration) => {
               const isReviewable = registration.status === "awaiting_payment" || registration.status === "pending_verification" || registration.status === "AWAITING_SPORTPASS_CREDITS";
@@ -1062,7 +1085,7 @@ const OrganizerRegistrations = () => {
                   setDetailRegistration(registration);
                 }}
               >
-                <TableCell><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-primary underline-offset-2 hover:underline">{registration.participant.name}</p>{registration.isManualEntry && <Badge variant="outline">Manual</Badge>}</div>{registration.participants && registration.participants.length > 1 && <p className="mt-0.5 text-xs text-muted-foreground">{registration.participants.length} participants</p>}<p className="mt-1 text-xs text-muted-foreground">{registration.participant.email ?? registration.participant.phone ?? "No contact details"}</p><p className="mt-1 font-mono text-xs font-medium text-foreground/70">{registration.registrationReference}</p></TableCell>
+                <TableCell><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => setDetailRegistration(registration)} className="text-left font-semibold text-primary underline-offset-2 hover:underline focus-visible:underline">{registration.participant.name}</button>{registration.isManualEntry && <Badge variant="outline">Manual</Badge>}</div>{registration.participants && registration.participants.length > 1 && <p className="mt-0.5 text-xs text-muted-foreground">{registration.participants.length} participants</p>}<p className="mt-1 text-xs text-muted-foreground">{registration.participant.email ?? registration.participant.phone ?? "No contact details"}</p><p className="mt-1 font-mono text-xs font-medium text-foreground/70">{registration.registrationReference}</p></TableCell>
                 {!eventScoped && <TableCell><p className="max-w-44 truncate">{registration.event.name}</p></TableCell>}
                 <TableCell><p className="font-medium">{registration.ticket.category ?? "Uncategorised"}</p><p className="text-xs text-muted-foreground">{registration.ticket.name}</p></TableCell>
                 {pickupEnabled && <TableCell>{primaryPickupName(registration) ? <span className="text-sm">{primaryPickupName(registration)}</span> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>}
@@ -1071,11 +1094,11 @@ const OrganizerRegistrations = () => {
                 <TableCell><div className="space-y-1">{registrationBadge(registration.status)}<p className="text-xs text-muted-foreground">{formatDate(registration.createdAt)}</p></div></TableCell>
                 <TableCell>{registration.utrReference ? <span className="font-mono text-sm font-medium">{registration.utrReference}</span> : <span className="text-xs text-muted-foreground">{registration.paymentStatus === "not_required" ? "Not required" : "Not submitted"}</span>}</TableCell>
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">{isReviewable ? <><Button variant="outline" size="sm" className="gap-1 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800" onClick={() => { setDecisionTarget({ id: registration.id, decision: "approve" }); setReason(""); }} disabled={actionId !== null}><Check className="h-3.5 w-3.5" /> Approve</Button><Button variant="ghost" size="sm" className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => { setDecisionTarget({ id: registration.id, decision: "reject" }); setReason(""); }} disabled={actionId !== null}><X className="h-3.5 w-3.5" /> Reject</Button></> : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />No action</span>}</div>
+                  <div className="flex justify-end gap-1">{isReviewable ? reviewActions(registration) : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />No action</span>}</div>
                 </TableCell>
               </TableRow>;
             })}</TableBody>
-          </Table></div>}
+          </Table></div></>}
           <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">Up to 50 registrations per page. CSV exports use the active filters and support up to 5,000 rows.</p><div className="flex gap-2"><Button variant="outline" size="sm" onClick={goPrevious} disabled={cursorHistory.length === 0 || loading}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" onClick={goNext} disabled={!nextCursor || loading}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>
         </section>
       </div>

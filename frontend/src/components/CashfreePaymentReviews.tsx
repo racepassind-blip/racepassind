@@ -102,7 +102,7 @@ export function CashfreePaymentReviews({ reloadKey }: { reloadKey: number }) {
         <details><summary className="cursor-pointer text-sm font-medium">Payment and resolution history</summary><div className="mt-3"><PaymentAuditHistory items={item.history} /></div></details>
       </article>)}
     </>}
-    <div className="flex items-center justify-between text-sm"><p>{total} matching payments</p><div className="flex gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm"><p>{total} matching payments</p><div className="flex flex-wrap gap-2">
       <Button variant="outline" size="sm" disabled={loading || busy || page === 1} onClick={() => setPage(value => value - 1)}>Previous reviews</Button>
       <Button variant="outline" size="sm" disabled={loading || busy || page * 20 >= total} onClick={() => setPage(value => value + 1)}>Next reviews</Button></div></div>
   </section>;

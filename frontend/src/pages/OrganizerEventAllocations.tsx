@@ -280,7 +280,7 @@ const OrganizerEventAllocations = () => {
               Allocate and manage {numberLabel.toLowerCase()} for participants. Numbers can be edited at any time.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               onClick={copyPublicLink}

@@ -224,8 +224,8 @@ const EventDetail = () => {
           </div>
         </section>}
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
-          <div className="space-y-8">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+          <div className="min-w-0 space-y-8">
             <section id="about" className="overflow-hidden rounded-2xl border bg-card">
               <div className="p-5 sm:p-6">
                 <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Event overview</p><h2 className="mt-1 text-2xl font-bold">About the event</h2></div>
@@ -333,7 +333,7 @@ const EventDetail = () => {
             </section>
           </div>
 
-          <aside id="registration" className="order-first scroll-mt-24 lg:order-none lg:sticky lg:top-24">
+          <aside id="registration" className="order-first min-w-0 scroll-mt-24 lg:order-none lg:sticky lg:top-24">
             <div className="overflow-hidden rounded-2xl border bg-card shadow-lg shadow-black/5">
               <div className="border-b p-5">
                 <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Registration</p><h2 className="mt-1 text-xl font-bold">Choose your entry</h2></div><span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">{event.participants.toLocaleString()} registered</span></div>
@@ -380,7 +380,7 @@ const EventDetail = () => {
                   </div> : <div className="flex items-center justify-between"><div><p className="text-xs text-muted-foreground">{totalTickets} {totalTickets === 1 ? "entry" : "entries"} selected</p><p className="font-bold">Total</p></div><span className="text-xl font-extrabold">{formatPaise(baseTotalPaise)}</span></div>}
                 </div>
 
-                <Button className="h-12 w-full gap-2 text-base" size="lg" disabled={registrationClosed || totalTickets === 0 || totalTickets > MAX_TICKETS_PER_TRANSACTION} onClick={continueToRegistration}>
+                <Button className="h-auto min-h-12 w-full whitespace-normal px-3 py-3 text-base" size="lg" disabled={registrationClosed || totalTickets === 0 || totalTickets > MAX_TICKETS_PER_TRANSACTION} onClick={continueToRegistration}>
                   {registrationClosed ? "Registration closed" : totalTickets === 0 ? "Select an entry to continue" : <>Continue to registration <ArrowRight className="h-4 w-4" /></>}
                 </Button>
                 {!registrationClosed && <p className="text-center text-xs leading-5 text-muted-foreground">You can review participant details and the final amount before payment.</p>}

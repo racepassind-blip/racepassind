@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:mobile": "playwright test --config=playwright.mobile.config.ts",
     "test:watch": "vitest"
   },
   "dependencies": {

@@ -127,7 +127,7 @@ const Checkout = () => {
   const navigate = useNavigate();
   const { user, isParticipant, isInitialized } = useAuth();
   const { data: event, isLoading, isError } = useEvent(eventId);
-  const participantLabel = getSportConfig(event?.sport).participant_label;
+  const participantLabel = getSportConfig(event?.category).participant_label;
   const steps = ["Tickets", `${participantLabel} details`, event?.paymentCollectionMethod === "CASHFREE_MANAGED" ? "Online Payment" : "UPI Payment"];
   const [cart] = useState<CartLine[]>(() => readCart(eventId, tierId));
   const [riders, setRiders] = useState<RiderDraft[]>([]);
