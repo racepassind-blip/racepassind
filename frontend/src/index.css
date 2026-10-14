@@ -97,6 +97,30 @@ input[type="number"] {
   }
   body {
     @apply bg-background text-foreground antialiased;
+    min-width: 320px;
+    font-feature-settings: "cv11" 1, "ss01" 1;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
+    color: hsl(var(--foreground));
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    opacity: 0.72;
   }
 }
 
@@ -120,7 +144,24 @@ input[type="number"] {
   animation: sportpass-ride 1.6s ease-in-out infinite;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
   .sportpass-ride {
     animation: none;
   }
