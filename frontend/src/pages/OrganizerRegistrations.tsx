@@ -902,8 +902,8 @@ const OrganizerRegistrations = () => {
               <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Registration workspace</p><h1 className="mt-1 truncate text-2xl font-black tracking-tight sm:text-3xl">{eventScoped ? selectedEvent?.name ?? "Event registrations" : "All registrations"}</h1><p className="mt-1 text-sm text-muted-foreground">Review payments, confirm participants, and keep each registration’s audit details in one place.</p></div>
             </div>
             <div className="flex flex-wrap gap-2 pl-12 lg:pl-0">
-              {eventScoped && <Button variant="outline" onClick={() => navigate(`/organizer/events/${filters.eventId}/check-in`)} className="gap-2"><ScanLine className="h-4 w-4" /> Check-in matrix</Button>}
-              {eventScoped && <Button onClick={() => navigate(`/organizer/events/${filters.eventId}/participants/new`)} className="gap-2"><UserPlus className="h-4 w-4" /> Add participant</Button>}
+              {eventScoped && <Button variant="outline" onClick={() => navigate(`/organizer/events/${filters.eventId}/check-in`)} className="h-11 gap-2"><ScanLine className="h-4 w-4" /> Check-in matrix</Button>}
+              {eventScoped && <Button onClick={() => navigate(`/organizer/events/${filters.eventId}/participants/new`)} className="h-11 gap-2"><UserPlus className="h-4 w-4" /> Add participant</Button>}
             </div>
           </div>
         </section>
@@ -919,9 +919,9 @@ const OrganizerRegistrations = () => {
             </div>
           </div>
 
-          {!eventScoped && <div className="max-w-md space-y-1"><label className="text-xs font-medium text-muted-foreground">Event</label><Select value={filters.eventId || "all"} onValueChange={handleEventChange} disabled={eventsLoading}><SelectTrigger><SelectValue placeholder="All events" /></SelectTrigger><SelectContent><SelectItem value="all">All events</SelectItem>{events.map((event) => <SelectItem key={event.id} value={event.id}>{event.name}</SelectItem>)}</SelectContent></Select></div>}
+          {!eventScoped && <div className="max-w-md space-y-1"><label className="text-xs font-medium text-muted-foreground">Event</label><Select value={filters.eventId || "all"} onValueChange={handleEventChange} disabled={eventsLoading}><SelectTrigger className="h-11"><SelectValue placeholder="All events" /></SelectTrigger><SelectContent><SelectItem value="all">All events</SelectItem>{events.map((event) => <SelectItem key={event.id} value={event.id}>{event.name}</SelectItem>)}</SelectContent></Select></div>}
 
-          <div className="flex gap-1 overflow-x-auto rounded-lg bg-muted/60 p-1" role="tablist" aria-label="Registration status">
+          <div className="flex gap-1 overflow-x-auto rounded-lg bg-muted/60 p-1 scrollbar-thin" role="tablist" aria-label="Registration status">
             {[
               { value: "pending", label: "Needs review" },
               { value: "all", label: "All" },

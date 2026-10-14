@@ -129,7 +129,10 @@ const OrganizerEventDashboard = () => {
     <OrganizerDashboardLayout eventId={event.id}>
       <div className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Button variant="ghost" className="w-fit gap-2 px-2 text-muted-foreground" onClick={() => navigate("/organizer")}><ArrowLeft className="h-4 w-4" /> All events</Button>
+          <div className="flex min-w-0 items-center gap-2">
+            <Button variant="ghost" className="w-fit shrink-0 gap-2 px-2 text-muted-foreground" onClick={() => navigate("/organizer")}><ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">All events</span><span className="sm:hidden">Events</span></Button>
+            <span className="truncate text-xs text-muted-foreground">/ {event.name}</span>
+          </div>
           <div className="flex w-full items-center gap-2 sm:w-auto">
             <Select value={event.id} onValueChange={(value) => navigate(`/organizer/events/${value}`)}>
               <SelectTrigger className="min-w-0 flex-1 bg-background sm:w-[280px]" aria-label="Switch event"><SelectValue placeholder="Switch event" /></SelectTrigger>
@@ -150,11 +153,12 @@ const OrganizerEventDashboard = () => {
                 <span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" />{location}</span>
                 <span className="inline-flex items-center gap-2 capitalize"><Ticket className="h-4 w-4 text-primary" />{event.sport.replaceAll("_", " ")}</span>
               </div>
-              <div className="mt-7 flex flex-wrap gap-2">
-                <Button className="gap-2" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><ClipboardList className="h-4 w-4" /> Manage registrations</Button>
-                {!event.isArchived && <Button variant="outline" className="gap-2" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event</Button>}
+              <div className="mt-7 grid gap-2 sm:flex sm:flex-wrap">
+                <Button className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><ClipboardList className="h-4 w-4" /> Manage registrations</Button>
+                <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ScanLine className="h-4 w-4" /> Check-in</Button>
+                {!event.isArchived && <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event</Button>}
                 <DropdownMenu>
-                  <DropdownMenuTrigger asChild><Button variant="outline" className="gap-2"><MoreHorizontal className="h-4 w-4" /> More</Button></DropdownMenuTrigger>
+                  <DropdownMenuTrigger asChild><Button variant="outline" className="h-11 w-full justify-center gap-2 sm:w-auto"><MoreHorizontal className="h-4 w-4" /> More actions</Button></DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-60">
                     <DropdownMenuItem onClick={() => void updateRegistrationStatus()}><Power className="mr-2 h-4 w-4" />{event.registrationStatus === "open" ? "Close registration" : "Open registration"}</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ScanLine className="mr-2 h-4 w-4" />Check-in matrix</DropdownMenuItem>
@@ -180,6 +184,12 @@ const OrganizerEventDashboard = () => {
             <Button variant="outline" className="w-fit shrink-0 border-amber-300 bg-white text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-transparent dark:text-amber-100" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=pending_verification`)}>Review payments</Button>
           </section>
         )}
+
+        <section className="grid gap-3 rounded-2xl border bg-card p-4 shadow-sm sm:grid-cols-3 sm:p-5">
+          <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Next priority</p><p className="mt-1 font-semibold">{pendingReviewCount > 0 ? "Review payment references" : registrations.confirmed === 0 ? "Get your first registrations" : isPastEvent ? "Publish final results" : "Prepare event day"}</p></div>
+          <div className="flex items-center gap-3"><div className="min-w-0 flex-1"><div className="flex justify-between text-xs"><span className="text-muted-foreground">Registration capacity</span><span className="font-semibold">{salesPercent}%</span></div><Progress className="mt-2" value={salesPercent} /></div></div>
+          <div className="flex items-center justify-between gap-3 sm:justify-end"><span className="text-sm text-muted-foreground">{registrations.checkedIn} of {registrations.confirmed} checked in</span><Button size="sm" variant="outline" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}>Open check-in</Button></div>
+        </section>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Registrations</p><ClipboardList className="h-5 w-5 text-primary" /></div><p className="mt-3 text-3xl font-black">{overview.totalRegistrationRecords.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">{overview.signupsToday.toLocaleString()} participant{overview.signupsToday === 1 ? "" : "s"} added today</p></CardContent></Card>
@@ -212,7 +222,7 @@ const OrganizerEventDashboard = () => {
         </Card>
 
         <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-          <Card><CardHeader className="flex-row items-center justify-between space-y-0"><div><CardTitle>Recent registrations</CardTitle><CardDescription>Latest participant activity for this event.</CardDescription></div><Button variant="outline" size="sm" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}>View all</Button></CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Participant</TableHead><TableHead>Category</TableHead><TableHead>Registered</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{recentRegistrations.map((registration) => <TableRow key={registration.id}><TableCell><p className="font-semibold">{registration.participant.name}</p><p className="text-xs text-muted-foreground">{registration.registrationReference}</p></TableCell><TableCell>{registration.ticket.category || registration.ticket.name}</TableCell><TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatDateTime(registration.createdAt)}</TableCell><TableCell>{registration.amountPaise === 0 ? "Free" : formatINR(registration.amountPaise)}</TableCell><TableCell>{registrationBadge(registration.status)}</TableCell></TableRow>)}{recentRegistrations.length === 0 && <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">No registrations yet.</TableCell></TableRow>}</TableBody></Table></div></CardContent></Card>
+          <Card><CardHeader className="flex-row items-center justify-between space-y-0"><div><CardTitle>Recent registrations</CardTitle><CardDescription>Latest participant activity. Select a row to inspect details.</CardDescription></div><Button variant="outline" size="sm" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}>View all</Button></CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Participant</TableHead><TableHead>Category</TableHead><TableHead>Registered</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{recentRegistrations.map((registration) => <TableRow key={registration.id} className="cursor-pointer hover:bg-muted/50" tabIndex={0} onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all&registration_reference=${encodeURIComponent(registration.registrationReference)}`)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/organizer/registrations?event_id=${event.id}&status=all&registration_reference=${encodeURIComponent(registration.registrationReference)}`); }}><TableCell><p className="font-semibold text-primary">{registration.participant.name}</p><p className="text-xs text-muted-foreground">{registration.registrationReference}</p></TableCell><TableCell>{registration.ticket.category || registration.ticket.name}</TableCell><TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatDateTime(registration.createdAt)}</TableCell><TableCell>{registration.amountPaise === 0 ? "Free" : formatINR(registration.amountPaise)}</TableCell><TableCell>{registrationBadge(registration.status)}</TableCell></TableRow>)}{recentRegistrations.length === 0 && <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">No registrations yet.</TableCell></TableRow>}</TableBody></Table></div></CardContent></Card>
 
           <Card>
             <CardHeader><CardTitle>Event tools</CardTitle><CardDescription>Shortcuts for setup and event-day operations.</CardDescription></CardHeader>
