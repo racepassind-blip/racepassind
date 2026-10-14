@@ -36,7 +36,7 @@ const Index = () => {
 
   return (
     <Layout>
-      <section className="relative isolate min-h-[620px] overflow-hidden bg-[#101b35] text-white">
+      <section className="relative isolate min-h-[560px] overflow-hidden bg-[#101b35] text-white sm:min-h-[620px]">
         <img
           src={heroImg}
           alt="Runners crossing a finish line"
@@ -47,17 +47,17 @@ const Index = () => {
         <div className="absolute -right-24 top-16 -z-10 h-72 w-72 rounded-full bg-[#ff9933]/12 blur-3xl" />
         <div className="absolute -bottom-24 left-1/3 -z-10 h-72 w-72 rounded-full bg-[#138808]/12 blur-3xl" />
 
-        <div className="mx-auto flex min-h-[620px] max-w-7xl flex-col justify-center px-4 pb-24 pt-24 sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-[560px] max-w-7xl flex-col justify-center px-4 pb-28 pt-14 sm:min-h-[620px] sm:px-6 sm:pt-24 lg:px-8">
           <div className="max-w-2xl">
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-bold uppercase tracking-[0.16em] backdrop-blur-sm">
               <span className="h-1.5 w-1.5 rounded-full bg-[#ff9933]" />
               SportPass India
               <span className="h-1.5 w-1.5 rounded-full bg-[#138808]" />
             </div>
-            <h1 className="text-5xl font-black leading-[1.02] tracking-tight sm:text-6xl lg:text-7xl">
+            <h1 className="text-4xl font-black leading-[1.08] tracking-tight sm:text-6xl lg:text-7xl">
               Find your next event.
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-white/80 sm:text-xl">
+            <p className="mt-4 max-w-xl text-base leading-7 text-white/80 sm:mt-6 sm:text-xl sm:leading-8">
               Browse races, tournaments, treks, and community events across India. Pick a date, choose your entry, and get moving.
             </p>
 
@@ -85,7 +85,7 @@ const Index = () => {
           </div>
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 border-t border-white/15 bg-[#101b35]/80 backdrop-blur-md">
+        <div className="absolute inset-x-0 bottom-0 hidden border-t border-white/15 bg-[#101b35]/80 backdrop-blur-md sm:block">
           <div className="mx-auto grid max-w-7xl grid-cols-3 divide-x divide-white/15 px-4 py-5 text-center sm:px-6 lg:px-8">
             <div><p className="text-base font-bold sm:text-lg">Every sport</p><p className="mt-1 text-xs text-white/60 sm:text-sm">From races to treks and tournaments</p></div>
             <div><p className="text-base font-bold sm:text-lg">India-first</p><p className="mt-1 text-xs text-white/60 sm:text-sm">Simple registration &amp; trusted payments</p></div>
@@ -107,6 +107,7 @@ const Index = () => {
         </div>
 
         {featured.length > 0 ? <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{featured.map((event) => <EventCard key={event.id} event={event} />)}</div> : <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">{isLoading ? "Loading events…" : isError ? "Failed to load events." : query ? `No events found for “${search.trim()}”.` : "No upcoming events right now. Check back soon."}</div>}
+        <Button asChild variant="outline" className="mt-6 w-full sm:hidden"><Link to={query ? `/events?q=${encodeURIComponent(search.trim())}` : "/events"}>View all events <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
       </section>
 
       {productListings.length > 0 && <section className="border-y bg-card"><div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div className="mb-8"><p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-primary">Shop from organizers</p><h2 className="text-3xl font-black tracking-tight sm:text-4xl">Products for event day</h2><p className="mt-2 text-muted-foreground">Order meals, jerseys, and merchandise directly from verified organizers.</p></div><div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{productListings.map((listing) => { const product = listing.catalog.products[0]; const imageId = product?.image_ids[0]; const prices = listing.catalog.products.flatMap((item) => item.variants).filter((variant) => variant.stock > 0).map((variant) => variant.price_paise); const fromPrice = prices.length ? Math.min(...prices) : null; return <Link key={listing.id} to={`/products/${listing.id}`} className="group overflow-hidden rounded-2xl border bg-background shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">{imageId && listing.images[imageId] ? <img src={listing.images[imageId]} alt="" className="aspect-[16/9] w-full object-cover" /> : <div className="flex aspect-[16/9] items-center justify-center bg-primary/5 text-primary"><Package className="h-10 w-10" /></div>}<div className="p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold group-hover:text-primary">{listing.name}</h3><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{listing.description}</p></div>{fromPrice !== null && <span className="shrink-0 text-sm font-bold text-primary">From ₹{(fromPrice / 100).toFixed(0)}</span>}</div><p className="mt-4 text-sm font-semibold text-primary">Shop products <ArrowRight className="ml-1 inline h-4 w-4" /></p></div></Link>; })}</div></div></section>}

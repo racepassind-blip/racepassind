@@ -1,6 +1,6 @@
 import { MAX_TICKETS_PER_TRANSACTION } from "@/lib/registration-limits";
 import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -162,8 +162,15 @@ const EventDetail = () => {
     ? publicRaceResults.data?.resultSetStatus === "published"
     : eventSportConfig.result_type === "match_score" && Boolean(publicMatchResults.data?.matches.some((match) => match.status === "completed"));
 
+  const continueToRegistration = () => {
+    if (registrationClosed || totalTickets === 0 || totalTickets > MAX_TICKETS_PER_TRANSACTION) return;
+    const cart = Object.entries(quantities).filter(([, quantity]) => quantity > 0).map(([ticketId, quantity]) => ({ ticketId, quantity }));
+    sessionStorage.setItem(`sportpass_cart_${event.id}`, JSON.stringify(cart));
+    navigate(`/checkout/${event.id}`);
+  };
+
   return (
-    <Layout>
+    <Layout raisedSupportButton={!registrationClosed}>
       <section className="relative h-[340px] overflow-hidden md:h-[460px]">
         <img
           src={event.image}
@@ -172,9 +179,9 @@ const EventDetail = () => {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/30" />
         <div className="relative mx-auto flex h-full max-w-7xl flex-col justify-between px-4 pb-12 pt-6 sm:px-6 lg:px-8">
-          <button onClick={() => navigate(-1)} className="flex w-fit items-center gap-2 rounded-full border border-white/30 bg-black/25 px-3 py-2 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/45">
+          <Link to="/events" className="flex w-fit items-center gap-2 rounded-full border border-white/30 bg-black/25 px-3 py-2 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/45">
             <ArrowLeft className="h-4 w-4" /> Back to events
-          </button>
+          </Link>
           <div className="max-w-4xl">
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <Badge className="border-0 bg-white text-foreground hover:bg-white capitalize">{event.category}</Badge>
@@ -191,7 +198,7 @@ const EventDetail = () => {
         </div>
       </section>
 
-      <div className="relative mx-auto -mt-6 max-w-7xl px-4 pb-14 sm:px-6 lg:px-8">
+      <div className="relative mx-auto -mt-6 max-w-7xl px-4 pb-32 sm:px-6 lg:px-8 lg:pb-14">
         <div className="mb-8 grid gap-px overflow-hidden rounded-2xl border bg-border shadow-md sm:grid-cols-2 lg:grid-cols-4">
           {details.slice(0, 4).map((item) => (
             <div key={item.label} className="flex items-start gap-3 bg-card p-4 sm:p-5">
@@ -326,7 +333,7 @@ const EventDetail = () => {
             </section>
           </div>
 
-          <aside className="order-first lg:order-none lg:sticky lg:top-24">
+          <aside id="registration" className="order-first scroll-mt-24 lg:order-none lg:sticky lg:top-24">
             <div className="overflow-hidden rounded-2xl border bg-card shadow-lg shadow-black/5">
               <div className="border-b p-5">
                 <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Registration</p><h2 className="mt-1 text-xl font-bold">Choose your entry</h2></div><span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">{event.participants.toLocaleString()} registered</span></div>
@@ -373,11 +380,7 @@ const EventDetail = () => {
                   </div> : <div className="flex items-center justify-between"><div><p className="text-xs text-muted-foreground">{totalTickets} {totalTickets === 1 ? "entry" : "entries"} selected</p><p className="font-bold">Total</p></div><span className="text-xl font-extrabold">{formatPaise(baseTotalPaise)}</span></div>}
                 </div>
 
-                <Button className="h-12 w-full gap-2 text-base" size="lg" disabled={registrationClosed || totalTickets === 0 || totalTickets > MAX_TICKETS_PER_TRANSACTION} onClick={() => {
-                  const cart = Object.entries(quantities).filter(([, quantity]) => quantity > 0).map(([ticketId, quantity]) => ({ ticketId, quantity }));
-                  sessionStorage.setItem(`sportpass_cart_${event.id}`, JSON.stringify(cart));
-                  navigate(`/checkout/${event.id}`);
-                }}>
+                <Button className="h-12 w-full gap-2 text-base" size="lg" disabled={registrationClosed || totalTickets === 0 || totalTickets > MAX_TICKETS_PER_TRANSACTION} onClick={continueToRegistration}>
                   {registrationClosed ? "Registration closed" : totalTickets === 0 ? "Select an entry to continue" : <>Continue to registration <ArrowRight className="h-4 w-4" /></>}
                 </Button>
                 {!registrationClosed && <p className="text-center text-xs leading-5 text-muted-foreground">You can review participant details and the final amount before payment.</p>}
@@ -387,6 +390,7 @@ const EventDetail = () => {
           </aside>
         </div>
       </div>
+      {!registrationClosed && <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(0,0,0,0.1)] backdrop-blur lg:hidden"><div className="mx-auto flex max-w-7xl items-center gap-3"><div className="min-w-0 flex-1"><p className="text-xs text-muted-foreground">{totalTickets} {totalTickets === 1 ? "entry" : "entries"} selected</p><p className="font-bold">{formatPaise(participantTotalPaise)}</p></div>{totalTickets > 0 ? <Button onClick={continueToRegistration} className="h-11 shrink-0">Continue <ArrowRight className="ml-1 h-4 w-4" /></Button> : <Button asChild variant="outline" className="h-11 shrink-0"><a href="#registration">Choose entry</a></Button>}</div></div>}
     </Layout>
   );
 };

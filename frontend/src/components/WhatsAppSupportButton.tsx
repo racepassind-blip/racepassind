@@ -19,7 +19,7 @@ function WhatsAppIcon({ className }: { className?: string }) {
  * Floating WhatsApp support button for public pages.
  * Opens a new tab with WhatsApp and a pre-filled message.
  */
-export function WhatsAppSupportButton() {
+export function WhatsAppSupportButton({ raisedOnMobile = false }: { raisedOnMobile?: boolean }) {
   const whatsappUrl = createWhatsAppUrl(WHATSAPP_MESSAGES.generalSupport);
 
   return (
@@ -28,7 +28,7 @@ export function WhatsAppSupportButton() {
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Chat with SportPass on WhatsApp"
-      className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-lg transition-transform hover:scale-105 active:scale-95 hover:bg-[#20bd5a] focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:ring-offset-2 sm:px-5 lg:bottom-8 lg:right-8"
+      className={`fixed right-6 z-50 flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-lg transition-transform hover:scale-105 active:scale-95 hover:bg-[#20bd5a] focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:ring-offset-2 sm:px-5 lg:bottom-8 lg:right-8 ${raisedOnMobile ? "bottom-24" : "bottom-6"}`}
     >
       <WhatsAppIcon className="h-6 w-6 shrink-0" />
       <span className="hidden sm:inline">Chat with us</span>

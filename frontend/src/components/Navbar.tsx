@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut, Menu, ShieldCheck, Ticket, X } from "lucide-react";
-import { useState } from "react";
+import { LayoutDashboard, LogOut, Menu, ShieldCheck, Ticket } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -12,12 +12,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const { user, logout, isAdmin, isStaff, isLoading } = useAuth();
+
+  useEffect(() => setOpen(false), [pathname, search]);
 
   const dashboardPath = isAdmin ? "/admin" : isStaff ? "/organizer" : "/dashboard";
   const links: Array<{ to: string; label: string; comingSoon?: boolean }> = [
@@ -52,7 +55,7 @@ export function Navbar() {
           <span>SportPass <span className="text-primary">India</span></span>
         </Link>
 
-        <nav className="ml-auto hidden items-center gap-0.5 rounded-xl border border-border/70 bg-muted/40 p-1 shadow-sm md:flex">
+        <nav className="ml-auto hidden items-center gap-0.5 rounded-xl border border-border/70 bg-muted/40 p-1 shadow-sm xl:flex">
           {links.map((link) => (
             <Link
               key={link.to}
@@ -100,41 +103,19 @@ export function Navbar() {
           ) : null}
         </nav>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden"
-          aria-label={open ? "Close navigation menu" : "Open navigation menu"}
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </Button>
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger asChild><Button variant="ghost" size="icon" className="ml-auto h-11 w-11 xl:hidden" aria-label="Open navigation menu"><Menu className="h-5 w-5" /></Button></SheetTrigger>
+          <SheetContent side="right" className="flex w-[min(22rem,90vw)] flex-col overflow-y-auto p-5 xl:hidden">
+            <SheetTitle className="border-b pb-4 text-left text-lg font-black">SportPass <span className="text-primary">India</span></SheetTitle>
+            <nav aria-label="Mobile navigation" className="flex flex-1 flex-col gap-1 pt-3">
+              {links.map((link) => <Link key={link.to} to={link.to} onClick={() => setOpen(false)} aria-current={pathname === link.to ? "page" : undefined} className={`flex min-h-11 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-semibold ${pathname === link.to ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}><span>{link.label}</span>{link.comingSoon && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">Soon</span>}</Link>)}
+              <div className="mt-auto border-t pt-4">
+                {user ? <><p className="truncate px-4 pb-2 text-xs text-muted-foreground">Signed in as {user.name}</p><button type="button" onClick={() => { setOpen(false); void handleLogout(); }} className="flex min-h-11 w-full items-center gap-2 rounded-xl px-4 text-left text-sm font-semibold text-destructive hover:bg-muted"><LogOut className="h-4 w-4" /> Log out</button></> : !isLoading ? <Button asChild className="w-full"><Link to="/login" onClick={() => setOpen(false)}>Log in</Link></Button> : null}
+              </div>
+            </nav>
+          </SheetContent>
+        </Sheet>
       </div>
-
-      {open && (
-        <nav className="space-y-0.5 border-t bg-card px-4 pb-3 pt-2 md:hidden">
-          {links.map((link) => (
-            <Link
-              key={link.to}
-              to={link.to}
-              onClick={() => setOpen(false)}
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium ${pathname === link.to ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
-            >
-              <span>{link.label}</span>
-              {link.comingSoon && <span title="Coming soon" aria-label="Coming soon" className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Soon</span>}
-            </Link>
-          ))}
-          {user ? (
-            <>
-              <div className="px-4 py-2 text-xs text-muted-foreground">Signed in as <span className="font-medium text-foreground">{user.name}</span></div>
-              <button onClick={() => { void handleLogout(); setOpen(false); }} className="block w-full rounded-lg px-4 py-2.5 text-left text-sm font-medium text-destructive hover:bg-secondary">Logout</button>
-            </>
-          ) : !isLoading ? (
-            <button onClick={() => { navigate("/login"); setOpen(false); }} className="block w-full rounded-lg px-4 py-2.5 text-left text-sm font-medium text-muted-foreground hover:bg-secondary">Login</button>
-          ) : null}
-        </nav>
-      )}
     </header>
   );
 }
