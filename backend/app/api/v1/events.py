@@ -439,8 +439,6 @@ def update_operational_features(
 ) -> dict:
     event = get_authorized_event(db, user, event_id)
     adapter = get_adapter(event.category)
-    if payload.bib_numbers_enabled and not adapter.number_enabled:
-        raise HTTPException(status_code=422, detail="Bib numbers are not available for this event type")
     if payload.results_enabled and adapter.result_type == "none":
         raise HTTPException(status_code=422, detail="Results are not available for this event type")
 
