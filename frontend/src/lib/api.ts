@@ -264,7 +264,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       const iscsrf = response.status === 403 && isCsrfDetail(body);
       const detail = errorMessage(body, `Request failed (${response.status})`);
       const message = response.status >= 500
-        ? "Something went wrong on our side. Please try again shortly."
+        ? `Something went wrong on our side. Please try again shortly.${requestId ? ` Reference: ${requestId}` : ""}`
         : response.status === 429
           ? "Too many requests. Please wait a moment and try again."
           : detail;
