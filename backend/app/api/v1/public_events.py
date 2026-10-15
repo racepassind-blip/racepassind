@@ -22,6 +22,11 @@ from app.services.platform_fee_service import get_effective_pricing, get_or_crea
 router = APIRouter()
 
 
+def _operational_features_enabled(event: Event, feature: str) -> bool:
+    features = (event.field_config or {}).get("operational_features") or {}
+    return bool(features.get(feature, False))
+
+
 def _fee_config_values(db: Session) -> tuple[int, int, int, int]:
     config = get_or_create_config(db)
     return config.percentage_basis_points, 2000, 6000, 0
@@ -94,6 +99,10 @@ def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: in
         # Pickup point OPTIONS only (enabled/required/points). Participant
         # selections are never part of this public payload.
         "pickupPoints": (event.field_config or {}).get("pickup_points", {"enabled": False}),
+        "operationalFeatures": {
+            "bibNumbersEnabled": _operational_features_enabled(event, "bib_numbers_enabled"),
+            "resultsEnabled": _operational_features_enabled(event, "results_enabled"),
+        },
         "tiers": tiers,
         "platformFeeBearer": event.platform_fee_bearer,
         "paymentCollectionMethod": event.payment_collection_method,
@@ -201,6 +210,8 @@ def get_public_results(
     )
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
+    if not _operational_features_enabled(event, "results_enabled"):
+        raise HTTPException(status_code=404, detail="Results are not enabled for this event")
     if category_id is not None and not any(category.id == category_id for category in event.categories):
         raise HTTPException(status_code=404, detail="Category not found")
     if match_status is not None and match_status not in {"scheduled", "in_progress", "completed"}:
@@ -250,6 +261,8 @@ def get_public_number_list(
     )
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
+    if not _operational_features_enabled(event, "bib_numbers_enabled"):
+        raise HTTPException(status_code=404, detail="Bib numbers are not enabled for this event")
 
     rows = db.scalars(
         select(Registration)

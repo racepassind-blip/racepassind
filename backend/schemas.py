@@ -43,6 +43,7 @@ class EventOut(BaseModel):
     addonConfig: dict
     waiver: dict = {}
     pickupPoints: dict = {}
+    operationalFeatures: dict = {}
     registrationOpen: str | None = None
     registrationClose: str | None = None
     registrationStatus: Literal["open", "closed"] = "open"

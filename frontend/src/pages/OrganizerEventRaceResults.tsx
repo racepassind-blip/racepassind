@@ -10,6 +10,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Cloc
 import { toast } from "sonner";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
+import { EventFeatureDisabled } from "@/components/EventFeatureDisabled";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiRequest } from "@/lib/api";
+import { useOrganizerEventDashboard } from "@/hooks/useEvents";
 import {
   useOrganizerRaceResults,
   usePublishRaceResults,
@@ -113,6 +115,7 @@ function formatSpeed(v: number | null) {
 export default function OrganizerEventRaceResults() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
+  const { data: dashboard } = useOrganizerEventDashboard(eventId);
 
   const { data: savedResults, isLoading: resultsLoading } = useOrganizerRaceResults(eventId);
   const saveDraft = useSaveRaceResultsDraft(eventId!);
@@ -339,6 +342,10 @@ export default function OrganizerEventRaceResults() {
     anchor.download = `race-results-${eventId}-${selectedKey === "all" ? "all" : selectedKey}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  if (dashboard?.event && !dashboard.event.operationalFeatures?.resultsEnabled) {
+    return <OrganizerDashboardLayout eventId={eventId}><EventFeatureDisabled eventId={eventId!} feature="resultsEnabled" operationalFeatures={dashboard.event.operationalFeatures} /></OrganizerDashboardLayout>;
   }
 
   return (

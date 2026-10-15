@@ -107,6 +107,7 @@ const App = () => (
             <Route path="/organizers" element={<OrganizerInfo />} />
             <Route path="/federations-associations" element={<FederationsAssociationsComingSoon />} />
             <Route path="/event/:id" element={<EventDetail />} />
+            <Route path="/event/:eventId/announcements/:announcementId" element={<PublicEventAnnouncements />} />
             <Route path="/event/:eventId/announcements" element={<PublicEventAnnouncements />} />
             <Route path="/event/:id/results" element={<ResultAdapter />} />
             <Route path="/checkout/:eventId" element={<Checkout />} />

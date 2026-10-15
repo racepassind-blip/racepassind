@@ -71,6 +71,15 @@ class TournamentFormatIn(BaseModel):
     tournament_format: Literal["league", "knockout"]
 
 
+class OperationalFeaturesIn(BaseModel):
+    """Organizer-controlled event-day tools. Both features are opt-in."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    bib_numbers_enabled: bool = False
+    results_enabled: bool = False
+
+
 class OrganizerEventCreateV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

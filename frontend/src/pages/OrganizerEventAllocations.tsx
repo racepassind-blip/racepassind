@@ -25,6 +25,7 @@ import { Badge as BadgeComp } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
+import { EventFeatureDisabled } from "@/components/EventFeatureDisabled";
 import { useFreeEventLock } from "@/hooks/useFreeEventLock";
 import { useAllocations, useBatchAllocate, usePublishAllocations, useEditAllocation, useAllocationConfig } from "@/hooks/useAllocations";
 import type { AllocationRegistration } from "@/hooks/useAllocations";
@@ -258,6 +259,10 @@ const OrganizerEventAllocations = () => {
       );
     }
     return <OrganizerDashboardLayout eventId={eventId}><div>Loading...</div></OrganizerDashboardLayout>;
+  }
+
+  if (!event.operationalFeatures?.bibNumbersEnabled) {
+    return <OrganizerDashboardLayout eventId={eventId}><EventFeatureDisabled eventId={eventId!} feature="bibNumbersEnabled" operationalFeatures={event.operationalFeatures} /></OrganizerDashboardLayout>;
   }
 
   const categories = Array.from(new Set(allocations.map(a => a.category_name).filter(Boolean) as string[]));

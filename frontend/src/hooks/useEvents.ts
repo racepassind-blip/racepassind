@@ -240,6 +240,7 @@ export interface OrganizerEvent {
   addonConfig: EventAddonConfig;
   waiver?: { enabled?: boolean; title?: string; text?: string };
   pickupPoints?: { enabled?: boolean; required?: boolean; points?: Array<{ id: string; name: string; description?: string; address?: string }> };
+  operationalFeatures?: { bibNumbersEnabled: boolean; resultsEnabled: boolean };
   paymentSettings: {
     method: string;
     upiId: string;

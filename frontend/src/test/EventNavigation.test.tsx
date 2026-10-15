@@ -15,7 +15,7 @@ vi.mock("@/hooks/useRaceTimeResults", () => ({ usePublicRaceResults: () => ({ da
 afterEach(() => { cleanup(); state.category = "running"; });
 
 it("keeps all supported destinations visible before anything is published", () => {
-  render(<MemoryRouter><EventNavigation eventId="race" /></MemoryRouter>);
+  render(<MemoryRouter><EventNavigation eventId="race" operationalFeatures={{ bibNumbersEnabled: true, resultsEnabled: true }} /></MemoryRouter>);
   expect(screen.getByRole("link", { name: /Announcements/i }).getAttribute("href")).toBe("/event/race/announcements");
   expect(screen.getByText("Bib Number not released")).toBeTruthy();
   expect(screen.getByText("Results are not released")).toBeTruthy();

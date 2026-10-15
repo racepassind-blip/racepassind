@@ -10,12 +10,12 @@ import type { ParticipantRegistration } from "@/hooks/useParticipantRegistration
 import { getSportConfig } from "@/data/sportConfig";
 
 /** A permanent, participant-friendly home for event updates and documents. */
-export function EventNavigation({ eventId }: { eventId: string }) {
+export function EventNavigation({ eventId, operationalFeatures }: { eventId: string; operationalFeatures?: { bibNumbersEnabled: boolean; resultsEnabled: boolean } }) {
   const { data: announcements } = usePublicEventAnnouncements(eventId);
   const event = announcements?.event;
   const sport = getSportConfig(event?.category);
-  const supportsNumbers = sport.numberEnabled;
-  const supportsResults = sport.result_type !== "none";
+  const supportsNumbers = sport.numberEnabled && Boolean(operationalFeatures?.bibNumbersEnabled);
+  const supportsResults = sport.result_type !== "none" && Boolean(operationalFeatures?.resultsEnabled);
   const numbers = usePublicNumberList(eventId, supportsNumbers);
   const raceResults = usePublicRaceResults(eventId, sport.result_type === "race_time");
   const matchResults = usePublicEventResults(eventId, sport.result_type === "match_score");
@@ -30,7 +30,7 @@ export function EventNavigation({ eventId }: { eventId: string }) {
   return <section aria-label="Event hub" className="mb-8 overflow-hidden rounded-2xl border bg-card shadow-sm">
     <div className="border-b px-5 py-5 sm:px-6">
       <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Event hub</p>
-      <h2 className="mt-1 text-xl font-bold">Updates, bibs and results</h2>
+      <h2 className="mt-1 text-xl font-bold">Event updates and information</h2>
       <p className="mt-1 text-sm text-muted-foreground">Everything released by the organizer for this event lives here.</p>
     </div>
     <div className={`grid gap-px bg-border ${supportsNumbers && supportsResults ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>

@@ -73,9 +73,9 @@ const EventDetail = () => {
   const { data: event, isLoading, isError } = useEvent(id);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const eventSportConfig = getSportConfig(event?.category);
-  const publicNumbers = usePublicNumberList(id ?? "", Boolean(event) && eventSportConfig.numberEnabled);
-  const publicMatchResults = usePublicEventResults(id, Boolean(event) && eventSportConfig.result_type === "match_score");
-  const publicRaceResults = usePublicRaceResults(id, Boolean(event) && eventSportConfig.result_type === "race_time");
+  const publicNumbers = usePublicNumberList(id ?? "", Boolean(event) && eventSportConfig.numberEnabled && Boolean(event?.operationalFeatures?.bibNumbersEnabled));
+  const publicMatchResults = usePublicEventResults(id, Boolean(event) && eventSportConfig.result_type === "match_score" && Boolean(event?.operationalFeatures?.resultsEnabled));
+  const publicRaceResults = usePublicRaceResults(id, Boolean(event) && eventSportConfig.result_type === "race_time" && Boolean(event?.operationalFeatures?.resultsEnabled));
   const publicAnnouncements = usePublicEventAnnouncements(id, Boolean(event));
 
   if (isLoading) {
@@ -157,13 +157,13 @@ const EventDetail = () => {
   ];
 
   // Check if bib numbers are enabled for this sport
-  const hasNumberAllocation = eventSportConfig.numberEnabled;
+  const hasNumberAllocation = eventSportConfig.numberEnabled && Boolean(event.operationalFeatures?.bibNumbersEnabled);
   const numberLabel = eventSportConfig.numberLabel || "Bib Number";
   const sportMessage = eventSportConfig.message;
   const hasPublishedNumbers = hasNumberAllocation && (publicNumbers.data?.entries.length ?? 0) > 0;
-  const hasPublishedResults = eventSportConfig.result_type === "race_time"
+  const hasPublishedResults = Boolean(event.operationalFeatures?.resultsEnabled) && (eventSportConfig.result_type === "race_time"
     ? publicRaceResults.data?.resultSetStatus === "published"
-    : eventSportConfig.result_type === "match_score" && Boolean(publicMatchResults.data?.matches.some((match) => match.status === "completed"));
+    : eventSportConfig.result_type === "match_score" && Boolean(publicMatchResults.data?.matches.some((match) => match.status === "completed")));
 
   const continueToRegistration = () => {
     if (registrationClosed || totalTickets === 0 || totalTickets > MAX_TICKETS_PER_TRANSACTION) return;
@@ -211,7 +211,7 @@ const EventDetail = () => {
           ))}
         </div>
 
-        <EventNavigation eventId={event.id} />
+        <EventNavigation eventId={event.id} operationalFeatures={event.operationalFeatures} />
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
           <div className="min-w-0 space-y-8">

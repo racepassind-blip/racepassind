@@ -13,6 +13,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useOrganizerEventDashboard, useOrganizerEventOptions } from "@/hooks/useEvents";
 import { apiRequest } from "@/lib/api";
@@ -71,7 +72,10 @@ const OrganizerEventDashboard = () => {
 
   const { event, inventory, registrations, overview, byCategory, signupTrend, recentRegistrations, byAddon } = data;
   const supportsTournament = eventSupportsTournament(event.sport, event.categories);
-  const supportsRaceResults = getSportConfig(event.sport).result_type === "race_time";
+  const sportOperations = getSportConfig(event.sport);
+  const supportsRaceResults = sportOperations.result_type === "race_time";
+  const supportsNumbers = sportOperations.numberEnabled;
+  const operationalFeatures = event.operationalFeatures ?? { bibNumbersEnabled: false, resultsEnabled: false };
   const resultsUrl = buildResultsUrl(event.id);
   const copyResultsLink = async () => {
     try {
@@ -113,6 +117,19 @@ const OrganizerEventDashboard = () => {
       toast.success(opening ? "Registration is now open." : "Registration is now closed. Existing records were preserved.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update registration status.");
+    }
+  };
+  const updateOperationalFeature = async (key: "bibNumbersEnabled" | "resultsEnabled", enabled: boolean) => {
+    const next = { ...operationalFeatures, [key]: enabled };
+    try {
+      await apiRequest(`/organizer/events/${event.id}/operational-features`, {
+        method: "PUT",
+        body: JSON.stringify({ bib_numbers_enabled: next.bibNumbersEnabled, results_enabled: next.resultsEnabled }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["organizer-event-dashboard", event.id] });
+      toast.success(enabled ? `${key === "bibNumbersEnabled" ? "Bib numbers" : "Results"} enabled` : `${key === "bibNumbersEnabled" ? "Bib numbers" : "Results"} disabled`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update event features.");
     }
   };
   const location = event.location.name ?? ([event.location.city, event.location.state].filter(Boolean).join(", ") || "Location pending");
@@ -248,14 +265,16 @@ const OrganizerEventDashboard = () => {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>Event tools</CardTitle><CardDescription>Shortcuts for setup and event-day operations.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Event tools</CardTitle><CardDescription>Turn on only the participant information this event will use.</CardDescription></CardHeader>
             <CardContent className="grid gap-3">
+              {supportsNumbers && <div className="flex items-start justify-between gap-3 rounded-lg border p-3"><div><p className="text-sm font-semibold">Bib numbers</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Shows bib management to your team and published numbers to participants.</p></div><Switch checked={operationalFeatures.bibNumbersEnabled} onCheckedChange={(enabled) => void updateOperationalFeature("bibNumbersEnabled", enabled)} aria-label="Enable bib numbers" /></div>}
+              {sportOperations.result_type !== "none" && <div className="flex items-start justify-between gap-3 rounded-lg border p-3"><div><p className="text-sm font-semibold">Results</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Shows the results workspace and lets participants see released results.</p></div><Switch checked={operationalFeatures.resultsEnabled} onCheckedChange={(enabled) => void updateOperationalFeature("resultsEnabled", enabled)} aria-label="Enable results" /></div>}
               <Button className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/participants/new`)}><UserPlus className="h-4 w-4" /> Add offline participant</Button>
               <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/check-in?event_id=${encodeURIComponent(event.id)}`)}><ScanLine className="h-4 w-4" /> Open check-in scanner</Button>
               <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ClipboardList className="h-4 w-4" /> View check-in matrix</Button>
               <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/checkpoints`)}><ClipboardList className="h-4 w-4" /> Manage checkpoints</Button>
-              <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/allocations`)}><Hash className="h-4 w-4" /> Bib management</Button>
-              {supportsRaceResults && <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/race-results`)}><Timer className="h-4 w-4" /> Race results</Button>}
+              {supportsNumbers && operationalFeatures.bibNumbersEnabled && <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/allocations`)}><Hash className="h-4 w-4" /> Bib management</Button>}
+              {supportsRaceResults && operationalFeatures.resultsEnabled && <Button variant="outline" className="justify-start gap-2" onClick={() => navigate(`/organizer/events/${event.id}/race-results`)}><Timer className="h-4 w-4" /> Race results</Button>}
               <div className="mt-2 rounded-lg bg-muted/50 p-3 text-xs leading-5 text-muted-foreground"><p className="font-semibold text-foreground">Event-day readiness</p><p className="mt-1">{overview.confirmedParticipants.toLocaleString()} confirmed participants, {overview.checkInRate}% checked in by participant quantity.</p></div>
             </CardContent>
           </Card>

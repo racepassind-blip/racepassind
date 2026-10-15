@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_authorized_event, get_authorized_organization, require_csrf, require_roles
 from app.infrastructure.storage.factory import get_storage_service
-from app.schemas.events import OrganizerEventCreateV1, OrganizerEventUpdateV1, PaymentSettingsIn, RegistrationStatusIn, TournamentFormatIn, rupees_to_paise
+from app.schemas.events import OrganizerEventCreateV1, OrganizerEventUpdateV1, OperationalFeaturesIn, PaymentSettingsIn, RegistrationStatusIn, TournamentFormatIn, rupees_to_paise
 from app.services.audit_service import record_audit
 from app.services.organizer_payment_security import USABLE_DESTINATION_STATUSES, submit_destination
 from app.services.auth_service import utc_now
@@ -110,6 +110,7 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
         "sportConfig": (event.field_config or {}).get("sport_config", {}),
         "waiver": (event.field_config or {}).get("waiver", {"enabled": False}),
         "pickupPoints": (event.field_config or {}).get("pickup_points", {"enabled": False}),
+        "operationalFeatures": _operational_features(event),
         "addonConfig": addon_config,
         "categories": [
             {
@@ -162,6 +163,14 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
         "refundPercentage": event.refund_percentage,
         "platformFeeRefundable": event.platform_fee_refundable,
         "refundPolicyText": event.refund_policy_text,
+    }
+
+
+def _operational_features(event: Event) -> dict:
+    stored = (event.field_config or {}).get("operational_features") or {}
+    return {
+        "bibNumbersEnabled": bool(stored.get("bib_numbers_enabled", False)),
+        "resultsEnabled": bool(stored.get("results_enabled", False)),
     }
 
 
@@ -283,7 +292,13 @@ def create_event(
         participants=0,
         rules=payload.rules,
         schedule=[item.model_dump(mode="json", exclude_none=True) for item in payload.schedule],
-        field_config={**field_config, "sport_config": payload.sport_config, "waiver": payload.waiver, "pickup_points": payload.pickup_points},
+        field_config={
+            **field_config,
+            "sport_config": payload.sport_config,
+            "waiver": payload.waiver,
+            "pickup_points": payload.pickup_points,
+            "operational_features": {"bib_numbers_enabled": False, "results_enabled": False},
+        },
         addon_config=addon_config,
         payment_collection_method=payload.payment_collection_method,
         platform_fee_bearer=payload.platform_fee_bearer,
@@ -412,6 +427,39 @@ def update_tournament_format(
     )
     db.commit()
     return {"sportConfig": normalized}
+
+
+@router.put("/events/{event_id}/operational-features")
+def update_operational_features(
+    event_id: UUID,
+    payload: OperationalFeaturesIn,
+    user: User = Depends(require_roles("organizer", "admin")),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_authorized_event(db, user, event_id)
+    adapter = get_adapter(event.category)
+    if payload.bib_numbers_enabled and not adapter.number_enabled:
+        raise HTTPException(status_code=422, detail="Bib numbers are not available for this event type")
+    if payload.results_enabled and adapter.result_type == "none":
+        raise HTTPException(status_code=422, detail="Results are not available for this event type")
+
+    current = dict(event.field_config or {})
+    features = {
+        "bib_numbers_enabled": payload.bib_numbers_enabled,
+        "results_enabled": payload.results_enabled,
+    }
+    event.field_config = {**current, "operational_features": features}
+    record_audit(
+        db,
+        actor_user_id=user.id,
+        action="event_operational_features_updated",
+        resource_type="event",
+        resource_id=event.id,
+        metadata=features,
+    )
+    db.commit()
+    return {"operationalFeatures": _operational_features(event)}
 
 
 def _ticket_has_registrations(db: Session, ticket_id: UUID) -> bool:
@@ -612,7 +660,13 @@ def update_event(
     event.longitude = payload.longitude
     event.rules = payload.rules
     event.schedule = [item.model_dump(mode="json", exclude_none=True) for item in payload.schedule]
-    event.field_config = {**field_config, "sport_config": sport_config, "waiver": waiver_config, "pickup_points": pickup_config}
+    event.field_config = {
+        **field_config,
+        "sport_config": sport_config,
+        "waiver": waiver_config,
+        "pickup_points": pickup_config,
+        "operational_features": (event.field_config or {}).get("operational_features", {"bib_numbers_enabled": False, "results_enabled": False}),
+    }
     event.addon_config = addon_config
     event.registration_open = payload.registration_open
     event.registration_close = payload.registration_close

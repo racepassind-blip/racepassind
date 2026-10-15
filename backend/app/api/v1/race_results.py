@@ -22,7 +22,7 @@ from app.services.race_result_service import (
     unpublish_results,
 )
 from db import get_db
-from models import User
+from models import Event, User
 
 router = APIRouter()
 
@@ -110,6 +110,9 @@ def public_get_race_results(
     event_id: UUID,
     db: Session = Depends(get_db),
 ) -> PublicRaceResultsOut:
+    event = db.get(Event, event_id)
+    if event is None or not bool(((event.field_config or {}).get("operational_features") or {}).get("results_enabled", False)):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Results are not enabled for this event")
     return get_public_results(db, event_id)
 
 
