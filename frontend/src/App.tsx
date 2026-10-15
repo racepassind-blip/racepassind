@@ -66,6 +66,8 @@ import ProductStorefront from "./pages/ProductStorefront";
 import Merchandise from "./pages/Merchandise";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import PublicEventAnnouncements from "./pages/PublicEventAnnouncements";
+import OrganizerEventAnnouncements from "./pages/OrganizerEventAnnouncements";
 
 const queryClient = new QueryClient();
 
@@ -98,8 +100,6 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/events" element={<Events />} />
             <Route path="/merchandise" element={<Merchandise />} />
-            {/* Clerk's path-based flow uses internal subpaths such as
-                /login/client-trust and /signup/verify-email-address. */}
             <Route path="/login/*" element={<Login />} />
             <Route path="/signup/*" element={<Signup />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -107,6 +107,7 @@ const App = () => (
             <Route path="/organizers" element={<OrganizerInfo />} />
             <Route path="/federations-associations" element={<FederationsAssociationsComingSoon />} />
             <Route path="/event/:id" element={<EventDetail />} />
+            <Route path="/event/:eventId/announcements" element={<PublicEventAnnouncements />} />
             <Route path="/event/:id/results" element={<ResultAdapter />} />
             <Route path="/checkout/:eventId" element={<Checkout />} />
             <Route path="/checkout/:eventId/:tierId" element={<Checkout />} />
@@ -146,6 +147,7 @@ const App = () => (
             <Route path="/organizer/events/:eventId/checkpoints" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventCheckpoints /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/check-in" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerCheckinMatrix /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/communications" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventCommunications /></ProtectedRoute>} />
+            <Route path="/organizer/events/:eventId/announcements" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventAnnouncements /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/participants/new" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerManualParticipant /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/tournament" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventTournament /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/tournament/matches" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventTournamentMatches /></ProtectedRoute>} />

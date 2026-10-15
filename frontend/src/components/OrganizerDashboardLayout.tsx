@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, CalendarDays, ClipboardList, CreditCard, ExternalLink, Gauge, GitBranch, LayoutDashboard, LogOut, Lock, Medal, MessageSquare, Package, ReceiptText, ScanLine, Settings2, Ticket, Timer, Trophy } from "lucide-react";
+import { BarChart3, Bell, CalendarDays, ClipboardList, CreditCard, ExternalLink, Gauge, GitBranch, LayoutDashboard, LogOut, Lock, Medal, MessageSquare, Package, ReceiptText, ScanLine, Settings2, Ticket, Timer, Trophy } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -65,6 +65,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
       { label: "Results", icon: Medal, to: `/organizer/events/${eventId}/tournament/results` },
     ] : []),
     ...(eventId && supportsCommunications ? [{ label: "Communications", icon: MessageSquare, to: `/organizer/events/${eventId}/communications` }] : []),
+    ...(eventId ? [{ label: "Announcements", icon: Bell, to: `/organizer/events/${eventId}/announcements` }] : []),
     ...(eventId && supportsCheckin ? [{ label: "Check-in", icon: ScanLine, to: `/organizer/events/${eventId}/check-in` }] : []),
     ...(eventId && supportsBib ? [{ label: "Bib Management", icon: Package, to: `/organizer/events/${eventId}/allocations` }] : []),
     ...(supportsRaceResults ? [{ label: "Race Results", icon: Timer, to: `/organizer/events/${eventId}/race-results` }] : []),

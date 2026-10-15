@@ -14,7 +14,7 @@ const PrivacyPolicy = () => {
           <ScrollArea className="h-[calc(100vh-200px)] pr-4">
             <div className="prose max-w-none space-y-6">
               <p className="text-sm text-muted-foreground">
-                <strong>Last Updated:</strong> 20 September 2026
+                <strong>Last Updated:</strong> 15 October 2026
               </p>
 
               <p>
@@ -28,6 +28,14 @@ const PrivacyPolicy = () => {
               </p>
               <p>
                 By using SportPass India, you acknowledge the practices described in this Privacy Policy.
+              </p>
+
+              <h2 className="text-xl font-semibold mt-6">Privacy notice at signup</h2>
+              <p>
+                Before creating an account, we ask you to confirm this notice. We collect your name, email address, optional participant phone number, password (stored only as a secure hash), account role, session-security data, and the record of your acceptance. We use this information to authenticate you, provide your account and registrations, prevent fraud and unauthorized access, provide support, and meet legal obligations.
+              </p>
+              <p>
+                Registration forms can collect additional information required by a specific event. That information is used to run that event and is shared only with its authorized organizer and service providers needed to deliver the service. We do not sell personal data or use it for unrelated advertising.
               </p>
 
               <h2 className="text-xl font-semibold mt-6">1. Information We Collect</h2>
@@ -338,6 +346,9 @@ const PrivacyPolicy = () => {
                 <li>Dispute resolution</li>
                 <li>Audit requirements</li>
               </ul>
+              <p>
+                Signed-in participants can download an account data copy and erase their account from <strong>Dashboard → Profile</strong>. Erasure removes account identifiers, sessions, password-reset tokens, and push subscriptions. We retain only de-identified event or payment records where needed for legal compliance, fraud prevention, disputes, or event operations. Organizers and administrators can submit an erasure request through the grievance contact because their account may control event or settlement records.
+              </p>
 
               <h2 className="text-xl font-semibold mt-6">18. Requests Related to Event Registrations</h2>
               <p>Some personal information is collected specifically to enable participation in an event. Deleting or modifying registration information may affect:</p>
@@ -394,7 +405,7 @@ const PrivacyPolicy = () => {
               <p className="mt-4">
                 For privacy-related requests or grievances, please email: sportpassind@gmail.com
               </p>
-              <p>We will review legitimate privacy requests and respond as reasonably required under applicable law.</p>
+              <p>We will acknowledge and resolve privacy grievances through this channel within the applicable legal timeline. If you are dissatisfied after using this channel, you may use the remedies available under applicable law.</p>
 
               <div className="border-l-4 border-primary pl-4 mt-6">
                 <p className="font-medium">Registration Privacy Notice</p>

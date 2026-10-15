@@ -511,6 +511,8 @@ def approve_organizer_application(
         password_hash=application.password_hash,
         role="organizer",
         is_active=True,
+        privacy_policy_version=application.privacy_policy_version,
+        privacy_policy_accepted_at=application.privacy_policy_accepted_at,
     )
     organization = Organization(
         name=application.organization_name,

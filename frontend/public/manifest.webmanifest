@@ -1,0 +1,12 @@
+{
+  "name": "SportPass India",
+  "short_name": "SportPass",
+  "description": "Event updates and race day information from SportPass India.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ff6b00",
+  "icons": [
+    { "src": "/sportpass-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

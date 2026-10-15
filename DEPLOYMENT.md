@@ -132,6 +132,8 @@ curl -fsS http://127.0.0.1:8000/ready
 
 For production, run the image with secret-managed environment variables, no required filesystem volume, and the platform's externally supplied `PORT`. Prefer a read-only root filesystem with a temporary `/tmp` mount when the host supports it. S3-compatible storage is required so QR image uploads do not depend on the container filesystem.
 
+To enable event announcement push notifications, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in the backend secret environment. The public key is returned to the frontend; never expose the private key in `VITE_*` variables.
+
 Build the frontend from `frontend`:
 
 ```sh

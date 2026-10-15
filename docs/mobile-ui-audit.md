@@ -33,6 +33,6 @@ npx tsc -p tsconfig.app.json --noEmit
 npm run build
 ```
 
-The Playwright config starts the preview on port 8081, with Clerk disabled for deterministic local authentication fixtures. Reuse an existing preview only when it has the same configuration. Alternatively install Playwright Chromium and omit `PLAYWRIGHT_CHANNEL`.
+The Playwright config starts the preview on port 8081 with deterministic local authentication fixtures. Reuse an existing preview only when it has the same configuration. Alternatively install Playwright Chromium and omit `PLAYWRIGHT_CHANNEL`.
 
-API responses and writes are mocked. These checks cover the listed route states and flows, including populated registration/admin examples and empty states; they do not validate live payments, email delivery, camera hardware, third-party Clerk screens, every possible data combination, or physical iOS Safari/Android WebViews. Extend the fixtures when adding new states or endpoints. Failed tests save screenshots under `frontend/test-results`.
+API responses and writes are mocked. These checks cover the listed route states and flows, including populated registration/admin examples and empty states; they do not validate live payments, email delivery, camera hardware, every possible data combination, or physical iOS Safari/Android WebViews. Extend the fixtures when adding new states or endpoints. Failed tests save screenshots under `frontend/test-results`.

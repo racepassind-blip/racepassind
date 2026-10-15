@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { AlertCircle, ArrowRight, CalendarDays, CheckCircle2, ClipboardList, Clock3, Sparkles, Ticket } from "lucide-react";
+import { AlertCircle, ArrowRight, Bell, CalendarDays, CheckCircle2, ClipboardList, Clock3, Sparkles, Ticket } from "lucide-react";
 
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { ParticipantRegistrationCard } from "@/components/ParticipantRegistrationCard";
@@ -8,10 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { useParticipantRegistrations } from "@/hooks/useParticipantRegistrations";
+import { useParticipantAnnouncements } from "@/hooks/useParticipantAnnouncements";
 
 const Dashboard = () => {
   const { user } = useAuth();
   const { data: registrations = [], isLoading, isError, error } = useParticipantRegistrations();
+  const { data: announcementData, isLoading: announcementsLoading } = useParticipantAnnouncements();
+  const announcements = announcementData?.items ?? [];
   const errorMessage = error instanceof Error ? error.message : "Failed to load your registrations.";
   const confirmedCount = registrations.filter((registration) => ["confirmed", "checked_in"].includes(registration.status)).length;
   const checkedInCount = registrations.filter((registration) => registration.checkInStatus === "checked_in").length;
@@ -33,6 +36,8 @@ const Dashboard = () => {
           </div>
         </header>
 
+        {!announcementsLoading && announcements.length > 0 && <Card className="border-primary/30 bg-primary/[0.05] shadow-none"><CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Bell className="h-5 w-5" /></span><div><p className="font-bold">{announcements.length} organizer {announcements.length === 1 ? "message" : "messages"} for your registered events</p><p className="mt-0.5 text-sm text-muted-foreground">See what changed before race day.</p></div></div><Button asChild size="sm" className="shrink-0"><a href="#organizer-updates">Read updates</a></Button></CardContent></Card>}
+
         <section className="relative overflow-hidden rounded-3xl bg-slate-950 px-6 py-8 text-white shadow-lg sm:px-8 sm:py-10">
           <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500 via-white to-green-500" />
           <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-primary/25 blur-3xl" />
@@ -52,6 +57,11 @@ const Dashboard = () => {
           <Card className="border-accent/20 bg-accent/5 shadow-none"><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-semibold text-muted-foreground">Confirmed</p><CheckCircle2 className="h-5 w-5 text-accent" /></div><p className="mt-3 text-3xl font-black tracking-tight">{confirmedCount}</p><p className="mt-1 text-xs text-muted-foreground">Ready for race day</p></CardContent></Card>
           <Card className="border-border bg-card shadow-none"><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-semibold text-muted-foreground">Check-ins</p><CalendarDays className="h-5 w-5 text-primary" /></div><p className="mt-3 text-3xl font-black tracking-tight">{checkedInCount}</p><p className="mt-1 text-xs text-muted-foreground">{pendingCount > 0 ? `${pendingCount} awaiting action` : "Your race history is up to date"}</p></CardContent></Card>
         </section>
+
+        {(announcementsLoading || announcements.length > 0) && <section id="organizer-updates" className="space-y-4 scroll-mt-24" aria-label="Updates from your event organizers">
+          <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Organizer messages</p><h2 className="mt-1 text-2xl font-black tracking-tight">Updates for your events</h2><p className="mt-1 text-sm text-muted-foreground">Only updates from events with a confirmed registration are shown here.</p></div></div>
+          {announcementsLoading ? <Card><CardContent className="flex items-center gap-3 p-5 text-sm text-muted-foreground"><Bell className="h-5 w-5 animate-pulse text-primary" />Checking for updates from your organizers…</CardContent></Card> : <div className="grid gap-4 lg:grid-cols-2">{announcements.slice(0, 4).map(({ event, announcement }) => <Card key={announcement.id} className={announcement.isPinned ? "border-primary/35" : ""}><CardContent className="p-5"><div className="flex items-start gap-3"><div className="mt-0.5 rounded-lg bg-primary/10 p-2 text-primary"><Bell className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wide text-primary">Message from {event.organizer}</p><h3 className="mt-1 font-bold leading-5">{announcement.title}</h3><p className="mt-2 whitespace-pre-line text-sm leading-6 text-muted-foreground">{announcement.body}</p><p className="mt-3 text-xs text-muted-foreground">{event.title} · {announcement.publishedAt ? new Date(announcement.publishedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "New update"}</p><div className="mt-4 flex flex-wrap gap-2"><Button asChild size="sm"><Link to={`/event/${event.id}/announcements`}>Read all updates</Link></Button><Button asChild size="sm" variant="outline"><Link to={`/event/${event.id}`}>Open event</Link></Button></div></div></div></CardContent></Card>)}</div>}
+        </section>}
 
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">

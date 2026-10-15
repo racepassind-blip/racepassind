@@ -31,7 +31,8 @@ from app.api.v1.registrations import router as registrations_router
 from app.api.v1.cashfree import router as cashfree_router
 from app.api.v1.refunds import router as refunds_router
 from app.api.v1.race_results import router as race_results_router
-from app.api.v1.webhooks import router as webhooks_router
+from app.api.v1.announcements import router as announcements_router
+from app.api.v1.push_notifications import router as push_notifications_router
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
 from db import engine, get_db
@@ -57,7 +58,8 @@ app.include_router(events_router, prefix="/api/v1/organizer", tags=["organizer-e
 app.include_router(allocations_router, prefix="/api/v1/organizer", tags=["organizer-allocation"])
 app.include_router(refunds_router, prefix="/api/v1", tags=["refunds"])
 app.include_router(race_results_router, prefix="/api/v1", tags=["organizer-race-results", "public-race-results"])
-app.include_router(webhooks_router, prefix="/api/v1/webhooks", tags=["webhooks"])
+app.include_router(announcements_router, prefix="/api/v1", tags=["announcements"])
+app.include_router(push_notifications_router, prefix="/api/v1", tags=["push-notifications"])
 
 app.add_middleware(
     CORSMiddleware,
@@ -238,7 +240,9 @@ def on_startup() -> None:
 
     from db import SessionLocal
     from app.services.cashfree_recovery import start_recovery_worker
+    from app.services.announcement_service import start_announcement_worker
     app.state.cashfree_recovery = start_recovery_worker(SessionLocal, engine)
+    app.state.announcement_worker = start_announcement_worker(SessionLocal, engine)
 
 
 @app.on_event("shutdown")
@@ -246,6 +250,12 @@ def stop_cashfree_recovery() -> None:
     recovery = getattr(app.state, "cashfree_recovery", None)
     if recovery:
         stop, worker = recovery
+        stop.set()
+        if worker.is_alive():
+            worker.join(timeout=2)
+    announcement = getattr(app.state, "announcement_worker", None)
+    if announcement:
+        stop, worker = announcement
         stop.set()
         if worker.is_alive():
             worker.join(timeout=2)

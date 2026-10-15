@@ -29,17 +29,9 @@ services:
       # Cashfree stays off until staging reconciliation and production approval.
       - key: CASHFREE_ENABLED
         value: "false"
-      # Production authentication fails closed through Clerk; admins must enroll MFA.
-      - key: CLERK_AUTH_REQUIRED
-        value: "true"
+      # Session authentication is protected by secure cookies; admins enroll MFA.
       - key: ADMIN_MFA_ENABLED
         value: "true"
-      - key: CLERK_SECRET_KEY
-        sync: false
-      - key: CLERK_WEBHOOK_SIGNING_SECRET
-        sync: false
-      - key: CLERK_AUTHORIZED_PARTIES
-        sync: false
       # Render supplies PORT automatically; the app reads it.
       # --- Database (Neon) ---
       - key: DATABASE_URL
@@ -98,8 +90,6 @@ services:
     envVars:
       # Public API origin only (no /api/v1 suffix). Set to the backend URL.
       - key: VITE_API_URL
-        sync: false
-      - key: VITE_CLERK_PUBLISHABLE_KEY
         sync: false
     # Browser-facing security headers for the React application. These are
     # served by Render's static-site CDN and therefore protect the frontend

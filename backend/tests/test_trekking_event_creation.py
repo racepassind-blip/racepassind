@@ -3,7 +3,7 @@
 These exercise ``OrganizerEventCreateV1`` / ``OrganizerEventUpdateV1`` — the
 layer where sport-specific setup is validated/normalized via ``get_adapter`` —
 without importing the HTTP/DB stack (which transitively requires the optional
-``clerk_backend_api`` package that is not installed in this environment).
+optional authentication dependencies that are not installed in this environment).
 
 The HTTP route itself only persists ``category = payload.sport.strip().lower()``
 and stores ``sport_config`` inside ``field_config``, so a schema that validates

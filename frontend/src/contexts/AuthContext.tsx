@@ -1,8 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAuth as useClerkAuth } from "@clerk/react";
 
-import { ApiError, apiRequest, clearCsrfToken, setAuthTokenProvider, setUnauthorizedHandler } from "@/lib/api";
+import { ApiError, apiRequest, clearCsrfToken, setUnauthorizedHandler } from "@/lib/api";
 
 export type UserRole = "admin" | "organizer" | "participant" | "user";
 
@@ -133,73 +132,8 @@ function LegacyAuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function ClerkAuthProvider({ children }: { children: ReactNode }) {
-  const queryClient = useQueryClient();
-  const { isLoaded, isSignedIn, userId, getToken, signOut } = useClerkAuth();
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const getClerkToken = useCallback(async () => {
-    if (!isLoaded || !isSignedIn) return null;
-    // Never let a stalled Clerk network request leave the whole application in
-    // an endless auth-bootstrap state. Clerk will retry on the next request.
-    return Promise.race([
-      getToken(),
-      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
-    ]);
-  }, [getToken, isLoaded, isSignedIn]);
-
-  const clearSession = useCallback(() => {
-    setUser(null);
-    setAuthTokenProvider(null);
-    clearAccountCache(queryClient);
-  }, [queryClient]);
-
-  const bootstrap = useCallback(async () => {
-    if (!isLoaded) return;
-    setIsLoading(true);
-    setAuthError(null);
-    if (!isSignedIn) {
-      clearSession();
-      setIsLoading(false);
-      return;
-    }
-    setAuthTokenProvider(getClerkToken);
-    // Clerk can switch between signed-in accounts without a full page reload.
-    // Drop all private query data before bootstrapping the new identity so an
-    // organizer's cached dashboard can never appear for the next account.
-    clearAccountCache(queryClient);
-    try {
-      const response = await apiRequest<AuthResponse>("/auth/me");
-      setUser(response.user);
-    } catch (error) {
-      clearSession();
-      if (!(error instanceof ApiError) || error.status !== 401) setAuthError(error instanceof Error ? error.message : "Could not connect to SportPass");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [clearSession, getClerkToken, isLoaded, isSignedIn, queryClient, userId]);
-
-  useEffect(() => {
-    setUnauthorizedHandler(clearSession);
-    void bootstrap();
-    return () => { setUnauthorizedHandler(null); setAuthTokenProvider(null); };
-  }, [bootstrap, clearSession]);
-
-  const logout = useCallback(async () => { setIsLoading(true); try { await signOut(); } finally { clearSession(); setIsLoading(false); } }, [clearSession, signOut]);
-  const value: AuthContextType = {
-    user, isLoading: isLoading || !isLoaded, isInitialized: isLoaded, authError,
-    login: async () => { throw new Error("Use Clerk sign-in"); }, logout,
-    retryBootstrap: () => void bootstrap(), isAdmin: user?.role === "admin",
-    isStaff: user?.role === "admin" || user?.role === "organizer",
-    isParticipant: user?.role === "participant" || user?.role === "user",
-  };
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <ClerkAuthProvider>{children}</ClerkAuthProvider> : <LegacyAuthProvider>{children}</LegacyAuthProvider>;
+  return <LegacyAuthProvider>{children}</LegacyAuthProvider>;
 }
 
 export function useAuth() {

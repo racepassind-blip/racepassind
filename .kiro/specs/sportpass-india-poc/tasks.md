@@ -13,6 +13,44 @@
 - Never use frontend route guards as a security control.
 - Never commit secrets, demo production passwords, local databases, or uploaded participant data.
 
+## Current status reconciliation (updated 2026-10-14)
+
+The task list below was written for the initial POC and is no longer an accurate progress board by itself. The core vertical slice through organizer operations is implemented in the current repository. Use this status map when planning work:
+
+- Completed baseline: configuration, migration history, event/category/ticket APIs, Indian event discovery, registration, manual UPI, optional Cashfree checkout, confirmation, QR tickets, participant linking, organizer registration management, exports, and check-in.
+- Completed expansion: Clerk identity/webhooks, password reset, admin MFA, team registration, tournament matches/bouts/scoring/standings/brackets, race results, event checkpoints, communications and email logs, refunds, paid verification, platform fees/pricing, credits/top-ups, product listings/orders, Cashfree payment reviews/reconciliation, and settlement ledgers.
+- Current migration head: `0079_push_subscriptions`.
+- Current frontend route inventory is the source of truth for screens; it includes public discovery/checkout/results, participant dashboards, organizer event operations, and admin workspaces.
+
+Do not mark an old task as “in progress” merely because its original wording describes a feature that has shipped. For new work, add a dated follow-up task with the affected route/service, authorization behavior, migration impact, and an automated test or smoke check.
+
+## Follow-up work
+
+- Add a generated API/route inventory check so this document cannot silently drift from `backend/app/api/v1` and `frontend/src/App.tsx`.
+- Add deployed-environment smoke coverage for Clerk callbacks, Cashfree webhooks, email delivery, object storage, and background recovery workers; local E2E uses deterministic mocks.
+- Document migration rollback/recovery procedures for the latest credit, checkout, Cashfree, settlement, and attribution migrations.
+- Keep the portability steering rules current whenever a provider adapter or deployment integration changes.
+
+### Sport adapter follow-up rule
+
+When adding or changing a sport, update the backend adapter registry, frontend `sportConfig`, event setup validation, result adapter/capability tests, and the cross-sport isolation suite. Do not add a sport-specific branch to generic registration, payment, authorization, or persistence services when the behavior belongs on the adapter contract.
+
+### Finance follow-up rule
+
+Any change to Credits, Cashfree, refunds, checkout, or settlements must update the corresponding model/service/API contract, preserve idempotency and integer-paise invariants, add an audit/reconciliation test, and document its effect on organizer and admin screens. Provider changes belong behind the Cashfree/payment adapter boundary; they must not leak into generic registration or settlement rules.
+
+### New-sport checklist
+
+- [ ] Backend `SportAdapter` module added with canonical key and aliases.
+- [ ] Registry entry added without changing existing adapter instances.
+- [ ] Frontend `SportConfig` and organizer event-picker option added.
+- [ ] Event setup normalization and persistence round-trip covered.
+- [ ] Result type selected and routed through the correct result adapter.
+- [ ] Number/bib, check-in, communications, tournament, team, waiver, and pickup capabilities explicitly decided.
+- [ ] Organizer nav matrix reviewed: hidden, visible, or locked behavior documented for each capability.
+- [ ] Cross-sport backend isolation tests and frontend config/result/nav tests added.
+- [ ] Public, organizer, participant, admin, and mobile E2E fixtures updated where the new capability changes behavior.
+
 ## Phase 0 — Safe baseline
 
 ### T001 — ✅ Complete: Capture baseline and local runbook
@@ -58,7 +96,9 @@
 
 ## Phase 1 — Identity and organization boundaries
 
-### T004 — ✅ Complete: Implement backend sessions and email/password authentication
+### T004 — Historical baseline: backend sessions and email/password authentication
+
+> The current product uses Clerk as the active identity adapter. This task documents the original provider-neutral session baseline and is not the active frontend authentication path.
 
 **Depends on:** T003  
 **Outcome:** Users can register/sign in/sign out through secure backend sessions.
@@ -70,7 +110,9 @@
 
 **Tests:** valid/invalid login, expired/revoked session, password hash behavior, CSRF failure, rate-limit behavior, no sensitive logs.
 
-### T005 — Implement Google OAuth adapter
+### T005 — Superseded: Implement Google OAuth adapter
+
+> The active identity integration is Clerk, including webhook synchronization and password reset. Keep this historical Google adapter task only as migration context; do not implement it unless the product deliberately adds Google as a second identity adapter.
 
 **Depends on:** T004  
 **Outcome:** Google sign-in uses a backend-controlled authorization-code flow.

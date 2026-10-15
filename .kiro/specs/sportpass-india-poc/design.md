@@ -6,7 +6,7 @@
 
 ## Pilot Scope (Build Now) — Badminton (Build This Week)
 
-**Context:** A real organizer wants to pilot badminton next week. This scope intentionally excludes automated tournament engine features from the original spec (seeding, auto-draw generation, byes, automatic winner advancement, result-correction workflows, live/real-time scoring, and a generic `SportProfile` capability framework). Those remain valid future work, documented in the original spec below, but are **not** part of this build.
+**Historical context:** This design began as a badminton pilot and originally excluded automated tournament features. The current implementation has since expanded; the reconciliation sections at the end of this document supersede the historical pilot limits and describe the active adapter, tournament, payment, finance, and operations architecture.
 
 ### In scope
 
@@ -719,3 +719,97 @@ Implementation follows the requirements document's vertical order:
 12. Deployment, PostgreSQL integration tests, Playwright smoke test, backup/rollback runbook.
 
 Each task must include its security, authorization, concurrency, failure, audit, and test behavior before it is considered complete.
+
+---
+
+## 17. Current implementation map (updated 2026-10-14)
+
+The original design remains the architectural foundation, but the running system has expanded into a multi-sport operations platform.
+
+### Active boundaries
+
+- React/Vite frontend routes are grouped into public, participant, organizer, and admin workspaces in `frontend/src/App.tsx`.
+- FastAPI routers live under `backend/app/api/v1`; domain behavior is kept in services and SQLAlchemy models in `backend/`.
+- Clerk is the active identity adapter; application authorization and ownership checks remain backend-owned.
+- Payment providers are selected by event/organization configuration. Manual UPI and Cashfree share registration/checkout contracts but have separate provider adapters and reconciliation paths.
+- Product sales, refunds, credits, settlements, communications, and race/tournament operations are first-class modules rather than POC placeholders.
+
+### Operational modules now represented in the design
+
+1. Registration lifecycle: reservation, free/manual/Cashfree payment, approval, rejection, expiry, confirmation, QR ticket, claim/linking, and attribution.
+2. Organizer operations: event setup, participant management, CSV export, checkpoints, check-in matrix, pickup, communication, email resend/broadcast, refunds, credits, and merchandise.
+3. Competition operations: team-size ranges, custom field sections, matches, bouts, courts, rounds, scoring, standings, brackets, result approval, advancement, and public results.
+4. Admin operations: MFA, organizer applications, paid verification, payment access, fee/pricing plans, event recovery, feature overrides, payment reviews, settlements, credits, communication settings, and platform-fee controls.
+
+New work should extend these module boundaries and update the API contract, migration inventory, authorization notes, and tests in the same change.
+
+### Sport adapter architecture
+
+The current sport pattern is a registry-backed policy adapter:
+
+```text
+Event.sport
+   ↓ normalize_sport()
+SportAdapterRegistry.get_adapter()
+   ↓
+SportAdapter policy
+   ├─ event setup normalization
+   ├─ distance and registration rules
+   ├─ tournament/number/check-in capabilities
+   ├─ result type and sport metrics
+   └─ optional sport-specific tournament policy
+```
+
+`backend/app/sports/base.py` defines the provider-neutral contract; individual modules such as `running.py`, `cycling.py`, `badminton.py`, `table_tennis.py`, `cricket.py`, and `trekking.py` contain only sport policy. `registry.py` owns aliases and compatibility fallback. The frontend capability mirror must stay aligned with the backend registry, while authorization, registration, payments, and persistence remain generic services.
+
+The result adapter selects race-time results for running/cycling, match-score results for badminton/table tennis/tennis/squash, and no result UI for sports without a published result model. Team categories can unlock generic tournament tooling for any adapter that permits team tournaments; this is separate from named-sport scoring defaults.
+
+### Finance and payment adapter map
+
+```text
+Participant checkout
+  ├─ free registration
+  ├─ manual UPI → organizer approval → per-registration Credits debit
+  └─ Cashfree adapter → checkout payment/receipt → reconciliation
+                                      ├─ fulfilled → managed collection → settlement ledger
+                                      └─ paid_needs_review → admin FULFILL or one full REFUND
+
+Participant refund request → Refund state machine → direct UPI mark-sent
+                                           └─ Cashfree provider refund/reconciliation
+
+Organizer Credits → top-up request → admin approval → immutable credit ledger
+                 └─ registration debit / discount credit / admin adjustment
+```
+
+Provider-specific behavior belongs in `cashfree_gateway.py`, `cashfree_registration_service.py`, `cashfree_payment_review.py`, and `cashfree_refunds.py`. Generic registration, refund, credit, and settlement services consume verified provider contracts and must not construct provider URLs or trust browser payment claims.
+
+The critical invariants are: integer paise only; no negative Credits; one ledger row per idempotent source; one resolution per paid-needs-review checkout; no settlement before verified production collection; refunds cannot exceed the original collection; and every financial transition has an audit record or immutable ledger row.
+
+### New-sport implementation contract
+
+Adding a sport is a capability registration task, not a copy-and-edit exercise:
+
+1. Add the backend adapter module and register its canonical key plus any legacy aliases.
+2. Define distance, participant label, number label/scope, waiver/pickup, tournament, team-tournament, result type, and sport setup normalization in the adapter.
+3. Add the matching frontend config and event-picker option. Keep the frontend config keys aligned with the backend adapter capabilities.
+4. Decide the result adapter: `race_time`, `match_score`, or `none`. Add sport-specific metric/score validation only in the adapter/policy module.
+5. Add setup fields only when the sport needs them; validate and round-trip them through `sport_config`.
+6. Add backend isolation tests for event create/update, registration, aliases, capability flags, and provider/payment independence. Add frontend tests for config shape, result routing, and capability-driven navigation.
+7. Add representative fixtures to E2E and demo data only after the generic event flow works.
+
+### Organizer navigation matrix
+
+`OrganizerDashboardLayout.tsx` is capability-driven. For an event workspace, the menu is:
+
+| Capability/state | Menu item | Rule |
+|---|---|---|
+| Always | Overview, Registrations, Refunds | Available for every event workspace |
+| `supports_tournament` or permitted team category | Tournament setup, Matches, Scoring, Bracket, Results | Hidden when unsupported; shown locked for free events until unlocked |
+| `supports_communications` | Communications | Hidden when unsupported; paywall can lock it |
+| `supports_checkin` | Check-in | Hidden when unsupported; paywall can lock it |
+| `supports_bib` and paid features unlocked | Bib Management | Uses adapter `numberLabel` and `scope` |
+| `result_type === "race_time"` | Race Results | Intended for running/cycling-style finish-time sports |
+| Free event without admin override | Capability tools above | Render as locked items with an unlock path, never as dead links |
+| Organizer workspace without an event | Events, Merchandise, SportPass Credits, Organization profile | Admin sees All events instead of organizer-only account tools |
+
+Waiver and pickup points are event setup capabilities and do not create separate sidebar items. A new menu item requires a capability, route, permission check, locked/free behavior, mobile navigation entry, and E2E coverage.

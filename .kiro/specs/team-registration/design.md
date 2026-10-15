@@ -466,3 +466,20 @@ Standings recalculated on every match status change to "completed"
 All migrations are additive (no destructive column drops). `participants_per_entry` remains populated for
 the duration of this feature — a separate cleanup migration (`0031_drop_legacy_participants_per_entry.py`)
 is deferred until the next major release cycle.
+
+---
+
+## 10. Implementation reconciliation (updated 2026-10-14)
+
+The planned migrations were applied as `0029_team_size_range.py`, `0030_team_match_scoring.py`, and `0031_match_bouts.py` (the repository also contains `0028_event_checkpoints.py`; migration numbers are repository history, not task numbers). Later migrations added player selection, allocation numbers, winner advancement, result approval, match duration, and repair logic.
+
+The active implementation is split across:
+
+- `backend/app/api/v1/matches.py`, `tournament_rounds.py`, `courts.py`, and `race_results.py` for tournament and public result APIs.
+- `backend/app/services/match_service.py` and related services for ownership, conflict checks, bout persistence, winner computation, standings, approval, and advancement.
+- `frontend/src/pages/OrganizerEventTournament*.tsx`, `OrganizerEventAllocations.tsx`, `OrganizerEventRaceResults.tsx`, `PublicEventResults.tsx`, and `PublicEventNumberList.tsx` for the operational and public surfaces.
+- `frontend/src/components/TeamFieldEditor.tsx`, `TeamScoringConfig.tsx`, `TeamStandingsCard.tsx`, and `MatchBoutPanel.tsx` for reusable team/tournament UI.
+
+The design must treat result approval and winner advancement as state transitions with authorization and audit behavior, not as a presentation-only calculation.
+
+Tournament capability is now requested through the shared sport adapter contract. A sport can expose native tournament support, or a team category can unlock the generic team tournament policy when the adapter permits it. Badminton is no longer the architectural gate; its game scoring defaults are one adapter policy among the sport registry entries.

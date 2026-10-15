@@ -5,7 +5,7 @@ behavior) through the generic registration-config pipeline.
 Trekking is an ordinary event type, so it has no code of its own here: these
 fields are predefined in the shared config and enforced by the shared
 ``calculate_registration_total`` regardless of sport. The tests exercise that
-sport-agnostic pipeline directly (it imports no HTTP/DB/Clerk code).
+sport-agnostic pipeline directly (it imports no HTTP/DB/authentication code).
 """
 import pytest
 

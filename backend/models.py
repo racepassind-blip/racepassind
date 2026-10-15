@@ -22,8 +22,6 @@ class User(Base):
     normalized_email: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
     normalized_phone: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
-    clerk_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
-    clerk_deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     email_verified_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     phone_verified_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
@@ -32,6 +30,9 @@ class User(Base):
     # Admin accounts must enroll in TOTP MFA before accessing privileged APIs.
     mfa_secret_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    privacy_policy_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    privacy_policy_accepted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
@@ -44,6 +45,9 @@ class User(Base):
     memberships: Mapped[list["OrganizationMember"]] = relationship(back_populates="user")
     sessions: Mapped[list["AuthSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     registrations: Mapped[list["Registration"]] = relationship(back_populates="user")
+    push_subscriptions: Mapped[list["PushSubscription"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class OrganizerApplication(Base):
@@ -61,6 +65,8 @@ class OrganizerApplication(Base):
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
     normalized_phone: Mapped[str | None] = mapped_column(String, nullable=True)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    privacy_policy_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    privacy_policy_accepted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, server_default="pending")
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
@@ -257,6 +263,9 @@ class Event(Base):
     allocation_history: Mapped[list["AllocationHistory"]] = relationship(
         back_populates="event", cascade="all, delete-orphan"
     )
+    announcements: Mapped[list["EventAnnouncement"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan"
+    )
 
     @property
     def title(self) -> str:
@@ -303,6 +312,67 @@ class Event(Base):
     def tiers(self) -> list["Ticket"]:
         return self.tickets
 
+
+class EventAnnouncement(Base):
+    """A durable organizer-authored update published on an event's public page."""
+
+    __tablename__ = "event_announcements"
+    __table_args__ = (
+        CheckConstraint("status IN ('DRAFT', 'SCHEDULED', 'PUBLISHED', 'ARCHIVED')", name="ck_event_announcement_status"),
+        CheckConstraint(
+            "(status = 'SCHEDULED' AND scheduled_for IS NOT NULL) OR (status <> 'SCHEDULED')",
+            name="ck_event_announcement_schedule",
+        ),
+        Index("ix_event_announcements_event_status_published", "event_id", "status", "published_at"),
+        Index(
+            "uq_event_announcements_event_pinned",
+            "event_id",
+            unique=True,
+            postgresql_where=text("is_pinned = true AND status = 'PUBLISHED'"),
+            sqlite_where=text("is_pinned = 1 AND status = 'PUBLISHED'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="DRAFT", index=True)
+    scheduled_for: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    updated_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    push_sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    event: Mapped[Event] = relationship(back_populates="announcements")
+
+
+class PushSubscription(Base):
+    """A browser push endpoint opted into updates for one registered event."""
+
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "event_id", "endpoint", name="uq_push_subscriptions_user_event_endpoint"),
+        Index("ix_push_subscriptions_event_enabled", "event_id", "enabled"),
+        Index("ix_push_subscriptions_user_event", "user_id", "event_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    endpoint: Mapped[str] = mapped_column(String(2048), nullable=False)
+    p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"), default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    user: Mapped[User] = relationship(back_populates="push_subscriptions")
+    event: Mapped[Event] = relationship()
 
 class Court(Base):
     __tablename__ = "courts"
@@ -1116,16 +1186,6 @@ class PasswordResetToken(Base):
     expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-
-class ClerkWebhookEvent(Base):
-    __tablename__ = "clerk_webhook_events"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    event_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
-    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    occurred_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    processed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class AuditLog(Base):

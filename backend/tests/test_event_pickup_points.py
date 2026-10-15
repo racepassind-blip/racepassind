@@ -6,7 +6,7 @@ participant's selection is captured PER PARTICIPANT through the ordinary
 participant-response pipeline under the ``pickup_point_id`` field.
 
 These exercise the config/validation/response layers directly (they import no
-HTTP/DB/Clerk code). HTTP route persistence is covered by reading events.py in
+HTTP/DB/authentication code). HTTP route persistence is covered by reading events.py in
 review; the schema below is what the route stores.
 """
 from uuid import uuid4

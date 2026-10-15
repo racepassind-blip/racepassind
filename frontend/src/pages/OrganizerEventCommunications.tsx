@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Mail, MessageSquare, RefreshCw } from "lucide-react";
+import { ArrowLeft, Bell, Mail, MessageSquare, RefreshCw } from "lucide-react";
 
 import { EventCommunicationPanel } from "@/components/EventCommunicationPanel";
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
@@ -68,6 +68,8 @@ const OrganizerEventCommunications = () => {
             <Button variant="outline" size="icon" onClick={() => void refetch()} disabled={isFetching} aria-label="Refresh communications"><RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /></Button>
           </div>
         </div>
+
+        <Card className="border-primary/20 bg-primary/[0.035]"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><Bell className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div><p className="font-semibold">Keep participants up to date</p><p className="mt-1 text-sm text-muted-foreground">Publish durable event updates on a public page that participants can check anytime.</p></div></div><Button variant="outline" className="shrink-0" onClick={() => navigate(`/organizer/events/${event.id}/announcements`)}>Manage announcements</Button></CardContent></Card>
 
         {event.isArchived && <Card className="border-amber-300 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/20"><CardHeader><CardTitle className="text-amber-950 dark:text-amber-100">This event is archived</CardTitle><CardDescription className="text-amber-900/80 dark:text-amber-100/80">The link and message are preserved for your records, but participants cannot register until the event is restored.</CardDescription></CardHeader></Card>}
         <EventCommunicationPanel event={event} />

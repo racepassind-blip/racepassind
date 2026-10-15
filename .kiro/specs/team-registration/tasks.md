@@ -601,3 +601,20 @@ Task 15 (checkout two-phase) Task 16 (tournament tab gate)
 ```
 
 Tasks within the same phase with no arrows between them can be worked in parallel.
+
+---
+
+## Implementation status (updated 2026-10-14)
+
+Tasks 1–20 describe the original delivery plan and are implemented in the current codebase, with later hardening layered on top:
+
+- Migration and model work is present through the team-size, scoring, bouts, player selection, allocation, winner-advancement, result-approval, and match-duration migrations.
+- Backend services and APIs support team registration ranges, normalized two-section fields, bout CRUD, team scoring, standings, courts, rounds, conflicts, approvals, and advancement.
+- Frontend support covers the event wizard, checkout roster, organizer roster/detail views, tournament setup/matches/scoring/results/bracket, and public results/number-list pages.
+
+Follow-up tasks:
+
+1. Add contract tests that compare team API serialization with the frontend TypeScript fixtures.
+2. Add concurrent-match and winner-advancement integration tests against PostgreSQL.
+3. Add public-results regression tests for pending, approved, rejected, tied, and advanced matches.
+4. Add migration documentation for the repository's actual revision identifiers and downgrade limitations.

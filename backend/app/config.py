@@ -87,11 +87,9 @@ class Settings:
     cashfree_enabled: bool = False
     cashfree_allow_sandbox_in_production: bool = False
     cashfree_webhook_url: str | None = None
-    clerk_secret_key: str | None = field(default=None, repr=False)
-    clerk_jwt_key: str | None = field(default=None, repr=False)
-    clerk_webhook_signing_secret: str | None = field(default=None, repr=False)
-    clerk_authorized_parties: tuple[str, ...] = ()
-    clerk_auth_required: bool = False
+    vapid_public_key: str | None = None
+    vapid_private_key: str | None = field(default=None, repr=False)
+    vapid_subject: str = "mailto:hello@sportpassindia.com"
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -131,11 +129,9 @@ class Settings:
             cashfree_enabled=_as_bool(os.getenv("CASHFREE_ENABLED"), default=False),
             cashfree_allow_sandbox_in_production=_as_bool(os.getenv("CASHFREE_ALLOW_SANDBOX_IN_PRODUCTION"), default=False),
             cashfree_webhook_url=os.getenv("CASHFREE_WEBHOOK_URL"),
-            clerk_secret_key=os.getenv("CLERK_SECRET_KEY"),
-            clerk_jwt_key=os.getenv("CLERK_JWT_KEY"),
-            clerk_webhook_signing_secret=os.getenv("CLERK_WEBHOOK_SIGNING_SECRET"),
-            clerk_authorized_parties=_origins(os.getenv("CLERK_AUTHORIZED_PARTIES")) if os.getenv("CLERK_AUTHORIZED_PARTIES") else (),
-            clerk_auth_required=_as_bool(os.getenv("CLERK_AUTH_REQUIRED"), default=False),
+            vapid_public_key=os.getenv("VAPID_PUBLIC_KEY"),
+            vapid_private_key=os.getenv("VAPID_PRIVATE_KEY"),
+            vapid_subject=os.getenv("VAPID_SUBJECT", "mailto:hello@sportpassindia.com"),
         )
 
     @property
@@ -147,6 +143,10 @@ class Settings:
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def push_ready(self) -> bool:
+        return bool(self.vapid_public_key and self.vapid_private_key and self.vapid_subject)
 
     def validate_runtime(self) -> None:
         """Fail closed for production-only configuration mistakes."""
@@ -181,11 +181,6 @@ class Settings:
 
         if not self.is_production:
             return
-
-        if self.clerk_auth_required and not (self.clerk_secret_key or self.clerk_jwt_key):
-            raise RuntimeError("CLERK_SECRET_KEY or CLERK_JWT_KEY must be set when Clerk authentication is required")
-        if self.clerk_auth_required and not self.clerk_webhook_signing_secret:
-            raise RuntimeError("CLERK_WEBHOOK_SIGNING_SECRET must be set when Clerk authentication is required")
 
         missing = [
             name

@@ -129,7 +129,9 @@ The POC includes:
 
 ---
 
-# 4. Explicitly Excluded From the POC
+# 4. Explicitly Excluded From the Initial POC
+
+> Historical scope note: this section describes the original POC boundary. The implementation reconciliation above is the current product contract. Features listed here as excluded but listed as shipped there are now supported; only the explicitly current out-of-scope items remain excluded.
 
 The following shall NOT be part of the initial POC:
 
@@ -166,6 +168,70 @@ The following shall NOT be part of the initial POC:
 * Advanced document management.
 
 The database may be designed so these features can be added later without major redesign.
+
+---
+
+# Implementation reconciliation (updated 2026-10-14)
+
+This section records the current product baseline. It takes precedence over the original POC boundaries above where the shipped application has expanded beyond the initial prototype.
+
+## Shipped capabilities
+
+The application currently includes the original public event and registration flow plus:
+
+- Clerk-backed identity, webhook synchronization, password reset, role-aware protected routes, and admin MFA setup.
+- Organizer onboarding, paid verification, document review, direct UPI enablement, Cashfree access controls, and payment-destination audit history.
+- Flexible team registration and team-vs-team tournament operations: team size ranges, custom team/member fields, courts, rounds, matches, bouts, scoring, standings, brackets, result approval, and winner advancement.
+- Event checkpoints, QR/reference check-in, check-in matrix, pickup summaries, manual participant creation, category transfers, participant exports, and resend/broadcast email workflows.
+- Event refund policy, manual refunds, Cashfree payment reviews and reconciliation, settlement ledgers, platform pricing, organizer fees, credits, top-ups, and automatic registration-credit deductions.
+- Organizer product listings, product media, storefront checkout, product orders, sales summaries, and merchandise QR downloads.
+- Race-result entry/public result pages, public number lists, attribution tracking, event feature overrides, event recovery/restore, and email-usage administration.
+
+## Current payment model
+
+The product supports free registration, manual UPI, and Cashfree-managed checkout. Cashfree is optional and controlled by environment readiness plus per-organization access and verification state. Manual UPI remains an auditable reference-submission flow; it is not automatic payment verification.
+
+## Current identity model
+
+Clerk is the active identity provider. Backend authorization remains the security boundary and maps Clerk identities through webhook-backed records. Any future provider change must preserve the provider-neutral authorization and ownership interfaces described in the steering rules.
+
+## Current schema baseline
+
+The latest repository migration is `0079_push_subscriptions`. Important additions after the original POC include team/tournament tables, event checkpoints, communication and email logs, payment collection and refund policy, refunds, race results, platform pricing and fees, credits, product sales, checkout payments, settlement ledgers, Clerk identity/webhooks, password-reset tokens, Cashfree resolution audit, registration attribution, public event announcements, and event-scoped web push subscriptions.
+
+## Still intentionally outside the current product
+
+Native mobile apps, multilingual UI, automated bracket seeding, automatic UPI verification, and arbitrary third-party payment gateways remain out of scope. Cashfree is the one supported managed gateway and must remain behind the existing adapter boundary.
+
+## Current sport adapter contract
+
+Sport behavior is no longer selected through scattered conditionals. The backend uses the immutable `SportAdapter` contract in `backend/app/sports/base.py` and resolves adapters through `backend/app/sports/registry.py`. The frontend mirrors this capability model in `frontend/src/data/sportConfig.ts` and `frontend/src/sports/`.
+
+Each adapter owns normalized sport setup, distance rules, registration bounds, tournament capability, number labels/scope, result type, waiver/pickup capability, and sport-specific result metrics. Adapters must not import ORM, HTTP, payment, or provider code. Unknown legacy values resolve to a compatibility adapter so old events remain readable.
+
+The current registered sport keys are: `running`, `cycling`, `badminton`, `table_tennis`, `tennis`, `squash`, `trekking` (with `hiking` as a legacy alias), `cricket`, `triathlon`, `swimming`, `obstacle_course`, and `walkathon`. The frontend event picker exposes the supported creation choices and normalizes legacy aliases. Adding a sport requires a backend adapter, registry entry, frontend config, result/setup behavior, and cross-sport isolation tests.
+
+## Current finance and payment operations contract
+
+### SportPass Credits ledger
+
+SportPass Credits are an organizer-side prepaid ledger, stored as integer paise and kept separate from participant payment records. Every balance mutation creates an immutable `CreditTransaction` containing the organization, type, amount, before/after balances, event/registration source, reason, actor, and idempotency source. Balances cannot become negative and duplicate source events return the original transaction.
+
+Supported transaction types are `TOPUP`, `REGISTRATION_DEBIT`, `MANUAL_EVENT_DEBIT`, `DISCOUNT_CREDIT`, and `ADMIN_ADJUSTMENT`. Direct-UPI/manual registrations debit Credits per registration at confirmation time; an event-wide second settlement is intentionally disabled. Admins can approve/reject UPI top-up requests, apply controlled adjustments, set an event discount, and configure the organizer deduction mode. Organizer and admin screens expose balances, top-ups, ledger history, payment settings, and settlement summaries.
+
+### Refund lifecycle
+
+Refunds are durable records and are never deleted. Participant requests begin at `REQUESTED`; organizer review can approve, partially approve, reject, or cancel; direct UPI refunds are marked sent with a UTR/proof; Cashfree refunds are provider-reconciled. The lifecycle includes `REQUESTED`, `APPROVED`, `REJECTED`, `REFUND_SENT`, `REFUNDED`, `FAILED`, and `CANCELLED`. Amounts, refundable platform fee, policy cutoff, reason, actor, and provider identifiers are retained for audit and settlement reconciliation.
+
+Manual organizer refunds are excluded from event earnings/billing totals where the model marks them as manual. Cashfree refund amounts must reconcile with the original production collection and cannot exceed it. A participant can confirm receipt after a direct refund is marked sent.
+
+### Cashfree managed checkout and recovery
+
+Cashfree is implemented behind `cashfree_gateway.py`, with provider account/environment binding, amount/currency/order checks, idempotent checkout sessions, webhook/status reconciliation, recovery sweeps, and explicit `paid_needs_review` handling. A verified but unfulfilled booking requires an admin-only irreversible resolution: `FULFILL` confirms the booking and posts the production collection to the settlement ledger, or `REFUND` authorizes one full provider refund. Provider states are retained as `PENDING`, `PENDING_APPROVAL`, `ONHOLD`, `SUCCESS`, `REJECTED`, or `CANCELLED`; rejected/cancelled refunds move to `NEEDS_REVIEW` and never create a second refund automatically.
+
+### Settlement ledger
+
+Production Cashfree collections are posted only after receipt, account, environment, amount, currency, order, and registration allocation checks pass. `ManagedRegistrationCollection` records gross paid, platform fee, organizer payable, and participant count per registration. Event summaries subtract confirmed Cashfree refunds, include payable adjustments and settlement reversals, and expose paid, pending, outstanding, recoverable, and available-to-settle amounts. Organizer settlements use idempotency keys, unique transfer references, INR paise, non-future dates, and `PENDING`/`PAID` statuses; paid transfers require a bank/UPI reference.
 
 ---
 

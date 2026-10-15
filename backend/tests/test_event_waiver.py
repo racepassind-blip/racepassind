@@ -5,7 +5,7 @@ content lives on the individual event (stored in field_config), acceptance is
 captured per registration through the ordinary participant-response pipeline.
 
 These exercise the config/validation/response layers directly (they import no
-HTTP/DB/Clerk code). HTTP route persistence is covered by reading events.py in
+HTTP/DB/authentication code). HTTP route persistence is covered by reading events.py in
 review; the schema below is what the route stores.
 """
 from uuid import uuid4

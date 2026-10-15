@@ -1,8 +1,7 @@
 import { FormEvent, useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Building2, CheckCircle2, Eye, EyeOff, KeyRound, ShieldCheck, Ticket, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import { SignUp } from "@clerk/react";
 
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -31,11 +30,8 @@ const Signup = () => {
     phone: "",
     password: "",
     organizationName: "",
+    privacyPolicyAccepted: false,
   });
-
-  if (import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) {
-    return <Layout><div className="mx-auto flex justify-center px-4 py-10"><SignUp routing="path" path="/signup" forceRedirectUrl={returnTo ?? "/dashboard"} /></div></Layout>;
-  }
 
   const updateForm = (field: keyof typeof form, value: string) => {
     setSubmitted(false);
@@ -49,6 +45,11 @@ const Signup = () => {
       toast.error("A valid phone number is required to onboard as an organizer.");
       return;
     }
+    if (!form.privacyPolicyAccepted) {
+      setSubmitted(true);
+      toast.error("Please accept the Privacy Policy to create an account.");
+      return;
+    }
     setLoading(true);
     try {
       if (mode === "participant") {
@@ -59,6 +60,7 @@ const Signup = () => {
             email: form.email,
             phone: form.phone || null,
             password: form.password,
+            privacy_policy_accepted: true,
           }),
         });
         await login(form.email.trim(), form.password);
@@ -73,6 +75,7 @@ const Signup = () => {
             email: form.email,
             phone: form.phone,
             password: form.password,
+            privacy_policy_accepted: true,
           }),
         });
         setSubmitted(true);
@@ -155,7 +158,7 @@ const Signup = () => {
               ) : (
                 <Card className="border-0 bg-transparent shadow-none">
                   <CardContent className="p-0">
-                    <form onSubmit={submit} className="space-y-5">
+              <form onSubmit={submit} className="space-y-5">
                       {mode === "organizer" && <div className="space-y-2"><Label htmlFor="organization-name">Organization name</Label><Input id="organization-name" value={form.organizationName} onChange={(event) => updateForm("organizationName", event.target.value)} required minLength={2} maxLength={160} placeholder="Your race organization" /></div>}
                       <div className="grid gap-5 sm:grid-cols-2">
                         <div className="space-y-2"><Label htmlFor="signup-name">Your name</Label><Input id="signup-name" value={form.name} onChange={(event) => updateForm("name", event.target.value)} required minLength={2} maxLength={120} autoComplete="name" placeholder="Your full name" /></div>
@@ -163,6 +166,10 @@ const Signup = () => {
                       </div>
                       <div className="space-y-2"><Label htmlFor="signup-email">Email address</Label><Input id="signup-email" type="email" value={form.email} onChange={(event) => updateForm("email", event.target.value)} required maxLength={320} autoComplete="email" placeholder="you@example.com" /></div>
                       <div className="space-y-2"><Label htmlFor="signup-password">Password</Label><div className="relative"><Input id="signup-password" type={showPassword ? "text" : "password"} value={form.password} onChange={(event) => updateForm("password", event.target.value)} required minLength={8} maxLength={256} autoComplete="new-password" placeholder="At least 8 characters" className="pr-10" /><button type="button" onClick={() => setShowPassword((visible) => !visible)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div><p className="text-xs text-muted-foreground">Use at least 8 characters. A longer passphrase is even better.</p></div>
+                      <label className="flex items-start gap-3 rounded-xl border bg-muted/30 p-3 text-sm leading-5">
+                        <input type="checkbox" checked={form.privacyPolicyAccepted} onChange={(event) => { setSubmitted(false); setForm((current) => ({ ...current, privacyPolicyAccepted: event.target.checked })); }} className="mt-1 h-4 w-4 accent-primary" required />
+                        <span>I have read the <Link to="/privacy-policy" target="_blank" className="font-semibold text-primary underline underline-offset-2">Privacy Policy</Link> and consent to the collection and use of my data to create and operate my SportPass account and registrations.</span>
+                      </label>
                       <Button type="submit" className="w-full gap-2" size="lg" disabled={loading}>{loading ? "Submitting…" : mode === "participant" ? "Create participant account" : "Submit organizer application"}<ArrowRight className="h-4 w-4" /></Button>
                     </form>
                   </CardContent>

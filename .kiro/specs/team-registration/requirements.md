@@ -163,3 +163,19 @@ authentication, consistent with how individual match results are already surface
 - Online payment gateway changes (manual UPI flow is unchanged).
 - Notifications or email confirmations for team match scheduling.
 - Native mobile app changes.
+
+---
+
+# Implementation reconciliation (updated 2026-10-14)
+
+The team-registration and tournament scope is implemented in the current application. The following details are the active contract:
+
+- Team categories persist `team_size_min` and `team_size_max` while keeping `participants_per_entry` populated for legacy serializers.
+- Team field configuration uses `main_registrant_fields` and `participant_fields`; checkout, organizer manual registration, registration detail, and exports consume the same normalized shape.
+- Tournament operations are sport-agnostic where the event enables tournament mode. The backend exposes courts, rounds, matches, bouts, team scoring, standings, result approval, and public standings/results.
+- Match winner advancement, duration/conflict validation, result approval, and bracket views are implemented in addition to the original bout-majority/manual winner model.
+- The frontend exposes organizer setup, matches, scoring, results, and bracket routes under `/organizer/events/:eventId/tournament/*`, plus public `/event/:eventId/results` and `/event/:eventId/number-list` views.
+
+The next changes should preserve the existing API compatibility fields and add regression coverage for both singles/doubles and team categories.
+
+Tournament support must be resolved through the shared sport adapter registry rather than a hard-coded badminton check. Current adapters include badminton, table tennis, tennis, squash, cricket, and team-capable generic policies; running/cycling use race-time result policies, while trekking, swimming, triathlon, obstacle-course, and walkathon retain their configured non-match result behavior unless a future adapter enables more capabilities.

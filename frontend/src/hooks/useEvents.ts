@@ -181,6 +181,20 @@ export interface PublicEventResults {
   matches: PublicMatchResult[];
 }
 
+export interface PublicEventAnnouncement {
+  id: string;
+  title: string;
+  body: string;
+  publishedAt: string | null;
+  updatedAt: string | null;
+  isPinned: boolean;
+}
+
+export interface PublicEventAnnouncements {
+  event: { id: string; title: string; date: string; category: string };
+  announcements: PublicEventAnnouncement[];
+}
+
 export interface OrganizerScoringConfig {
   categoryId: string;
   categoryName: string;
@@ -381,6 +395,14 @@ export function usePublicEventResults(eventId: string | undefined, enabled = tru
     queryFn: () => apiRequest<PublicEventResults>(`/events/${eventId}/results`),
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
+  });
+}
+
+export function usePublicEventAnnouncements(eventId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["public-event-announcements", eventId],
+    enabled: Boolean(eventId) && enabled,
+    queryFn: () => apiRequest<PublicEventAnnouncements>(`/events/${eventId}/announcements`),
   });
 }
 

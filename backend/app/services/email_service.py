@@ -720,10 +720,13 @@ def broadcast_event_update(
     subject: str,
     body: str,
     html_body: str | None = None,
+    reference_type: str = REFERENCE_TYPE_EVENT,
+    reference_id: str | None = None,
+    dedupe: bool = False,
 ) -> dict:
     """Send an update email to every registrant of an event.
 
-    Each email is logged with reference_type=EVENT and event_id for auditing.
+    Each email is logged with the supplied reference identity and event_id for auditing.
     Respects the rate limit; over-limit emails are queued as PENDING_LIMIT and
     retried later by retry_pending_emails.
 
@@ -744,9 +747,10 @@ def broadcast_event_update(
             body=body,
             html_body=html_body,
             email_type=EMAIL_TYPE_EVENT_UPDATE,
-            reference_type=REFERENCE_TYPE_EVENT,
-            reference_id=str(event_id),
+            reference_type=reference_type,
+            reference_id=reference_id or str(event_id),
             event_id=event_id,
+            dedupe=dedupe,
         )
         if result.status == "SENT":
             sent += 1

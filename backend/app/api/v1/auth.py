@@ -3,10 +3,11 @@ from __future__ import annotations
 import secrets
 import datetime as dt
 import hashlib
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -39,15 +40,11 @@ from app.services.rate_limit_service import (
     enforce_password_reset_request_limit,
 )
 from db import get_db
-from models import AuthSession, OrganizerApplication, PasswordResetToken, User
+from models import AuthSession, Order, OrganizerApplication, PasswordResetToken, PushSubscription, Registration, User
 from app.services.email_service import send_email
 
 router = APIRouter()
-
-
-def _ensure_legacy_auth_enabled() -> None:
-    if get_settings().clerk_auth_required:
-        raise HTTPException(status_code=410, detail="Password authentication is disabled; use Clerk")
+PRIVACY_POLICY_VERSION = "2026-10-15"
 
 
 @router.get("/csrf")
@@ -80,6 +77,7 @@ class RegisterIn(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     phone: str | None = Field(default=None, max_length=32)
     password: str = Field(min_length=8, max_length=256)
+    privacy_policy_accepted: Literal[True]
 
 
 class LoginIn(BaseModel):
@@ -106,11 +104,17 @@ class OrganizerApplicationIn(BaseModel):
     # Organizer onboarding requires a contact phone number.
     phone: str = Field(min_length=1, max_length=32)
     password: str = Field(min_length=8, max_length=256)
+    privacy_policy_accepted: Literal[True]
 
     @field_validator("phone")
     @classmethod
     def _require_phone(cls, value: str) -> str:
         return validate_required_phone(value)
+
+
+class DeleteAccountIn(BaseModel):
+    password: str = Field(min_length=1, max_length=256)
+    confirmation: Literal["DELETE"]
 
 
 def _set_session_cookies(response: Response, raw_session: str, csrf_token: str) -> None:
@@ -146,7 +150,6 @@ def register(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
-    _ensure_legacy_auth_enabled()
     email = normalize_email(payload.email)
     client_ip = request.client.host if request.client else "unknown"
     try:
@@ -170,6 +173,8 @@ def register(
             password_hash=hash_password(payload.password),
             role="participant",
             is_active=True,
+            privacy_policy_version=PRIVACY_POLICY_VERSION,
+            privacy_policy_accepted_at=dt.datetime.now(dt.timezone.utc),
         )
         db.add(user)
         db.flush()
@@ -200,7 +205,6 @@ def organizer_signup(
     db: Session = Depends(get_db),
 ) -> dict:
     """Submit an organizer application for admin review."""
-    _ensure_legacy_auth_enabled()
     email = normalize_email(payload.email)
     client_ip = request.client.host if request.client else "unknown"
     try:
@@ -236,6 +240,8 @@ def organizer_signup(
             phone=payload.phone.strip() if payload.phone else None,
             normalized_phone=normalize_phone(payload.phone),
             password_hash=hash_password(payload.password),
+            privacy_policy_version=PRIVACY_POLICY_VERSION,
+            privacy_policy_accepted_at=dt.datetime.now(dt.timezone.utc),
             status="pending",
         )
         db.add(application)
@@ -267,7 +273,6 @@ def login(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
-    _ensure_legacy_auth_enabled()
     email = normalize_email(payload.email)
     client_ip = request.client.host if request.client else "unknown"
     try:
@@ -394,6 +399,82 @@ def verify_admin_mfa(
 @router.get("/me")
 def me(request: Request, user: User = Depends(get_current_user)) -> dict:
     return {"user": public_user(user), "csrfToken": request.cookies.get(CSRF_COOKIE)}
+
+
+@router.get("/data-export")
+def export_my_data(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    """Return only data tied to the authenticated account for a portable copy."""
+    registrations = db.execute(
+        select(Registration, User)
+        .join(User, User.id == Registration.user_id)
+        .where(Registration.user_id == user.id)
+    ).all()
+    orders = db.scalars(select(Order).where(Order.user_id == user.id)).all()
+    return {
+        "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "account": public_user(user),
+        "privacy": {
+            "policyVersion": user.privacy_policy_version,
+            "acceptedAt": user.privacy_policy_accepted_at.isoformat() if user.privacy_policy_accepted_at else None,
+        },
+        "registrations": [
+            {
+                "id": str(registration.id),
+                "eventId": str(registration.event_id),
+                "ticketId": str(registration.ticket_id),
+                "status": registration.status,
+                "paymentStatus": registration.payment_status,
+                "registrationReference": registration.registration_reference,
+                "createdAt": registration.created_at.isoformat() if registration.created_at else None,
+                "responses": registration.responses,
+                "selections": registration.selections,
+            }
+            for registration, _ in registrations
+        ],
+        "orders": [
+            {"id": str(order.id), "status": order.status, "currency": order.currency, "totalAmount": str(order.total_amount), "createdAt": order.created_at.isoformat() if order.created_at else None}
+            for order in orders
+        ],
+    }
+
+
+@router.delete("/me")
+def delete_my_account(
+    payload: DeleteAccountIn,
+    response: Response,
+    request: Request,
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    """Erase account identifiers and revoke access while preserving required records."""
+    if user.role in {"admin", "organizer"}:
+        raise HTTPException(status_code=409, detail="Organizer and admin accounts require a privacy request so event and financial obligations can be handled safely.")
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Incorrect password")
+
+    now = dt.datetime.now(dt.timezone.utc)
+    erased_id = secrets.token_urlsafe(18).lower()
+    db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+    db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
+    db.execute(delete(PushSubscription).where(PushSubscription.user_id == user.id))
+    db.query(Registration).filter(Registration.user_id == user.id).update({Registration.user_id: None}, synchronize_session=False)
+    db.query(Order).filter(Order.user_id == user.id).update({Order.user_id: None}, synchronize_session=False)
+    user.name = "Deleted user"
+    user.email = f"deleted-{erased_id}@erased.sportpass.invalid"
+    user.normalized_email = user.email
+    user.phone = None
+    user.normalized_phone = None
+    user.password_hash = hash_password(secrets.token_urlsafe(32))
+    user.mfa_secret_encrypted = None
+    user.mfa_enabled = False
+    user.is_active = False
+    user.deleted_at = now
+    record_audit(db, actor_user_id=None, action="account_erased", resource_type="user", resource_id=user.id, metadata={"requested_at": now.isoformat()})
+    db.commit()
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(CSRF_COOKIE, path="/")
+    return {"status": "erased"}
 
 
 @router.post("/logout")

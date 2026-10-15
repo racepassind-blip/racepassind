@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getSportConfig } from "@/data/sportConfig";
 import { computeSportPassFeePaise, formatPaise } from "@/lib/platform-fee";
-import { useEvent, usePublicEventResults } from "@/hooks/useEvents";
+import { useEvent, usePublicEventAnnouncements, usePublicEventResults } from "@/hooks/useEvents";
 import { usePublicNumberList } from "@/hooks/useAllocations";
 import { usePublicRaceResults } from "@/hooks/useRaceTimeResults";
 import { createWhatsAppUrl, WHATSAPP_MESSAGES } from "@/lib/whatsapp";
@@ -25,6 +25,7 @@ import {
   Info,
   FileText,
   Check,
+  Bell,
 } from "lucide-react";
 
 function WhatsAppIcon({ className }: { className?: string }) {
@@ -74,6 +75,7 @@ const EventDetail = () => {
   const publicNumbers = usePublicNumberList(id ?? "", Boolean(event) && eventSportConfig.numberEnabled);
   const publicMatchResults = usePublicEventResults(id, Boolean(event) && eventSportConfig.result_type === "match_score");
   const publicRaceResults = usePublicRaceResults(id, Boolean(event) && eventSportConfig.result_type === "race_time");
+  const publicAnnouncements = usePublicEventAnnouncements(id, Boolean(event));
 
   if (isLoading) {
     return (
@@ -208,9 +210,14 @@ const EventDetail = () => {
           ))}
         </div>
 
-        {(hasPublishedNumbers || hasPublishedResults) && <section className="mb-8 overflow-hidden rounded-2xl border bg-card shadow-sm">
+        {(hasPublishedNumbers || hasPublishedResults || (publicAnnouncements.data?.announcements.length ?? 0) > 0) && <section className="mb-8 overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="border-b px-5 py-4 sm:px-6"><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Event updates</p><h2 className="mt-1 text-lg font-bold">Published information</h2></div>
-          <div className={`grid gap-px bg-border ${hasPublishedNumbers && hasPublishedResults ? "md:grid-cols-2" : ""}`}>
+          <div className={`grid gap-px bg-border ${[hasPublishedNumbers, hasPublishedResults, (publicAnnouncements.data?.announcements.length ?? 0) > 0].filter(Boolean).length > 1 ? "md:grid-cols-2" : ""}`}>
+            {(publicAnnouncements.data?.announcements.length ?? 0) > 0 && <button type="button" onClick={() => navigate(`/event/${event.id}/announcements`)} className="group flex items-center gap-4 bg-card p-5 text-left transition-colors hover:bg-muted/40 sm:p-6">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Bell className="h-5 w-5" /></span>
+              <span className="min-w-0 flex-1"><span className="block font-bold">{publicAnnouncements.data?.announcements[0]?.title ?? "Event announcements"}</span><span className="mt-1 block line-clamp-2 text-sm leading-5 text-muted-foreground">{publicAnnouncements.data?.announcements[0]?.body}</span></span>
+              <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />
+            </button>}
             {hasPublishedNumbers && <button type="button" onClick={() => navigate(`/event/${event.id}/number-list`)} className="group flex items-center gap-4 bg-card p-5 text-left transition-colors hover:bg-muted/40 sm:p-6">
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><FileText className="h-5 w-5" /></span>
               <span className="min-w-0 flex-1"><span className="block font-bold">{numberLabel}s are published</span><span className="mt-1 block text-sm leading-5 text-muted-foreground">Find your assigned {numberLabel.toLowerCase()} before event day.</span></span>
