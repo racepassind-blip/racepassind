@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_optional_current_user, require_csrf, require_roles
@@ -296,18 +297,68 @@ def create_batch_registration(
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        # The idempotency key and inventory constraints are intentionally
+        # enforced by the database. Surface a retryable conflict instead of
+        # leaking a generic 500 when two checkout submissions race.
+        db.rollback()
+        logger.warning(
+            "Batch registration conflict event_id=%s idempotency_key_present=%s error_type=%s",
+            payload.event_id,
+            bool(idempotency_key),
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This registration was submitted already or the remaining spots changed. Please review your order and try again.",
+        ) from exc
+    except OperationalError as exc:
+        db.rollback()
+        logger.exception("Batch registration database unavailable event_id=%s", payload.event_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Registration is temporarily unavailable. Please try again in a moment.",
+        ) from exc
+    except Exception as exc:
+        db.rollback()
+        request_id = request.headers.get("X-Request-ID")
+        logger.exception(
+            "Batch registration failed event_id=%s request_id=%s error_type=%s",
+            payload.event_id,
+            request_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="We could not save this registration. Please retry without refreshing the payment page.",
+        ) from exc
 
     # Queue one email per registration — fires after response is sent, never blocks the participant.
     for reg in registrations:
         if not reg.payment or reg.payment.payment_gateway != "cashfree":
             background_tasks.add_task(_send_confirmation_email_background, reg.id, reg.event_id)
 
-    response = _batch_confirmation_response(
-        db,
-        registrations,
-        confirmation_tokens=confirmation_tokens,
-        claim_codes=claim_codes,
-    )
+    try:
+        response = _batch_confirmation_response(
+            db,
+            registrations,
+            confirmation_tokens=confirmation_tokens,
+            claim_codes=claim_codes,
+        )
+    except Exception as exc:
+        # The registration is already committed at this point. Log the
+        # response-stage failure clearly so it can be repaired without asking
+        # the participant to submit a second payment/registration.
+        logger.exception(
+            "Batch registration committed but confirmation response failed event_id=%s request_id=%s error_type=%s",
+            payload.event_id,
+            request.headers.get("X-Request-ID"),
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration was saved, but the confirmation could not be loaded. Please open My registrations or contact support.",
+        ) from exc
     response["emailStatus"] = "awaiting_payment" if any(reg.payment and reg.payment.payment_gateway == "cashfree" for reg in registrations) else "pending"
     return response
 

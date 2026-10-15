@@ -272,7 +272,10 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
 
     event = db.scalar(
         select(Event)
-        .options(selectinload(Event.payment_settings))
+        # Registration pricing reads organizer-level fee settings below. Load
+        # the relationship with the event while the transaction is active so
+        # this path does not depend on a late lazy-load after a flush/commit.
+        .options(selectinload(Event.payment_settings), selectinload(Event.organization))
         .where(Event.id == payload.event_id)
         .with_for_update()
     )
@@ -1558,7 +1561,10 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
 
     event = db.scalar(
         select(Event)
-        .options(selectinload(Event.payment_settings))
+        # Fee calculation uses the organizer pricing profile. Eagerly load it
+        # with the locked event so batch checkout cannot fail on a late lazy
+        # load after participant rows have already been flushed.
+        .options(selectinload(Event.payment_settings), selectinload(Event.organization))
         .where(Event.id == payload.event_id)
         .with_for_update()
     )
