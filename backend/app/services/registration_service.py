@@ -1336,6 +1336,8 @@ def serialize_participant_registration(registration: Registration, event: Event,
     result = {
         "id": str(registration.id),
         "registrationReference": registration.registration_reference,
+        "allocationNumber": registration.allocation_number if registration.allocation_status == "published" else None,
+        "raceResult": None,
         "event": {
             "id": str(event.id),
             "name": event.name,
@@ -1371,6 +1373,18 @@ def serialize_participant_registration(registration: Registration, event: Event,
 
     # Populate refund info when a db session is available
     if db is not None:
+        from models import RaceResult
+        published_result = db.scalar(select(RaceResult).where(
+            RaceResult.registration_id == registration.id,
+            RaceResult.event_id == event.id,
+            RaceResult.result_set_status == "published",
+        ))
+        if published_result is not None:
+            result["raceResult"] = {
+                "status": published_result.result_status,
+                "rank": published_result.rank,
+                "finishTime": str(published_result.finish_time) if published_result.finish_time is not None else None,
+            }
         refund = db.scalar(
             select(Refund)
             .where(Refund.registration_id == registration.id)

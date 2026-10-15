@@ -98,6 +98,31 @@ class RegistrationClaimTests(unittest.TestCase):
         db.commit()
         return registration, claim_code
 
+    def test_personal_event_details_only_expose_published_owned_data(self) -> None:
+        from models import RaceResult
+        with Session(self.engine) as db:
+            user = self._user(db, "personal-event")
+            other = self._user(db, "other-personal-event")
+            registration, _ = self._registration(db, participant_email=user.normalized_email)
+            registration.user_id = user.id
+            registration.allocation_number = 123
+            registration.allocation_status = "draft"
+            result = RaceResult(event_id=registration.event_id, participant_id=registration.participant_id,
+                registration_id=registration.id, result_set_status="draft", result_status="Finished",
+                finish_time=dt.timedelta(minutes=25), rank=2)
+            db.add(result)
+            db.commit()
+            private = list_my_registrations(db, user)[0]
+            self.assertIsNone(private["allocationNumber"])
+            self.assertIsNone(private["raceResult"])
+            self.assertEqual(list_my_registrations(db, other), [])
+            registration.allocation_status = "published"
+            result.result_set_status = "published"
+            db.commit()
+            published = list_my_registrations(db, user)[0]
+            self.assertEqual(published["allocationNumber"], 123)
+            self.assertEqual(published["raceResult"]["rank"], 2)
+
     def test_verified_email_auto_links_and_response_is_privacy_safe(self) -> None:
         with Session(self.engine) as db:
             user = self._user(db, "verified", email_verified=True)

@@ -5,6 +5,8 @@ import { apiRequest } from "@/lib/api";
 export interface ParticipantRegistration {
   id: string;
   registrationReference: string;
+  allocationNumber?: number | null;
+  raceResult?: { status: string; rank: number | null; finishTime: string | null } | null;
   event: {
     id: string;
     name: string;
