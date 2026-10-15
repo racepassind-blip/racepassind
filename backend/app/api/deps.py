@@ -62,7 +62,10 @@ def get_optional_current_user(
 
     session = db.scalar(
         select(AuthSession)
-        .options(joinedload(AuthSession.user))
+        # Batch checkout only needs the participant id and role. Keeping this
+        # deliberately narrow also makes an existing session safe during a
+        # rolling deployment while additive account-profile migrations finish.
+        .options(joinedload(AuthSession.user).load_only(User.id, User.role, User.is_active))
         .where(
             AuthSession.token_hash == hash_opaque_token(session_token),
             AuthSession.revoked_at.is_(None),
