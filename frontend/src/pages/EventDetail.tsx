@@ -10,6 +10,7 @@ import { useEvent, usePublicEventAnnouncements, usePublicEventResults } from "@/
 import { usePublicNumberList } from "@/hooks/useAllocations";
 import { usePublicRaceResults } from "@/hooks/useRaceTimeResults";
 import { createWhatsAppUrl, WHATSAPP_MESSAGES } from "@/lib/whatsapp";
+import { EventNavigation } from "@/components/EventNavigation";
 import {
   Calendar,
   MapPin,
@@ -210,26 +211,7 @@ const EventDetail = () => {
           ))}
         </div>
 
-        {(hasPublishedNumbers || hasPublishedResults || (publicAnnouncements.data?.announcements.length ?? 0) > 0) && <section className="mb-8 overflow-hidden rounded-2xl border bg-card shadow-sm">
-          <div className="border-b px-5 py-4 sm:px-6"><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Event updates</p><h2 className="mt-1 text-lg font-bold">Published information</h2></div>
-          <div className={`grid gap-px bg-border ${[hasPublishedNumbers, hasPublishedResults, (publicAnnouncements.data?.announcements.length ?? 0) > 0].filter(Boolean).length > 1 ? "md:grid-cols-2" : ""}`}>
-            {(publicAnnouncements.data?.announcements.length ?? 0) > 0 && <button type="button" onClick={() => navigate(`/event/${event.id}/announcements`)} className="group flex items-center gap-4 bg-card p-5 text-left transition-colors hover:bg-muted/40 sm:p-6">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Bell className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1"><span className="block font-bold">{publicAnnouncements.data?.announcements[0]?.title ?? "Event announcements"}</span><span className="mt-1 block line-clamp-2 text-sm leading-5 text-muted-foreground">{publicAnnouncements.data?.announcements[0]?.body}</span></span>
-              <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />
-            </button>}
-            {hasPublishedNumbers && <button type="button" onClick={() => navigate(`/event/${event.id}/number-list`)} className="group flex items-center gap-4 bg-card p-5 text-left transition-colors hover:bg-muted/40 sm:p-6">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><FileText className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1"><span className="block font-bold">{numberLabel}s are published</span><span className="mt-1 block text-sm leading-5 text-muted-foreground">Find your assigned {numberLabel.toLowerCase()} before event day.</span></span>
-              <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />
-            </button>}
-            {hasPublishedResults && <button type="button" onClick={() => navigate(`/event/${encodeURIComponent(id ?? "")}/results`)} className="group flex items-center gap-4 bg-card p-5 text-left transition-colors hover:bg-muted/40 sm:p-6">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Trophy className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1"><span className="block font-bold">Results are live</span><span className="mt-1 block text-sm leading-5 text-muted-foreground">View published results and category standings.</span></span>
-              <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />
-            </button>}
-          </div>
-        </section>}
+        <EventNavigation eventId={event.id} />
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
           <div className="min-w-0 space-y-8">
