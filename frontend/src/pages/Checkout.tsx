@@ -1,5 +1,5 @@
 import { MAX_TICKETS_PER_TRANSACTION } from "@/lib/registration-limits";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Download, Plus, RefreshCw, Shield, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -140,6 +140,10 @@ const Checkout = () => {
   const [qrDownloaded, setQrDownloaded] = useState(false);
   const [gatewayStatus, setGatewayStatus] = useState<string | null>(null);
   const [missingPaymentSession, setMissingPaymentSession] = useState(false);
+  // Keep the same key when the participant retries after a network/server
+  // failure. A new key could create a second booking if the first request was
+  // committed but its response did not reach the browser.
+  const registrationRequestKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!eventId || !new URLSearchParams(location.search).has("cashfree_return")) return;
@@ -515,9 +519,11 @@ const Checkout = () => {
     }
     setLoading(true);
     try {
+      const idempotencyKey = registrationRequestKeyRef.current ?? crypto.randomUUID();
+      registrationRequestKeyRef.current = idempotencyKey;
       const result = await apiRequest<BatchRegistrationResponse>("/registrations/batch", {
         method: "POST",
-        headers: { "Idempotency-Key": crypto.randomUUID() },
+        headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({
           event_id: eventId,
           attribution: (() => {
@@ -558,6 +564,7 @@ const Checkout = () => {
           }),
         }),
       });
+      registrationRequestKeyRef.current = null;
       setRegistration(result);
       if (result.paymentCollectionMethod === "CASHFREE_MANAGED" && eventId) {
         sessionStorage.setItem(`sportpass_cashfree_checkout_${eventId}`, JSON.stringify(result));
