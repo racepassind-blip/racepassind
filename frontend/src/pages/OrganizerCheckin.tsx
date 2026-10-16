@@ -39,9 +39,30 @@ function formatScanTime(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("en-IN", { hour: "numeric", minute: "2-digit", day: "numeric", month: "short" });
 }
 
+function playCheckinBeep(audioContext: AudioContext | null) {
+  if (!audioContext) return;
+  try {
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const now = audioContext.currentTime;
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(880, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.16, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.15);
+  } catch {
+    // Audio feedback is helpful but must never interrupt check-in.
+  }
+}
+
 const OrganizerCheckin = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerRef = useRef<QrScanner | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const decodeLockRef = useRef(false);
   const [searchParams] = useSearchParams();
   const requestedEventId = searchParams.get("event_id") ?? "";
@@ -100,6 +121,7 @@ const OrganizerCheckin = () => {
         body: JSON.stringify({ ...(credential ? { credential } : { registration_reference: registrationReference }), checkpoint_id: checkpointId }),
       });
       setResult(checkedIn);
+      if (!checkedIn.alreadyScanned) playCheckinBeep(audioContextRef.current);
       setAttendeeMatches((matches) => matches.filter((match) => match.registrationReference !== checkedIn.registrationReference));
     } catch (checkinError) {
       setError(checkinError instanceof Error ? checkinError.message : "Could not record this check-in");
@@ -180,6 +202,12 @@ const OrganizerCheckin = () => {
 
   const openScanner = () => {
     decodeLockRef.current = false;
+    try {
+      audioContextRef.current ??= new window.AudioContext();
+      void audioContextRef.current.resume();
+    } catch {
+      audioContextRef.current = null;
+    }
     setResult(null);
     setError(null);
     setScannerError(null);
