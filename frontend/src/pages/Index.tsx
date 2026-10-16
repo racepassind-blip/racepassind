@@ -119,10 +119,10 @@ const Index = () => {
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20" aria-labelledby="event-day-heading">
         <div className="mb-9 grid gap-4 md:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)] md:items-end">
           <div>
-            <p className="mb-3 text-xs font-bold uppercase tracking-[0.22em] text-primary">More than registration</p>
-            <h2 id="event-day-heading" className="max-w-xl text-3xl font-black leading-tight tracking-tight sm:text-4xl">Everything you need on event day.</h2>
+            <p className="mb-3 text-xs font-bold uppercase tracking-[0.22em] text-primary">From sign-up to finish line</p>
+            <h2 id="event-day-heading" className="max-w-xl text-3xl font-black leading-tight tracking-tight sm:text-4xl">Your event, running smoothly from start to finish.</h2>
           </div>
-          <p className="max-w-md text-sm leading-6 text-muted-foreground md:justify-self-end">Bring signups, people, check-in, and results into one place. Then use the tools built for your sport.</p>
+          <p className="max-w-md text-sm leading-6 text-muted-foreground md:justify-self-end">Bring participants, check-in, and results into one workspace, with practical tools for the sport you organize.</p>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-3">
@@ -131,8 +131,8 @@ const Index = () => {
               icon: Bike,
               number: "01",
               title: "Running & cycling",
-              description: "Keep the field organized from bib pickup to the finish line.",
-              features: ["Distance categories and bibs", "QR scans at checkpoints", "Timed results and rankings"],
+              description: "Keep race-day operations moving from bib collection to the finish.",
+              features: ["Distance categories and bibs", "QR checkpoint scans", "Timed results and rankings"],
               accent: "bg-orange-500",
               iconStyle: "bg-orange-50 text-orange-700",
             },
@@ -140,8 +140,8 @@ const Index = () => {
               icon: MapPinned,
               number: "02",
               title: "Trekking",
-              description: "Make the route and meeting details clear before anyone sets off.",
-              features: ["Shared route and pickup points", "Waiver acknowledgement", "Tickets and QR check-in"],
+              description: "Share the plan before departure and make arrivals easier to manage.",
+              features: ["Routes and pickup points", "Digital waiver acknowledgement", "Ticket and QR check-in"],
               accent: "bg-emerald-600",
               iconStyle: "bg-emerald-50 text-emerald-700",
             },
@@ -149,8 +149,8 @@ const Index = () => {
               icon: Trophy,
               number: "03",
               title: "Badminton",
-              description: "Give players and organizers a clear path through the draw.",
-              features: ["Draws and court management", "Matches and score entry", "Standings and results"],
+              description: "Guide players and organizers from the draw through the final score.",
+              features: ["Tournament draws and courts", "Match scheduling and scores", "Standings and results"],
               accent: "bg-sky-600",
               iconStyle: "bg-sky-50 text-sky-700",
             },
@@ -173,10 +173,10 @@ const Index = () => {
         </div>
 
         <div className="mt-4 grid gap-4 rounded-2xl bg-[#101b35] px-6 py-6 text-white sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:items-center sm:px-8">
-          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#ffb866]">Event essentials</p><p className="mt-1 text-lg font-bold">The details stay together.</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#ffb866]">The event essentials</p><p className="mt-1 text-lg font-bold">One clear view for your team.</p></div>
           <ul className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs font-medium text-white/85 sm:text-sm">
-            <li className="flex items-center gap-2"><ClipboardList className="h-4 w-4 shrink-0 text-[#ffb866]" aria-hidden="true" />Registrations</li>
-            <li className="flex items-center gap-2"><WalletCards className="h-4 w-4 shrink-0 text-[#ffb866]" aria-hidden="true" />Payments</li>
+            <li className="flex items-center gap-2"><ClipboardList className="h-4 w-4 shrink-0 text-[#ffb866]" aria-hidden="true" />Participant registrations</li>
+            <li className="flex items-center gap-2"><WalletCards className="h-4 w-4 shrink-0 text-[#ffb866]" aria-hidden="true" />Payment tracking</li>
             <li className="flex items-center gap-2"><QrCode className="h-4 w-4 shrink-0 text-[#ffb866]" aria-hidden="true" />Check-in</li>
             <li className="flex items-center gap-2"><Bell className="h-4 w-4 shrink-0 text-[#ffb866]" aria-hidden="true" />Participant updates</li>
           </ul>
