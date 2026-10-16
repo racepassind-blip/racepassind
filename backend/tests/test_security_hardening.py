@@ -29,6 +29,10 @@ class SecurityHardeningTests(unittest.TestCase):
             self.assertTrue(uuid.UUID(response.headers["X-Request-ID"]))
             self.assertIn("racepass_csrf", response.cookies)
 
+            head = client.head("/health")
+            self.assertEqual(head.status_code, 200)
+            self.assertEqual(head.content, b"")
+
             ready = client.get("/ready")
             self.assertEqual(ready.status_code, 200)
             self.assertEqual(ready.json(), {"status": "ready"})

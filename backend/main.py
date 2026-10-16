@@ -261,7 +261,7 @@ def stop_cashfree_recovery() -> None:
             worker.join(timeout=2)
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
