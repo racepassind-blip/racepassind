@@ -34,20 +34,17 @@ jobs:
           test -n "$R2_BUCKET"
           test -n "$R2_ENDPOINT"
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install --yes postgresql-client
-
       - name: Create and validate PostgreSQL dump
         id: dump
         run: |
           timestamp=$(date -u +'%Y-%m-%dT%H-%M-%SZ')
           backup_file="sportpass-${timestamp}.dump"
-          pg_dump "$DATABASE_URL" \
-            --format=custom \
-            --no-owner \
-            --no-privileges \
-            --file "$backup_file"
-          pg_restore --list "$backup_file" > /dev/null
+          docker run --rm \
+            --env DATABASE_URL \
+            --env BACKUP_FILE="$backup_file" \
+            --volume "$PWD:/backup" \
+            postgres:18-alpine \
+            sh -ec 'pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file "/backup/$BACKUP_FILE" && pg_restore --list "/backup/$BACKUP_FILE" > /dev/null'
           sha256sum "$backup_file" > "${backup_file}.sha256"
           echo "backup_file=$backup_file" >> "$GITHUB_OUTPUT"
 
