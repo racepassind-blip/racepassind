@@ -10,8 +10,7 @@ export function Footer() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Brand */}
           <div className="space-y-3">
-            <Link to="/" className="flex items-center gap-2 text-lg font-black tracking-tight">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-[10px] font-black text-primary">SP</span>
+            <Link to="/" className="flex items-center text-lg font-black tracking-tight">
               SportPass <span className="text-primary">India</span>
             </Link>
             <p className="text-sm leading-relaxed text-muted-foreground">

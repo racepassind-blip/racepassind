@@ -51,8 +51,7 @@ export function Navbar() {
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-[110] focus:rounded-lg focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:shadow-lg">Skip to content</a>
       <div className="h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" />
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
-        <Link to="/" className="flex shrink-0 items-center gap-2 text-lg font-black tracking-tight sm:text-xl">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-xs font-black text-primary ring-1 ring-primary/15">SP</span>
+        <Link to="/" className="flex shrink-0 items-center text-lg font-black tracking-tight sm:text-xl">
           <span>SportPass <span className="text-primary">India</span></span>
         </Link>
 

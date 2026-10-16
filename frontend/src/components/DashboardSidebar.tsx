@@ -17,8 +17,7 @@ export function DashboardSidebarContent() {
 
   return (
     <div className="flex h-full flex-col p-4 lg:sticky lg:top-0 lg:h-screen">
-      <Link to="/dashboard" className="mb-7 flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-white/10">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-xs font-black text-primary-foreground">SP</span>
+      <Link to="/dashboard" className="mb-7 flex items-center rounded-xl px-3 py-2 transition-colors hover:bg-white/10">
         <span><span className="block text-sm font-black tracking-tight">SportPass <span className="text-primary">India</span></span><span className="mt-0.5 block text-xs text-slate-400">Participant workspace</span></span>
       </Link>
 
