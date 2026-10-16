@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { AlertTriangle, Camera, CheckCircle2, ChevronRight, ClipboardList, ScanLine, Search, Settings2, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ClipboardList, MapPin, ScanLine, Search, Settings2, Users, XCircle } from "lucide-react";
 import QrScanner from "qr-scanner";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,8 +15,8 @@ import { apiRequest } from "@/lib/api";
 interface EventOption { id: string; name: string; isArchived: boolean; }
 interface Checkpoint { id: string; name: string; position: number; }
 interface CheckpointResponse { checkpoints: Checkpoint[]; }
-interface NameMatch { id: string; registrationReference: string; participant: { name: string }; participants?: Array<{ participant: { name: string } }>; participantCount?: number; ticket: { name: string; category: string | null }; status: string; checkInStatus: string; }
-interface NameMatchResponse { items: NameMatch[]; nextCursor: string | null; hasMore: boolean; }
+interface AttendeeMatch { id: string; registrationReference: string; participant: { name: string }; participants?: Array<{ participant: { name: string } }>; participantCount?: number; ticket: { name: string; category: string | null }; status: string; checkInStatus: string; }
+interface AttendeeMatchResponse { items: AttendeeMatch[]; nextCursor: string | null; hasMore: boolean; }
 interface CheckinResult {
   registrationReference: string;
   event: { id: string; name: string; location: string };
@@ -50,12 +50,10 @@ const OrganizerCheckin = () => {
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [checkpointId, setCheckpointId] = useState("");
   const [checkpointsLoading, setCheckpointsLoading] = useState(false);
-  const [credential, setCredential] = useState("");
-  const [registrationReference, setRegistrationReference] = useState("");
-  const [nameSearch, setNameSearch] = useState("");
-  const [nameMatches, setNameMatches] = useState<NameMatch[]>([]);
-  const [nameSearchError, setNameSearchError] = useState<string | null>(null);
-  const [searchingName, setSearchingName] = useState(false);
+  const [attendeeSearch, setAttendeeSearch] = useState("");
+  const [attendeeMatches, setAttendeeMatches] = useState<AttendeeMatch[]>([]);
+  const [attendeeSearchError, setAttendeeSearchError] = useState<string | null>(null);
+  const [searchingAttendees, setSearchingAttendees] = useState(false);
   const [result, setResult] = useState<CheckinResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -77,119 +75,254 @@ const OrganizerCheckin = () => {
     setCheckpoints([]);
     setCheckpointsLoading(true);
     setResult(null);
-    setNameMatches([]);
-    setNameSearchError(null);
+    setAttendeeSearch("");
+    setAttendeeMatches([]);
+    setAttendeeSearchError(null);
+    setScannerOpen(false);
     void apiRequest<CheckpointResponse>(`/organizer/events/${eventId}/checkpoints`).then((response) => {
       setCheckpoints(response.checkpoints);
+      const rememberedCheckpoint = window.sessionStorage.getItem(`sportpass-checkpoint-${eventId}`);
+      const rememberedMatch = response.checkpoints.find((checkpoint) => checkpoint.id === rememberedCheckpoint);
+      if (rememberedMatch) setCheckpointId(rememberedMatch.id);
+      else if (response.checkpoints.length === 1) setCheckpointId(response.checkpoints[0].id);
     }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not load checkpoints")).finally(() => setCheckpointsLoading(false));
   }, [eventId]);
 
-  const submitCheckinValues = useCallback(async (normalizedCredential: string, normalizedReference: string) => {
-    if (!checkpointId) { setError("Select the checkpoint where you are stationed before scanning."); setResult(null); return; }
-    if (Boolean(normalizedCredential) === Boolean(normalizedReference)) { setError("Enter either the QR credential or the registration reference, not both."); setResult(null); return; }
-    setSubmitting(true); setError(null); setResult(null);
+  const submitCheckinValues = useCallback(async (credential: string, registrationReference: string) => {
+    if (!checkpointId) { setError("Choose the checkpoint where you are working first."); setResult(null); return; }
+    if (Boolean(credential) === Boolean(registrationReference)) { setError("Scan a QR code or choose one registration to check in."); setResult(null); return; }
+    setSubmitting(true);
+    setError(null);
+    setResult(null);
     try {
-      const checkedIn = await apiRequest<CheckinResult>("/organizer/checkins/scan", { method: "POST", body: JSON.stringify({ ...(normalizedCredential ? { credential: normalizedCredential } : { registration_reference: normalizedReference }), checkpoint_id: checkpointId }) });
-      setResult(checkedIn); setCredential(""); setRegistrationReference("");
-    } catch (checkinError) { setError(checkinError instanceof Error ? checkinError.message : "Could not record this scan"); }
-    finally { decodeLockRef.current = false; setSubmitting(false); }
+      const checkedIn = await apiRequest<CheckinResult>("/organizer/checkins/scan", {
+        method: "POST",
+        body: JSON.stringify({ ...(credential ? { credential } : { registration_reference: registrationReference }), checkpoint_id: checkpointId }),
+      });
+      setResult(checkedIn);
+      setAttendeeMatches((matches) => matches.filter((match) => match.registrationReference !== checkedIn.registrationReference));
+    } catch (checkinError) {
+      setError(checkinError instanceof Error ? checkinError.message : "Could not record this check-in");
+    } finally {
+      decodeLockRef.current = false;
+      setSubmitting(false);
+    }
   }, [checkpointId]);
 
-  const stopScanner = useCallback(() => { scannerRef.current?.stop(); setScannerOpen(false); setScannerState("idle"); setScannerError(null); }, []);
+  const stopScanner = useCallback(() => {
+    scannerRef.current?.stop();
+    setScannerOpen(false);
+    setScannerState("idle");
+    setScannerError(null);
+  }, []);
 
   useEffect(() => {
     if (!scannerOpen || !videoRef.current) return;
     const video = videoRef.current;
     let disposed = false;
-    setScannerState("starting"); setScannerError(null);
+    setScannerState("starting");
+    setScannerError(null);
     const scanner = new QrScanner(video, (scanResult) => {
       const scannedCredential = scanResult.data.trim();
       if (disposed || decodeLockRef.current || !scannedCredential) return;
-      decodeLockRef.current = true; setCredential(scannedCredential); stopScanner(); void submitCheckinValues(scannedCredential, "");
-    }, { preferredCamera: "environment", maxScansPerSecond: 5, highlightScanRegion: true, returnDetailedScanResult: true, onDecodeError: (scanError) => { if (!disposed && scanError !== QrScanner.NO_QR_CODE_FOUND) setScannerError("The camera could not read this QR code. Hold it steady inside the frame."); } });
+      decodeLockRef.current = true;
+      stopScanner();
+      void submitCheckinValues(scannedCredential, "");
+    }, {
+      preferredCamera: "environment",
+      maxScansPerSecond: 5,
+      highlightScanRegion: true,
+      returnDetailedScanResult: true,
+      onDecodeError: (scanError) => {
+        if (!disposed && scanError !== QrScanner.NO_QR_CODE_FOUND) setScannerError("The camera could not read this QR code. Hold it steady inside the frame.");
+      },
+    });
     scannerRef.current = scanner;
-    void scanner.start().then(() => { if (!disposed) setScannerState("active"); }).catch((startError: unknown) => { if (disposed) return; const message = startError instanceof Error ? startError.message : String(startError); setScannerState("error"); setScannerError(/permission|denied|not allowed/i.test(message) ? "Camera permission was denied. Allow camera access in your browser settings and try again." : "Could not start the camera. Use HTTPS or localhost and make sure a camera is available."); });
+    void scanner.start().then(() => {
+      if (!disposed) setScannerState("active");
+    }).catch((startError: unknown) => {
+      if (disposed) return;
+      const message = startError instanceof Error ? startError.message : String(startError);
+      setScannerState("error");
+      setScannerError(/permission|denied|not allowed/i.test(message) ? "Camera permission was denied. Allow camera access and try again." : "Could not start the camera. Make sure a camera is available.");
+    });
     return () => { disposed = true; scanner.destroy(); scannerRef.current = null; };
   }, [scannerOpen, stopScanner, submitCheckinValues]);
 
-  const submitCheckin = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void submitCheckinValues(credential.trim(), registrationReference.trim()); };
-  const searchByName = async (event: FormEvent<HTMLFormElement>) => {
+  const searchAttendees = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const name = nameSearch.trim();
-    if (!eventId || !name) return;
-    setSearchingName(true);
-    setNameSearchError(null);
-    setNameMatches([]);
+    const query = attendeeSearch.trim();
+    if (!eventId || !checkpointId || !query) return;
+    setSearchingAttendees(true);
+    setAttendeeSearchError(null);
+    setAttendeeMatches([]);
+    setResult(null);
+    setError(null);
     try {
-      const params = new URLSearchParams({ event_id: eventId, status: "all", participant: name, check_in_status: "not_checked_in", page_size: "25" });
-      const response = await apiRequest<NameMatchResponse>(`/organizer/registrations?${params}`);
-      setNameMatches(response.items);
-      if (response.items.length === 0) setNameSearchError("No unchecked-in registration matched that name. Check the spelling or use the registration number.");
+      const params = new URLSearchParams({ event_id: eventId, status: "all", q: query, check_in_status: "not_checked_in", page_size: "25" });
+      const response = await apiRequest<AttendeeMatchResponse>(`/organizer/registrations?${params}`);
+      setAttendeeMatches(response.items);
+      if (response.items.length === 0) setAttendeeSearchError("No unchecked-in participant matched that name or registration number.");
     } catch (lookupError) {
-      setNameSearchError(lookupError instanceof Error ? lookupError.message : "Could not search registrations.");
-    } finally { setSearchingName(false); }
+      setAttendeeSearchError(lookupError instanceof Error ? lookupError.message : "Could not search registrations.");
+    } finally {
+      setSearchingAttendees(false);
+    }
   };
+
+  const chooseCheckpoint = (value: string) => {
+    setCheckpointId(value);
+    window.sessionStorage.setItem(`sportpass-checkpoint-${eventId}`, value);
+    setResult(null);
+    setError(null);
+    setAttendeeMatches([]);
+  };
+
+  const openScanner = () => {
+    decodeLockRef.current = false;
+    setResult(null);
+    setError(null);
+    setScannerError(null);
+    setScannerState("starting");
+    setScannerOpen(true);
+  };
+
   const selectedEvent = events.find((event) => event.id === eventId);
   const selectedCheckpoint = checkpoints.find((checkpoint) => checkpoint.id === checkpointId);
-  const readyToScan = Boolean(eventId && checkpointId);
+  const readyToCheckIn = Boolean(eventId && checkpointId);
 
   return (
     <OrganizerDashboardLayout eventId={eventId || undefined}>
-      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <section className="rounded-2xl border bg-card px-5 py-6 shadow-sm sm:px-7 sm:py-8">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <div className="mb-3 flex flex-wrap items-center gap-2"><Badge variant="outline" className="gap-1.5 border-emerald-200 bg-emerald-50 text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Live check-in desk</Badge><span className="text-xs text-muted-foreground">Same QR · every checkpoint</span></div>
-              <h1 className="text-3xl font-black tracking-tight text-foreground sm:text-4xl">Ready to scan</h1>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Choose the station below, then scan each participant&apos;s existing ticket QR. Duplicate scans are checked only for the selected station.</p>
-            </div>
-            <div className="flex flex-wrap gap-2"><Button asChild variant="outline" className="w-fit gap-2"><Link to={eventId ? `/organizer/events/${eventId}/checkpoints` : "/organizer"}><Settings2 className="h-4 w-4" />Set up checkpoints</Link></Button><Button asChild variant="outline" className="w-fit gap-2"><Link to={eventId ? `/organizer/events/${eventId}/check-in` : "/organizer/registrations"}><ClipboardList className="h-4 w-4" />View matrix<ChevronRight className="h-4 w-4" /></Link></Button></div>
+      <div className="mx-auto max-w-5xl space-y-4 px-4 py-5 sm:space-y-6 sm:px-6 sm:py-7 lg:px-8">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-primary"><span className="h-2 w-2 rounded-full bg-emerald-500" />Live operations</div>
+            <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">Participant check-in</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Search an attendee or scan their QR code.</p>
           </div>
-        </section>
-
-        <section className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
-          <div className="mb-5 rounded-xl border-2 border-primary/30 bg-primary/5 p-4 sm:p-5">
-            <div className="flex items-start gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-foreground">1</div>
-              <div>
-                <p className="font-bold">Choose your event and checkpoint first</p>
-                <p className="mt-1 text-sm leading-5 text-muted-foreground">A checkpoint is the station where you are working, such as Start, Breakfast, or Finish. Every scan must be assigned to that station.</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-            <div className="min-w-0 flex-1 space-y-2"><Label htmlFor="scan-event" className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Step 1 · Event</Label><Select value={eventId} onValueChange={setEventId}><SelectTrigger id="scan-event" className="h-12 bg-background text-base" aria-label="Select event"><SelectValue placeholder="Select event" /></SelectTrigger><SelectContent>{events.map((event) => <SelectItem key={event.id} value={event.id}>{event.name}</SelectItem>)}</SelectContent></Select></div>
-            <div className="flex-1 space-y-2"><Label htmlFor="scan-checkpoint" className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Step 2 · Checkpoint <span className="text-destructive">*</span></Label><Select value={checkpointId} onValueChange={(value) => { setCheckpointId(value); setResult(null); setError(null); }} disabled={checkpointsLoading || checkpoints.length === 0}><SelectTrigger id="scan-checkpoint" className={`h-12 bg-background text-base ${!checkpointId && !checkpointsLoading && checkpoints.length > 0 ? "border-primary ring-2 ring-primary/20" : ""}`} aria-label="Select checkpoint" aria-required="true"><SelectValue placeholder={checkpointsLoading ? "Loading checkpoints…" : checkpoints.length === 0 ? "No checkpoints configured" : "Select the station you are at"} /></SelectTrigger><SelectContent>{checkpoints.map((checkpoint, index) => <SelectItem key={checkpoint.id} value={checkpoint.id}>{index + 1}. {checkpoint.name}</SelectItem>)}</SelectContent></Select><p className="text-xs font-medium text-primary">Select this before opening the camera or checking in a participant.</p>{!checkpointsLoading && checkpoints.length === 0 && <Link className="inline-block text-xs font-semibold text-primary underline underline-offset-2" to={eventId ? `/organizer/events/${eventId}/checkpoints` : "/organizer"}>Set up checkpoints for this event</Link>}</div>
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-4 text-sm"><span className="text-muted-foreground">Station status:</span>{readyToScan ? <Badge variant="default" className="gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />{selectedCheckpoint?.name} selected</Badge> : <Badge variant="secondary">Select an event and checkpoint</Badge>}{selectedEvent && <span className="text-muted-foreground">for <span className="font-medium text-foreground">{selectedEvent.name}</span></span>}</div>
-        </section>
-
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
-          <Card className="overflow-hidden border-slate-200 shadow-md dark:border-slate-800">
-            <CardHeader className="border-b bg-muted/20 pb-4"><div className="flex items-start justify-between gap-4"><div><CardTitle className="flex items-center gap-2 text-xl"><ScanLine className="h-5 w-5 text-primary" />Scan participant</CardTitle><CardDescription className="mt-1">{selectedCheckpoint ? `Scanning for ${selectedCheckpoint.name}` : "Select a checkpoint to begin"}</CardDescription></div>{readyToScan && <Badge variant="outline" className="hidden gap-1.5 sm:flex"><ShieldCheck className="h-3.5 w-3.5 text-accent" />Secure station</Badge>}</div></CardHeader>
-            <CardContent className="p-4 sm:p-6">
-              {scannerOpen ? <div className="space-y-4"><div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-slate-950 shadow-inner sm:aspect-video"><video ref={videoRef} className="h-full w-full object-cover" autoPlay muted playsInline /><div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0,transparent_34%,rgba(2,6,23,0.42)_68%,rgba(2,6,23,0.72)_100%)]" /><div className="pointer-events-none absolute inset-[16%] rounded-3xl border-2 border-white/80 shadow-[0_0_0_9999px_rgba(2,6,23,0.28)] sm:inset-[20%]" /><div className="absolute inset-x-0 bottom-4 text-center text-xs font-medium text-white/80">Align the participant QR inside the frame</div>{scannerState === "starting" && <div className="absolute inset-0 flex items-center justify-center bg-slate-950/70 text-sm text-white">Starting camera…</div>}</div><div className="flex items-center justify-between gap-3"><p className="text-sm text-muted-foreground" aria-live="polite">{scannerState === "active" ? "Camera is ready. Scan the next ticket." : scannerError ?? "Requesting camera access…"}</p><Button type="button" variant="outline" size="sm" onClick={stopScanner}>{scannerState === "error" ? "Close" : "Stop camera"}</Button></div>{scannerError && <div role="alert" className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{scannerError}</span></div>}</div> : <div className="rounded-2xl border border-dashed bg-muted/20 px-5 py-10 text-center sm:px-10 sm:py-14"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Camera className="h-8 w-8" /></div><h2 className="mt-5 text-lg font-bold">Use the camera to scan</h2><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">The QR credential already belongs to the participant. No new QR is needed for this station.</p><Button type="button" className="mt-6 h-12 w-full gap-2 sm:w-auto sm:px-10" onClick={() => { decodeLockRef.current = false; setError(null); setScannerError(null); setScannerState("starting"); setScannerOpen(true); }} disabled={submitting || !readyToScan}><Camera className="h-4 w-4" />{readyToScan ? "Start camera" : "Select a checkpoint first"}</Button></div>}
-            </CardContent>
-          </Card>
-
-          <div className="space-y-6">
-            <Card className={result ? result.alreadyScanned ? "border-amber-300 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20" : "border-emerald-300 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20" : "border-dashed"}>
-              <CardHeader className="pb-3"><CardTitle className="text-base">Latest scan</CardTitle><CardDescription>{result ? "The operator result is shown here." : "Scan a participant to see confirmation details."}</CardDescription></CardHeader>
-              <CardContent>{result ? <div className="space-y-4"><div className="flex items-start gap-3">{result.alreadyScanned ? <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-amber-600" /> : <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-emerald-600" />}<div className="min-w-0"><p className="font-bold leading-6">{result.message}</p><p className="mt-1 text-sm text-muted-foreground">{result.alreadyScanned ? "No duplicate scan was created." : "Checkpoint scan recorded successfully."}</p></div></div><div className="grid gap-3 border-t pt-4 text-sm"><div><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Participant</p><p className="mt-1 font-semibold">{result.participantNames?.join(" · ") ?? result.participantName}</p></div><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Checkpoint</p><p className="mt-1 font-medium">{result.checkpoint.name}</p></div><Badge variant={result.alreadyScanned ? "secondary" : "default"}>{result.alreadyScanned ? "Already scanned" : "Recorded"}</Badge></div><div><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Scanned at</p><p className="mt-1 font-medium">{formatScanTime(result.scannedAt)}</p></div><p className="font-mono text-xs text-muted-foreground">{result.registrationReference}</p></div></div> : <div className="py-4 text-center"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-muted text-muted-foreground"><ScanLine className="h-5 w-5" /></div><p className="mt-3 text-sm font-medium">Waiting for the next ticket</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Keep this panel visible while volunteers scan.</p></div>}</CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Settings2 className="h-4 w-4 text-primary" />Manual check-in</CardTitle><CardDescription>Look up an unchecked-in participant by name, or enter their registration number or ticket credential.</CardDescription></CardHeader>
-              <CardContent className="space-y-5">
-                <form onSubmit={searchByName} className="space-y-2"><Label htmlFor="checkin-name">Participant name</Label><div className="flex gap-2"><Input id="checkin-name" value={nameSearch} onChange={(event) => { setNameSearch(event.target.value); setNameMatches([]); setNameSearchError(null); }} placeholder="Search participant name" maxLength={120} autoComplete="off" /><Button type="submit" variant="outline" disabled={searchingName || !readyToScan || !nameSearch.trim()}><Search className="mr-1.5 h-4 w-4" />{searchingName ? "Searching…" : "Find"}</Button></div></form>
-                {nameSearchError && <div role="status" className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">{nameSearchError}</div>}
-                {nameMatches.length > 0 && <div className="space-y-2" aria-live="polite"><p className="text-xs font-semibold text-muted-foreground">Select the correct registration ({nameMatches.length}{nameMatches.length === 25 ? "+" : ""} matches)</p>{nameMatches.map((match) => <div key={match.id} className="flex items-center justify-between gap-3 rounded-lg border p-3"><div className="min-w-0"><p className="truncate text-sm font-semibold">{match.participant.name}{match.participantCount && match.participantCount > 1 ? ` + ${match.participantCount - 1}` : ""}</p><p className="truncate font-mono text-xs text-muted-foreground">{match.registrationReference} · {match.ticket.category ? `${match.ticket.category} · ` : ""}{match.ticket.name}</p>{match.participants && match.participants.length > 1 && <p className="mt-1 truncate text-xs text-muted-foreground">Also: {match.participants.map((entry) => entry.participant.name).join(", ")}</p>}</div><Button type="button" size="sm" disabled={submitting} onClick={() => void submitCheckinValues("", match.registrationReference)}>Check in</Button></div>)}</div>}
-                <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground"><span className="h-px flex-1 bg-border" />or enter details<span className="h-px flex-1 bg-border" /></div>
-                <form onSubmit={submitCheckin} className="space-y-4"><div className="space-y-2"><Label htmlFor="ticket-credential">Ticket QR credential</Label><Input id="ticket-credential" value={credential} onChange={(event) => setCredential(event.target.value)} placeholder="sportpass://ticket?v=1&t=…" maxLength={300} autoComplete="off" /></div><div className="space-y-2"><Label htmlFor="checkin-reference">Registration number</Label><Input id="checkin-reference" value={registrationReference} onChange={(event) => setRegistrationReference(event.target.value)} placeholder="SPE-… or RP-…" maxLength={80} autoComplete="off" /></div>{error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}<Button type="submit" className="h-11 w-full gap-2" disabled={submitting || !readyToScan}>{submitting ? "Recording scan…" : "Record manual check-in"}</Button></form>
-              </CardContent>
-            </Card>
+          <div className="hidden shrink-0 gap-2 sm:flex">
+            <Button asChild variant="outline" size="sm"><Link to={eventId ? `/organizer/events/${eventId}/checkpoints` : "/organizer"}><Settings2 />Checkpoints</Link></Button>
+            <Button asChild variant="outline" size="sm"><Link to={eventId ? `/organizer/events/${eventId}/check-in` : "/organizer/registrations"}><ClipboardList />Check-in report</Link></Button>
           </div>
         </div>
+
+        <section className="sticky top-16 z-30 -mx-4 border-y bg-background/95 px-4 py-3 shadow-sm backdrop-blur sm:static sm:mx-0 sm:rounded-xl sm:border sm:p-4 sm:shadow-none">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="checkin-event" className="text-xs font-semibold text-muted-foreground">Event</Label>
+              <div id="checkin-event" aria-readonly="true" className="flex h-11 items-center rounded-md border border-input bg-muted/40 px-3 text-sm font-medium text-foreground" title="Event is fixed for this check-in session">
+                {selectedEvent?.name ?? "Loading event…"}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="checkin-checkpoint" className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><MapPin className="h-3.5 w-3.5" />Checkpoint</Label>
+              <Select value={checkpointId} onValueChange={chooseCheckpoint} disabled={checkpointsLoading || checkpoints.length === 0}>
+                <SelectTrigger id="checkin-checkpoint" className={`h-11 bg-background ${!checkpointId && checkpoints.length > 0 ? "border-primary ring-2 ring-primary/20" : ""}`} aria-label="Select checkpoint">
+                  <SelectValue placeholder={checkpointsLoading ? "Loading checkpoints…" : checkpoints.length === 0 ? "No checkpoints configured" : "Where are you checking in?"} />
+                </SelectTrigger>
+                <SelectContent>{checkpoints.map((checkpoint) => <SelectItem key={checkpoint.id} value={checkpoint.id}>{checkpoint.position}. {checkpoint.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+          {readyToCheckIn && <div className="mt-3 flex items-center gap-2 border-t pt-3 text-xs"><span className="h-2 w-2 rounded-full bg-emerald-500" /><span className="font-semibold text-foreground">Ready at {selectedCheckpoint?.name}</span><span className="truncate text-muted-foreground">· {selectedEvent?.name}</span></div>}
+          {!checkpointsLoading && checkpoints.length === 0 && eventId && <p className="mt-3 text-xs text-muted-foreground">This event has no checkpoints. <Link className="font-semibold text-primary underline underline-offset-2" to={`/organizer/events/${eventId}/checkpoints`}>Create one to start check-in</Link>.</p>}
+        </section>
+
+        {!readyToCheckIn ? (
+          <Card className="border-dashed">
+            <CardContent className="px-5 py-12 text-center sm:py-16">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary"><MapPin className="h-6 w-6" /></div>
+              <h2 className="mt-4 text-lg font-bold">Choose your checkpoint</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Select the station where this device is being used. Search and QR scanning will appear immediately.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <Card className="overflow-hidden border-primary/20 shadow-sm">
+              <CardContent className="p-4 sm:p-5">
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <form onSubmit={searchAttendees} className="min-w-0">
+                    <Label htmlFor="attendee-search" className="sr-only">Search by participant name or registration number</Label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute inset-y-0 left-0 flex w-14 items-center justify-center"><Search className="h-5 w-5 text-muted-foreground" /></span>
+                      <Input id="attendee-search" value={attendeeSearch} onChange={(event) => { setAttendeeSearch(event.target.value); setAttendeeMatches([]); setAttendeeSearchError(null); }} className="h-14 rounded-xl text-base" style={{ paddingLeft: "3.5rem", paddingRight: "7rem" }} placeholder="Name or registration number" maxLength={120} autoComplete="off" autoCapitalize="words" />
+                      <Button type="submit" size="sm" className="absolute right-2 top-2 h-10 px-4" disabled={searchingAttendees || !attendeeSearch.trim()}>{searchingAttendees ? "Finding…" : "Search"}</Button>
+                    </div>
+                  </form>
+                  <Button type="button" className="h-14 rounded-xl px-6 text-base font-bold md:min-w-44" onClick={openScanner} disabled={submitting}><Camera className="h-5 w-5" />Scan QR code</Button>
+                </div>
+                <p className="mt-2.5 text-xs text-muted-foreground">Search works with a participant name or a reference such as SPE-1234.</p>
+              </CardContent>
+            </Card>
+
+            {scannerOpen && (
+              <Card className="overflow-hidden border-primary/30 shadow-lg">
+                <CardContent className="p-3 sm:p-5">
+                  <div className="relative aspect-[4/3] max-h-[68dvh] overflow-hidden rounded-xl bg-slate-950 sm:aspect-video">
+                    <video ref={videoRef} className="h-full w-full object-cover" autoPlay muted playsInline />
+                    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0,transparent_34%,rgba(2,6,23,0.42)_68%,rgba(2,6,23,0.72)_100%)]" />
+                    <div className="pointer-events-none absolute inset-[15%] rounded-2xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(2,6,23,0.25)] sm:inset-[20%]" />
+                    <div className="absolute inset-x-4 bottom-4 rounded-lg bg-slate-950/70 px-3 py-2 text-center text-xs font-medium text-white">Hold the QR code inside the frame</div>
+                    {scannerState === "starting" && <div className="absolute inset-0 flex items-center justify-center bg-slate-950/75 text-sm font-medium text-white">Starting camera…</div>}
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <p className="text-sm text-muted-foreground" aria-live="polite">{scannerState === "active" ? `Scanning at ${selectedCheckpoint?.name}` : scannerError ?? "Requesting camera access…"}</p>
+                    <Button type="button" variant="outline" onClick={stopScanner}>{scannerState === "error" ? "Close" : "Cancel"}</Button>
+                  </div>
+                  {scannerError && <div role="alert" className="mt-3 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{scannerError}</span></div>}
+                </CardContent>
+              </Card>
+            )}
+
+            {error && <div role="alert" className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"><XCircle className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-semibold">Check-in was not recorded</p><p className="mt-0.5">{error}</p></div></div>}
+
+            {result && (
+              <div className={`rounded-xl border p-4 shadow-sm sm:p-5 ${result.alreadyScanned ? "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100" : "border-emerald-300 bg-emerald-50 text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100"}`} aria-live="polite">
+                <div className="flex items-start gap-3">
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${result.alreadyScanned ? "bg-amber-100 text-amber-700 dark:bg-amber-900" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900"}`}>{result.alreadyScanned ? <AlertTriangle className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-bold uppercase tracking-[0.12em] opacity-70">{result.alreadyScanned ? "Already checked in here" : "Check-in complete"}</p><h2 className="mt-1 text-lg font-bold">{result.participantNames?.join(" · ") ?? result.participantName}</h2></div><Badge variant="outline" className="border-current/20 bg-white/60 dark:bg-black/20">{result.checkpoint.name}</Badge></div>
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm opacity-75"><span>{result.registrationReference}</span><span>{result.ticketName}</span><span>{formatScanTime(result.scannedAt)}</span></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {attendeeSearchError && <div role="status" className="rounded-xl border bg-card p-5 text-center text-sm text-muted-foreground">{attendeeSearchError}</div>}
+
+            {attendeeMatches.length > 0 && (
+              <section className="overflow-hidden rounded-xl border bg-card shadow-sm" aria-live="polite">
+                <div className="flex items-center justify-between gap-3 border-b px-4 py-3 sm:px-5"><div><h2 className="font-bold">Search results</h2><p className="text-xs text-muted-foreground">Tap check in on the correct participant</p></div><Badge variant="secondary">{attendeeMatches.length}{attendeeMatches.length === 25 ? "+" : ""}</Badge></div>
+                <div className="divide-y">
+                  {attendeeMatches.map((match) => (
+                    <div key={match.id} className="flex items-center gap-3 p-4 sm:px-5">
+                      <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary sm:flex"><Users className="h-5 w-5" /></div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold leading-5">{match.participant.name}{match.participantCount && match.participantCount > 1 ? ` + ${match.participantCount - 1}` : ""}</p>
+                        <p className="mt-1 truncate text-xs text-muted-foreground"><span className="font-mono">{match.registrationReference}</span> · {match.ticket.category ? `${match.ticket.category} · ` : ""}{match.ticket.name}</p>
+                        {match.participants && match.participants.length > 1 && <p className="mt-1 truncate text-xs text-muted-foreground">Group: {match.participants.map((entry) => entry.participant.name).join(", ")}</p>}
+                      </div>
+                      <Button type="button" className="h-11 shrink-0 px-4" disabled={submitting} onClick={() => void submitCheckinValues("", match.registrationReference)}>{submitting ? "Saving…" : "Check in"}</Button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {!scannerOpen && !result && attendeeMatches.length === 0 && !attendeeSearchError && (
+              <div className="rounded-xl border border-dashed bg-muted/20 px-5 py-10 text-center sm:py-12">
+                <ScanLine className="mx-auto h-7 w-7 text-muted-foreground" />
+                <p className="mt-3 font-semibold">Ready for the next participant</p>
+                <p className="mt-1 text-sm text-muted-foreground">Search above or scan the QR code on their ticket.</p>
+              </div>
+            )}
+
+            <div className="flex justify-center gap-2 sm:hidden">
+              <Button asChild variant="ghost" size="sm"><Link to={`/organizer/events/${eventId}/checkpoints`}><Settings2 />Checkpoints</Link></Button>
+              <Button asChild variant="ghost" size="sm"><Link to={`/organizer/events/${eventId}/check-in`}><ClipboardList />Report</Link></Button>
+            </div>
+          </>
+        )}
       </div>
     </OrganizerDashboardLayout>
   );
