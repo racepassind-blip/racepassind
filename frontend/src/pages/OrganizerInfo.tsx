@@ -5,7 +5,6 @@ import {
   CalendarDays,
   CheckCircle2,
   ClipboardCheck,
-  CreditCard,
   ListChecks,
   MapPin,
   Mail,
@@ -26,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createWhatsAppUrl, WHATSAPP_MESSAGES } from "@/lib/whatsapp";
 
-type SportKey = "running" | "cycling" | "trekking" | "badminton" | "tennis" | "table-tennis";
+type SportKey = "running" | "cycling" | "trekking" | "badminton" | "table-tennis" | "cricket" | "other-formats";
 
 interface SportFeature {
   title: string;
@@ -45,69 +44,80 @@ const sportTabs: Array<{ key: SportKey; label: string }> = [
   { key: "cycling", label: "Cycling" },
   { key: "trekking", label: "Trekking" },
   { key: "badminton", label: "Badminton" },
-  { key: "tennis", label: "Tennis" },
   { key: "table-tennis", label: "Table tennis" },
+  { key: "cricket", label: "Cricket" },
+  { key: "other-formats", label: "More formats" },
 ];
 
 const sportPlaybooks: Record<SportKey, SportPlaybook> = {
   running: {
     label: "Road races and runs",
-    summary: "Run registration, participant operations, bibs, check-in, checkpoints, and timed results from the same event record.",
+    summary: "Manage runners from distance selection and bib allocation through checkpoint scans and published finish times.",
     features: [
-      { title: "Categories and ticket tiers", description: "Set distances, capacity, prices, sale windows, custom questions, and add-ons.", icon: Settings2 },
-      { title: "Direct UPI verification", description: "Review submitted UTR references before confirming paid registrations.", icon: WalletCards },
-      { title: "Bibs and event-day check-in", description: "Allocate bibs, scan QR tickets, and monitor progress across checkpoints.", icon: ScanLine },
-      { title: "Timed race results", description: "Enter finish times and publish category rankings with pace calculations.", icon: Trophy },
+      { title: "Distances and entry tiers", description: "Set race distances, category capacity, ticket prices, and registration questions.", icon: Settings2 },
+      { title: "Bib allocation", description: "Assign bib numbers and keep each number linked to a confirmed runner.", icon: Ticket },
+      { title: "Checkpoint scans", description: "Scan QR tickets at event stations and review each runner’s check-in history.", icon: ScanLine },
+      { title: "Timed results", description: "Record finish times and publish category rankings with calculated pace.", icon: Trophy },
     ],
   },
   cycling: {
     label: "Rides and cycling races",
-    summary: "Keep rider registration, payment verification, bibs, event-day operations, and results together.",
+    summary: "Set up ride distances, manage riders and bibs, and publish timed results with average speed.",
     features: [
-      { title: "Ride categories", description: "Configure distances, entry tiers, participant questions, inventory, and add-ons.", icon: Settings2 },
-      { title: "Payment and participant control", description: "Verify UPI references, confirm riders, add offline entries, and export lists.", icon: ClipboardCheck },
-      { title: "Rider check-in", description: "Use bibs, QR tickets, checkpoints, and duplicate-scan protection on event day.", icon: QrCode },
-      { title: "Cycling results", description: "Publish finish times, category rankings, and average-speed calculations.", icon: Trophy },
+      { title: "Ride distances", description: "Create distance-based categories with ticket tiers, capacity, and add-ons.", icon: Settings2 },
+      { title: "Rider numbers", description: "Allocate bib numbers and export the confirmed rider list.", icon: ClipboardCheck },
+      { title: "QR check-in", description: "Scan riders at configured checkpoints and see which stations they have passed.", icon: QrCode },
+      { title: "Cycling results", description: "Enter finish times and publish category rankings with average speed.", icon: Trophy },
     ],
   },
   trekking: {
     label: "Trekking and outdoor experiences",
-    summary: "Publish a clear route-based event with one shared trek distance, participant waivers, pickup points, ticket tiers, and event-day check-in.",
+    summary: "Give trekkers one clear route, meeting details, waiver information, and a simple arrival process.",
     features: [
-      { title: "One shared trek route", description: "Keep the registration simple for a trek: one route, clear capacity, ticket tiers, and no artificial distance categories.", icon: MapPin },
-      { title: "Waiver before registration", description: "Collect required participant acknowledgements for safety, responsibility, and event conditions as part of the registration flow.", icon: ClipboardCheck },
-      { title: "Pickup and meeting points", description: "Show participants where to meet and help the organizer coordinate the event-day start point.", icon: CalendarDays },
-      { title: "QR check-in", description: "Confirm arrivals from the same participant list and keep the event-day record searchable.", icon: QrCode },
+      { title: "One shared trek route", description: "Set the event route once, with ticket tiers and capacity for the trek.", icon: MapPin },
+      { title: "Waiver acknowledgement", description: "Collect consent to the event’s safety and participation terms during registration.", icon: ClipboardCheck },
+      { title: "Pickup and meeting points", description: "Publish where participants should gather before the trek begins.", icon: CalendarDays },
+      { title: "QR check-in", description: "Scan tickets and track arrivals against the participant list.", icon: QrCode },
     ],
   },
   badminton: {
     label: "Badminton tournaments",
-    summary: "Operate individual and team competitions from category setup through public match results.",
+    summary: "Run singles, doubles, or team entries through rounds, courts, scoring, and approved public results.",
     features: [
-      { title: "Singles, doubles, and teams", description: "Create categories for individual, doubles, and squad-based formats.", icon: Users },
-      { title: "Rounds and courts", description: "Configure tournament rounds, courts, match schedules, and scoring rules.", icon: CalendarDays },
-      { title: "Player selection and scoring", description: "Choose players from team rosters, enter game scores, and record winners.", icon: ListChecks },
-      { title: "Public results", description: "Publish category-specific matches, standings, brackets, and final results.", icon: Trophy },
-    ],
-  },
-  tennis: {
-    label: "Tennis events",
-    summary: "Use a dependable registration and event-day workflow for tennis entries today.",
-    features: [
-      { title: "Categories and entries", description: "Publish categories, ticket tiers, participant forms, rules, and add-ons.", icon: Settings2 },
-      { title: "UPI payment review", description: "Keep payment references, approvals, and participant status in one queue.", icon: WalletCards },
-      { title: "Participant operations", description: "Add offline players, export lists, and keep registration records searchable.", icon: Users },
-      { title: "QR check-in", description: "Confirm arrivals through QR tickets and registration references.", icon: ScanLine },
+      { title: "Singles, doubles, and teams", description: "Create individual and team categories with the right player rosters.", icon: Users },
+      { title: "Rounds and courts", description: "Configure rounds, assign courts, and schedule matches.", icon: CalendarDays },
+      { title: "Game scoring", description: "Enter game scores, choose the winner, and follow bracket progression.", icon: ListChecks },
+      { title: "Public match results", description: "Review and approve completed matches before they appear on the results page.", icon: Trophy },
     ],
   },
   "table-tennis": {
-    label: "Table-tennis events",
-    summary: "Replace scattered forms, payment screenshots, and participant lists with one event workspace.",
+    label: "Table tennis tournaments",
+    summary: "Manage player entries, tournament rounds, game scores, and approved match results.",
     features: [
-      { title: "Event registration", description: "Set categories, tickets, capacity, schedules, custom questions, and add-ons.", icon: Settings2 },
-      { title: "Payment verification", description: "Review direct UPI references and confirm approved registrations.", icon: CreditCard },
-      { title: "Participant management", description: "Search entries, add offline participants, and export operational lists.", icon: Users },
-      { title: "Event-day check-in", description: "Scan confirmed entries and track arrivals at configured checkpoints.", icon: QrCode },
+      { title: "Player categories", description: "Set entry categories, tickets, capacity, and participant details.", icon: Settings2 },
+      { title: "Rounds and matches", description: "Organize tournament rounds, assign courts, and schedule players.", icon: CalendarDays },
+      { title: "Game scoring", description: "Record game scores and select the match winner.", icon: ListChecks },
+      { title: "Public match results", description: "Approve completed matches for the public results page.", icon: Trophy },
+    ],
+  },
+  cricket: {
+    label: "Cricket tournaments",
+    summary: "Set tournament basics and manage team entries, match rounds, and event-day arrivals.",
+    features: [
+      { title: "Cricket event setup", description: "Choose league or knockout format, ball type, overs, and squad size.", icon: Settings2 },
+      { title: "Team entries", description: "Collect team registrations and keep player details together.", icon: Users },
+      { title: "Tournament schedule", description: "Set up rounds and matches in the organizer workspace.", icon: CalendarDays },
+      { title: "Event-day check-in", description: "Use QR tickets and checkpoint scans to record arrivals.", icon: QrCode },
+    ],
+  },
+  "other-formats": {
+    label: "More event formats",
+    summary: "Create triathlons, open-water swims, obstacle races, and walkathons with the shared event workflow.",
+    features: [
+      { title: "Categories and tickets", description: "Set entry options, capacity, prices, and registration questions.", icon: Settings2 },
+      { title: "Participant records", description: "Review registrations, add offline entries, and export lists.", icon: Users },
+      { title: "Waivers and pickup points", description: "Add event-level acknowledgements and meeting instructions when needed.", icon: ClipboardCheck },
+      { title: "QR check-in", description: "Scan confirmed tickets at the event or configured checkpoints.", icon: QrCode },
     ],
   },
 };
@@ -168,7 +178,7 @@ const OrganizerInfo = () => {
 
       <section className="border-y bg-muted/40">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
-          <div className="max-w-3xl"><p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Built around the sport</p><h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">See what you can run today.</h2><p className="mt-4 text-lg leading-7 text-muted-foreground">The registration foundation stays consistent. Event-day and results tools adapt to the sport.</p></div>
+          <div className="max-w-3xl"><p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Built around the sport</p><h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">See what you can run today.</h2><p className="mt-4 text-lg leading-7 text-muted-foreground">Start with one registration workspace, then use the event-day and results tools available for your sport. Advanced tools are available on paid events.</p></div>
           <div className="mt-8 flex gap-1 overflow-x-auto rounded-xl border bg-card p-1.5" role="tablist" aria-label="Sport capabilities">{sportTabs.map((sport) => <button key={sport.key} type="button" role="tab" aria-selected={activeSport === sport.key} onClick={() => setActiveSport(sport.key)} className={`whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-bold transition-colors ${activeSport === sport.key ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>{sport.label}</button>)}</div>
           <div className="mt-5 overflow-hidden rounded-2xl border bg-card shadow-sm"><div className="border-b p-6 sm:p-8"><Badge variant="outline">{playbook.label}</Badge><h3 className="mt-3 text-2xl font-black">{sportTabs.find((sport) => sport.key === activeSport)?.label}</h3><p className="mt-2 max-w-3xl text-muted-foreground">{playbook.summary}</p></div><div className="grid gap-px bg-border md:grid-cols-2">{playbook.features.map((feature) => { const Icon = feature.icon; return <div key={feature.title} className="flex gap-4 bg-card p-6"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon className="h-5 w-5" /></span><div><p className="font-black">{feature.title}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{feature.description}</p></div></div>; })}</div></div>
         </div>

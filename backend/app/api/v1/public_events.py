@@ -183,6 +183,10 @@ def search_public_events(
     order = Event.start_date.desc() if normalized_timing == "PAST" else Event.start_date.asc()
     events = db.scalars(_event_query().where(*filters).order_by(order, Event.id).offset((page - 1) * page_size).limit(page_size)).unique().all()
     facet_filter = [Event.status == "published", Event.archived_at.is_(None)]
+    if normalized_timing == "UPCOMING":
+        facet_filter.append(event_end >= now)
+    elif normalized_timing == "PAST":
+        facet_filter.append(event_end < now)
     sports = [value for value in db.scalars(select(Event.category).where(*facet_filter).distinct().order_by(Event.category)).all() if value]
     cities = [value for value in db.scalars(select(Event.city).where(*facet_filter, Event.city.is_not(None)).distinct().order_by(Event.city)).all() if value]
     fee_bps, fee_min, fee_max, fee_fixed = _fee_config_values(db)

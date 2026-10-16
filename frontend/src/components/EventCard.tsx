@@ -12,7 +12,12 @@ const categoryColors: Record<string, string> = {
 };
 
 export function EventCard({ event }: { event: SportEvent }) {
-  const lowestPrice = event.tiers.length > 0 ? Math.min(...event.tiers.map((t) => t.price)) : null;
+  const availableTiers = event.tiers.filter((tier) => tier.available > 0);
+  const lowestPrice = availableTiers.length > 0 ? Math.min(...availableTiers.map((tier) => tier.price)) : null;
+  const eventEnded = new Date(`${event.endDate || event.date}T23:59:59`).getTime() < Date.now();
+  const statusLabel = eventEnded ? "Past event" : event.registrationStatus === "closed" ? "Registration closed" : event.tiers.length > 0 && availableTiers.length === 0 ? null : event.registrationStatus === "open" ? "Registration open" : null;
+  const priceLabel = event.tiers.length === 0 ? "Details soon" : lowestPrice === null ? "Sold out" : lowestPrice === 0 ? "Free" : `From ₹${lowestPrice.toLocaleString("en-IN")}`;
+  const sportLabel = event.category.replaceAll("_", " ");
   const locationName = event.locationDetails?.name || event.location;
   const cityState = [event.locationDetails?.city, event.locationDetails?.state].filter(Boolean).join(", ");
   const eventDateLabel = event.endDate && event.endDate !== event.date
@@ -32,8 +37,8 @@ export function EventCard({ event }: { event: SportEvent }) {
           loading="lazy"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent opacity-70" />
-        <Badge className={`absolute left-4 top-4 ${categoryColors[event.category]} capitalize shadow-sm`}>
-          {event.category}
+        <Badge className={`absolute left-4 top-4 ${categoryColors[event.category] ?? "bg-slate-800 text-white"} capitalize shadow-sm`}>
+          {sportLabel}
         </Badge>
       </div>
 
@@ -41,6 +46,7 @@ export function EventCard({ event }: { event: SportEvent }) {
         <h3 className="text-lg font-bold tracking-tight transition-colors group-hover:text-primary">
           {event.title}
         </h3>
+        {statusLabel && <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusLabel === "Registration open" ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"}`}>{statusLabel}</span>}
 
         <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
           <span className="flex items-center gap-2">
@@ -60,7 +66,7 @@ export function EventCard({ event }: { event: SportEvent }) {
         </div>
         <div className="flex items-center justify-between pt-2 border-t">
           <span className="text-sm text-muted-foreground">{event.distance}</span>
-          <span className="font-bold text-primary">{lowestPrice === null ? "Details soon" : `From ₹${lowestPrice.toLocaleString("en-IN")}`}</span>
+          <span className="font-bold text-primary">{priceLabel}</span>
         </div>
       </div>
     </Link>

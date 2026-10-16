@@ -52,24 +52,24 @@ const Login = () => {
         <div className="pointer-events-none absolute -left-24 top-16 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
         <div className="pointer-events-none absolute -right-24 bottom-10 h-72 w-72 rounded-full bg-accent/10 blur-3xl" />
 
-        <div className="relative mx-auto w-full max-w-none px-4 py-10 sm:px-6 sm:py-16 lg:px-8">
-          <div className="grid overflow-hidden rounded-2xl border bg-card shadow-sm lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="relative mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-14 lg:px-8">
+          <div className="grid overflow-hidden rounded-[2rem] border border-border/70 bg-card shadow-[0_24px_80px_-36px_rgba(15,23,42,0.45)] lg:grid-cols-[0.92fr_1.08fr]">
             <section className="relative overflow-hidden bg-slate-950 px-6 py-8 text-white sm:p-10 lg:p-12">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500 via-white to-green-500" />
               <div className="absolute -bottom-20 -right-20 h-52 w-52 rounded-full bg-primary/20 blur-3xl" />
               <div className="relative">
-                <div className="mb-10 flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15">
+                <div className="mb-8 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
                   <ShieldCheck className="h-6 w-6 text-orange-300" />
                 </div>
                 <p className="mb-4 inline-flex items-center rounded-full border border-orange-300/30 bg-orange-300/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-orange-200">
                   Members only
                 </p>
-                <h1 className="max-w-sm text-3xl font-extrabold tracking-tight sm:text-4xl">Welcome back to race day.</h1>
+                <h1 className="max-w-sm text-3xl font-black tracking-tight sm:text-4xl">Welcome back to race day.</h1>
                 <p className="mt-4 max-w-sm text-sm leading-6 text-slate-300">
                   Sign in with your existing SportPass account to keep your registrations, tickets, and race plans together.
                 </p>
 
-                <ul className="mt-8 space-y-4 text-sm text-slate-200">
+                <ul className="mt-7 space-y-3 text-sm text-slate-200">
                   <li className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-400" /><span>View your registrations and tickets</span></li>
                   <li className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-400" /><span>Keep your race-day details in one place</span></li>
                   <li className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-400" /><span>Access your participant dashboard</span></li>
@@ -78,16 +78,16 @@ const Login = () => {
             </section>
 
             <section className="px-6 py-8 sm:p-10 lg:p-12">
-              <div className="mb-8">
-                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <div className="mb-7">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <LogIn className="h-5 w-5" />
                 </div>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Member access</p>
-                <h2 className="mt-2 text-2xl font-extrabold tracking-tight">Sign in to your account</h2>
+                <h2 className="mt-2 text-2xl font-black tracking-tight">Sign in to your account</h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">Use the email and password linked to your SportPass membership.</p>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-5">
+              <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email address</Label>
                   <Input
@@ -133,7 +133,7 @@ const Login = () => {
                 </div>
               </form>
 
-              <div className="mt-8 border-t pt-6 text-center text-sm">
+              <div className="mt-7 border-t pt-6 text-center text-sm">
                 <p className="text-muted-foreground">Not a member yet?</p>
                 <Button type="button" variant="link" className="mt-1 h-auto gap-1 p-0 font-semibold" onClick={() => navigate("/signup?type=participant")}>
                   Create a participant account <UserPlus className="h-3.5 w-3.5" />

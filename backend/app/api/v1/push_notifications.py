@@ -91,7 +91,7 @@ def register_push_subscription(
     return {"id": str(subscription.id), "enabled": True}
 
 
-@router.delete("/push/subscriptions/{subscription_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/push/subscriptions/{subscription_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 def unregister_push_subscription(
     subscription_id: UUID,
     user: User = Depends(require_roles("participant", "user", "organizer", "admin")),

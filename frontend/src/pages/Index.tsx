@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowRight, HeartHandshake, Package, Search, ShieldCheck, X } from "lucide-react";
+import { ArrowRight, Bell, Bike, Check, ClipboardList, HeartHandshake, MapPinned, Package, QrCode, Search, ShieldCheck, Trophy, WalletCards, X } from "lucide-react";
 import { Layout } from "@/components/Layout";
 import { EventCard } from "@/components/EventCard";
 import { CategoriesSection } from "@/components/CategoriesSection";
@@ -36,7 +36,7 @@ const Index = () => {
 
   return (
     <Layout>
-      <section className="relative isolate min-h-[560px] overflow-hidden bg-[#101b35] text-white sm:min-h-[620px]">
+      <section className="relative isolate min-h-[520px] overflow-hidden bg-[#101b35] text-white sm:min-h-[570px]">
         <img
           src={heroImg}
           alt="Runners crossing a finish line"
@@ -47,21 +47,21 @@ const Index = () => {
         <div className="absolute -right-24 top-16 -z-10 h-72 w-72 rounded-full bg-[#ff9933]/12 blur-3xl" />
         <div className="absolute -bottom-24 left-1/3 -z-10 h-72 w-72 rounded-full bg-[#138808]/12 blur-3xl" />
 
-        <div className="mx-auto flex min-h-[560px] max-w-7xl flex-col justify-center px-4 pb-28 pt-14 sm:min-h-[620px] sm:px-6 sm:pt-24 lg:px-8">
+        <div className="mx-auto flex min-h-[520px] max-w-6xl flex-col justify-center px-4 pb-24 pt-12 sm:min-h-[570px] sm:px-6 sm:pt-16 lg:px-8">
           <div className="max-w-2xl">
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-bold uppercase tracking-[0.16em] backdrop-blur-sm">
               <span className="h-1.5 w-1.5 rounded-full bg-[#ff9933]" />
               SportPass India
               <span className="h-1.5 w-1.5 rounded-full bg-[#138808]" />
             </div>
-            <h1 className="text-4xl font-black leading-[1.08] tracking-tight sm:text-6xl lg:text-7xl">
-              Find your next event.
+            <h1 className="max-w-3xl text-4xl font-black leading-[1.04] tracking-tight sm:text-6xl lg:text-7xl">
+              Find your next way to move.
             </h1>
             <p className="mt-4 max-w-xl text-base leading-7 text-white/80 sm:mt-6 sm:text-xl sm:leading-8">
-              Browse races, tournaments, treks, and community events across India. Pick a date, choose your entry, and get moving.
+              Discover races, treks, tournaments, and community events across India. Choose your challenge, register in minutes, and show up ready.
             </p>
 
-            <div className="mt-8 flex max-w-2xl flex-col gap-3 sm:flex-row">
+            <div className="mt-7 flex max-w-2xl flex-col gap-3 sm:flex-row">
               <div className="relative flex-1">
                 <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -78,28 +78,28 @@ const Index = () => {
               </Button>
             </div>
 
-            <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm text-white/75">
+            <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 text-sm text-white/75">
               <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-[#ff9933]" /> Secure registration</span>
               <span className="flex items-center gap-2"><HeartHandshake className="h-4 w-4 text-[#138808]" /> Built for Indian sports</span>
             </div>
           </div>
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 hidden border-t border-white/15 bg-[#101b35]/80 backdrop-blur-md sm:block">
-          <div className="mx-auto grid max-w-7xl grid-cols-3 divide-x divide-white/15 px-4 py-5 text-center sm:px-6 lg:px-8">
-            <div><p className="text-base font-bold sm:text-lg">Every sport</p><p className="mt-1 text-xs text-white/60 sm:text-sm">From races to treks and tournaments</p></div>
-            <div><p className="text-base font-bold sm:text-lg">India-first</p><p className="mt-1 text-xs text-white/60 sm:text-sm">Simple registration &amp; trusted payments</p></div>
-            <div><p className="text-base font-bold sm:text-lg">Community-led</p><p className="mt-1 text-xs text-white/60 sm:text-sm">Built around real sporting events</p></div>
+        <div className="relative border-t border-white/15 bg-[#101b35]/85 backdrop-blur-md sm:absolute sm:inset-x-0 sm:bottom-0">
+          <div className="mx-auto grid max-w-6xl divide-y divide-white/15 px-4 py-3 sm:grid-cols-3 sm:divide-x sm:divide-y-0 sm:px-6 sm:py-5 lg:px-8">
+            <div className="flex items-start gap-3 py-3 sm:py-0 sm:pr-4 lg:gap-4 lg:pr-8"><span className="pt-0.5 text-xs font-black tracking-widest text-[#ffb866]">01</span><div><p className="font-bold sm:text-lg">Find your event</p><p className="mt-1 text-xs leading-5 text-white/60 sm:text-sm">Explore races, treks, and tournaments.</p></div></div>
+            <div className="flex items-start gap-3 py-3 sm:px-4 sm:py-0 lg:gap-4 lg:px-8"><span className="pt-0.5 text-xs font-black tracking-widest text-[#ffb866]">02</span><div><p className="font-bold sm:text-lg">Register simply</p><p className="mt-1 text-xs leading-5 text-white/60 sm:text-sm">Choose your entry and pay securely.</p></div></div>
+            <div className="flex items-start gap-3 py-3 sm:py-0 sm:pl-4 lg:gap-4 lg:pl-8"><span className="pt-0.5 text-xs font-black tracking-widest text-[#ffb866]">03</span><div><p className="font-bold sm:text-lg">Show up ready</p><p className="mt-1 text-xs leading-5 text-white/60 sm:text-sm">Keep your ticket and event details close.</p></div></div>
           </div>
         </div>
       </section>
 
-      <section id="events" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+      <section id="events" className="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
             <p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-primary">Selected for you</p>
-            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Upcoming events</h2>
-            <p className="mt-2 text-muted-foreground">A few events coming up soon.</p>
+            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Events worth showing up for</h2>
+            <p className="mt-2 text-muted-foreground">Find your next start line, trail, court, or finish line.</p>
           </div>
           <Link to="/events" className="hidden items-center gap-1 text-sm font-bold text-primary transition-colors hover:text-primary/80 sm:flex">
             View all <ArrowRight className="h-4 w-4" />
@@ -116,51 +116,70 @@ const Index = () => {
         <CategoriesSection />
       </div>
 
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
-        <div className="mb-10 text-center">
-          <p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-primary">More than registration</p>
-          <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Everything you need on event day.</h2>
-          <p className="mt-2 text-muted-foreground">Simple tools for participants and organizers, from registration through results.</p>
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20" aria-labelledby="event-day-heading">
+        <div className="mb-9 grid gap-4 md:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)] md:items-end">
+          <div>
+            <p className="mb-3 text-xs font-bold uppercase tracking-[0.22em] text-primary">More than registration</p>
+            <h2 id="event-day-heading" className="max-w-xl text-3xl font-black leading-tight tracking-tight sm:text-4xl">Everything you need on event day.</h2>
+          </div>
+          <p className="max-w-md text-sm leading-6 text-muted-foreground md:justify-self-end">Bring signups, people, check-in, and results into one place. Then use the tools built for your sport.</p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <h3 className="text-lg font-bold">Running &amp; Cycling</h3>
-            <p className="mt-2 text-sm text-muted-foreground">Distance-based events with participant management workflows</p>
-            <ul className="mt-4 space-y-2 text-sm">
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Registrations</li>
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Payments</li>
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Participant management</li>
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Bib allotment</li>
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Check-in</li>
-            </ul>
-          </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {[
+            {
+              icon: Bike,
+              number: "01",
+              title: "Running & cycling",
+              description: "Keep the field organized from bib pickup to the finish line.",
+              features: ["Distance categories and bibs", "QR scans at checkpoints", "Timed results and rankings"],
+              accent: "bg-orange-500",
+              iconStyle: "bg-orange-50 text-orange-700",
+            },
+            {
+              icon: MapPinned,
+              number: "02",
+              title: "Trekking",
+              description: "Make the route and meeting details clear before anyone sets off.",
+              features: ["Shared route and pickup points", "Waiver acknowledgement", "Tickets and QR check-in"],
+              accent: "bg-emerald-600",
+              iconStyle: "bg-emerald-50 text-emerald-700",
+            },
+            {
+              icon: Trophy,
+              number: "03",
+              title: "Badminton",
+              description: "Give players and organizers a clear path through the draw.",
+              features: ["Draws and court management", "Matches and score entry", "Standings and results"],
+              accent: "bg-sky-600",
+              iconStyle: "bg-sky-50 text-sky-700",
+            },
+          ].map(({ icon: Icon, number, title, description, features, accent, iconStyle }) => (
+            <article key={title} className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+              <div className={`h-1.5 ${accent}`} />
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <span className={`flex h-12 w-12 items-center justify-center rounded-xl ${iconStyle}`}><Icon className="h-6 w-6" aria-hidden="true" /></span>
+                  <span className="text-xs font-bold tracking-[0.18em] text-muted-foreground/60">{number}</span>
+                </div>
+                <h3 className="mt-6 text-xl font-black tracking-tight">{title}</h3>
+                <p className="mt-2 min-h-12 text-sm leading-6 text-muted-foreground">{description}</p>
+                <ul className="mt-6 space-y-3 border-t border-border pt-5 text-sm font-medium">
+                  {features.map((feature) => <li key={feature} className="flex items-start gap-2.5"><Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />{feature}</li>)}
+                </ul>
+              </div>
+            </article>
+          ))}
+        </div>
 
-          <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <h3 className="text-lg font-bold">Trekking</h3>
-            <p className="mt-2 text-sm text-muted-foreground">Route-based outdoor events with the safety details participants need</p>
-            <ul className="mt-4 space-y-2 text-sm">
-              <li className="flex items-start gap-2"><span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#ff9933]" />One shared trek route</li>
-              <li className="flex items-start gap-2"><span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#ff9933]" />Waiver acknowledgement</li>
-              <li className="flex items-start gap-2"><span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#ff9933]" />Pickup and meeting points</li>
-              <li className="flex items-start gap-2"><span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#ff9933]" />Tickets and QR check-in</li>
-            </ul>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <h3 className="text-lg font-bold">Badminton</h3>
-            <p className="mt-2 text-sm text-muted-foreground">Tournament-style events with draw management</p>
-            <ul className="mt-4 space-y-2 text-sm">
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Registrations</li>
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Payments</li>
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Tournament setup</li>
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Draws</li>
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Courts</li>
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Matches</li>
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Scores</li>
-              <li className="flex items-start gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#ff9933] mt-1.5" />Results</li>
-            </ul>
-          </div>
+        <div className="mt-4 grid gap-4 rounded-2xl bg-[#101b35] px-6 py-6 text-white sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:items-center sm:px-8">
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#ffb866]">Event essentials</p><p className="mt-1 text-lg font-bold">The details stay together.</p></div>
+          <ul className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs font-medium text-white/85 sm:text-sm">
+            <li className="flex items-center gap-2"><ClipboardList className="h-4 w-4 shrink-0 text-[#ffb866]" aria-hidden="true" />Registrations</li>
+            <li className="flex items-center gap-2"><WalletCards className="h-4 w-4 shrink-0 text-[#ffb866]" aria-hidden="true" />Payments</li>
+            <li className="flex items-center gap-2"><QrCode className="h-4 w-4 shrink-0 text-[#ffb866]" aria-hidden="true" />Check-in</li>
+            <li className="flex items-center gap-2"><Bell className="h-4 w-4 shrink-0 text-[#ffb866]" aria-hidden="true" />Participant updates</li>
+          </ul>
         </div>
       </section>
 

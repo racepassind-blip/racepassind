@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 from html import escape as escape_html
 import io
 import re
@@ -992,11 +993,26 @@ def organizer_credits(amount_paise: int | None = Query(default=None, ge=0), user
     return {"accounts": [{"organizationId": str(org_id), "balancePaise": get_balance(db, org_id)} for org_id in organization_ids], "paymentSettings": get_credit_payment_settings(db, amount_paise=amount_paise, organizer_name=organization_name)}
 
 
+def _credit_month_bounds(month: str, timezone_offset_minutes: int) -> tuple[dt.datetime, dt.datetime]:
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month) or month >= "9999-12":
+        raise HTTPException(status_code=422, detail="month must be a valid YYYY-MM value")
+    year, month_number = map(int, month.split("-"))
+    if year < 2:
+        raise HTTPException(status_code=422, detail="month must be a valid YYYY-MM value")
+    local_timezone = dt.timezone(-dt.timedelta(minutes=timezone_offset_minutes))
+    start = dt.datetime(year, month_number, 1, tzinfo=local_timezone)
+    end = dt.datetime(year + (month_number == 12), month_number % 12 + 1, 1, tzinfo=local_timezone)
+    return start.astimezone(dt.timezone.utc), end.astimezone(dt.timezone.utc)
+
+
 @router.get("/credits/transactions")
 def organizer_credit_transactions(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     event_id: UUID | None = Query(default=None),
+    month: str | None = Query(default=None),
+    timezone_offset_minutes: int = Query(default=0, ge=-840, le=840),
+    direction: Literal["CREDIT", "DEBIT"] | None = Query(default=None),
     user: User = Depends(require_roles("organizer", "admin")),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -1004,6 +1020,13 @@ def organizer_credit_transactions(
     filters = [CreditTransaction.organization_id.in_(organization_ids)]
     if event_id:
         filters.append(CreditTransaction.event_id == event_id)
+    if month:
+        start, end = _credit_month_bounds(month, timezone_offset_minutes)
+        filters.extend((CreditTransaction.created_at >= start, CreditTransaction.created_at < end))
+    if direction == "CREDIT":
+        filters.append(CreditTransaction.balance_after_paise > CreditTransaction.balance_before_paise)
+    elif direction == "DEBIT":
+        filters.append(CreditTransaction.balance_after_paise < CreditTransaction.balance_before_paise)
     total = int(db.scalar(select(func.count()).select_from(CreditTransaction).where(*filters)) or 0)
     rows = db.scalars(select(CreditTransaction).where(*filters).order_by(CreditTransaction.created_at.desc(), CreditTransaction.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
     registration_refs = {str(registration.id): registration.registration_reference or str(registration.id) for registration in db.scalars(select(Registration).where(Registration.id.in_([row.registration_id for row in rows if row.registration_id]))).all()}
@@ -1017,13 +1040,22 @@ def organizer_credit_transactions(
 def organizer_credit_topups(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
+    month: str | None = Query(default=None),
+    timezone_offset_minutes: int = Query(default=0, ge=-840, le=840),
+    topup_status: Literal["PENDING", "APPROVED", "REJECTED"] | None = Query(default=None),
     user: User = Depends(require_roles("organizer", "admin")),
     db: Session = Depends(get_db),
 ) -> dict:
     organization_ids = _credit_org_ids(db, user)
-    filters = [CreditTopupRequest.organization_id.in_(organization_ids)]
+    organization_filter = CreditTopupRequest.organization_id.in_(organization_ids)
+    filters = [organization_filter]
+    if month:
+        start, end = _credit_month_bounds(month, timezone_offset_minutes)
+        filters.extend((CreditTopupRequest.requested_at >= start, CreditTopupRequest.requested_at < end))
+    if topup_status:
+        filters.append(CreditTopupRequest.status == topup_status)
     total = int(db.scalar(select(func.count()).select_from(CreditTopupRequest).where(*filters)) or 0)
-    pending = int(db.scalar(select(func.count()).select_from(CreditTopupRequest).where(*filters, CreditTopupRequest.status == "PENDING")) or 0)
+    pending = int(db.scalar(select(func.count()).select_from(CreditTopupRequest).where(organization_filter, CreditTopupRequest.status == "PENDING")) or 0)
     rows = db.scalars(select(CreditTopupRequest).where(*filters).order_by(CreditTopupRequest.requested_at.desc(), CreditTopupRequest.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
     return {"items": [{"id": str(row.id), "organizationId": str(row.organization_id), "amountPaise": row.amount_paise, "creditsPaise": row.credits_paise, "utrReference": row.utr_reference, "status": row.status, "requestedAt": row.requested_at, "rejectionReason": row.rejection_reason} for row in rows], "page": page, "pageSize": page_size, "total": total, "pending": pending}
 

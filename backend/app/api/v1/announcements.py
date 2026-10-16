@@ -107,7 +107,7 @@ def replace_organizer_announcement(event_id: UUID, announcement_id: UUID, payloa
     return update_organizer_announcement(event_id, announcement_id, payload, user, _, db)
 
 
-@router.delete("/organizer/events/{event_id}/announcements/{announcement_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/organizer/events/{event_id}/announcements/{announcement_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 def delete_organizer_draft(event_id: UUID, announcement_id: UUID, user: User = Depends(require_roles("organizer", "admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> None:
     try:
         delete_draft(db, user, event_id, announcement_id)
