@@ -234,25 +234,25 @@ const OrganizerCheckin = () => {
           </div>
         </div>
 
-        <section className="sticky top-16 z-30 -mx-4 border-y bg-background/95 px-4 py-3 shadow-sm backdrop-blur sm:static sm:mx-0 sm:rounded-xl sm:border sm:p-4 sm:shadow-none">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="checkin-event" className="text-xs font-semibold text-muted-foreground">Event</Label>
-              <div id="checkin-event" aria-readonly="true" className="flex h-11 items-center rounded-md border border-input bg-muted/40 px-3 text-sm font-medium text-foreground" title="Event is fixed for this check-in session">
+        <section className="sticky top-16 z-30 -mx-4 border-y bg-background/95 px-3 py-2 shadow-sm backdrop-blur sm:static sm:mx-0 sm:rounded-xl sm:border sm:p-4 sm:shadow-none">
+          <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
+            <div className="flex items-center gap-2 sm:block sm:space-y-1.5">
+              <Label htmlFor="checkin-event" className="w-16 shrink-0 text-xs font-semibold text-muted-foreground sm:w-auto">Event</Label>
+              <div id="checkin-event" aria-readonly="true" className="flex h-9 min-w-0 flex-1 items-center truncate rounded-md border border-input bg-muted/40 px-3 text-sm font-medium text-foreground sm:h-11" title="Event is fixed for this check-in session">
                 {selectedEvent?.name ?? "Loading event…"}
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="checkin-checkpoint" className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><MapPin className="h-3.5 w-3.5" />Checkpoint</Label>
+            <div className="flex items-center gap-2 sm:block sm:space-y-1.5">
+              <Label htmlFor="checkin-checkpoint" className="flex w-16 shrink-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground sm:w-auto"><MapPin className="h-3.5 w-3.5" />Checkpoint</Label>
               <Select value={checkpointId} onValueChange={chooseCheckpoint} disabled={checkpointsLoading || checkpoints.length === 0}>
-                <SelectTrigger id="checkin-checkpoint" className={`h-11 bg-background ${!checkpointId && checkpoints.length > 0 ? "border-primary ring-2 ring-primary/20" : ""}`} aria-label="Select checkpoint">
+                <SelectTrigger id="checkin-checkpoint" className={`h-9 min-w-0 flex-1 bg-background sm:h-11 ${!checkpointId && checkpoints.length > 0 ? "border-primary ring-2 ring-primary/20" : ""}`} aria-label="Select checkpoint">
                   <SelectValue placeholder={checkpointsLoading ? "Loading checkpoints…" : checkpoints.length === 0 ? "No checkpoints configured" : "Where are you checking in?"} />
                 </SelectTrigger>
                 <SelectContent>{checkpoints.map((checkpoint) => <SelectItem key={checkpoint.id} value={checkpoint.id}>{checkpoint.position}. {checkpoint.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
-          {readyToCheckIn && <div className="mt-3 flex items-center gap-2 border-t pt-3 text-xs"><span className="h-2 w-2 rounded-full bg-emerald-500" /><span className="font-semibold text-foreground">Ready at {selectedCheckpoint?.name}</span><span className="truncate text-muted-foreground">· {selectedEvent?.name}</span></div>}
+          {readyToCheckIn && <div className="mt-2 flex items-center gap-2 border-t pt-2 text-[11px] sm:mt-3 sm:pt-3 sm:text-xs"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" /><span className="font-semibold text-foreground">Ready at {selectedCheckpoint?.name}</span><span className="truncate text-muted-foreground">· {selectedEvent?.name}</span></div>}
           {!checkpointsLoading && checkpoints.length === 0 && eventId && <p className="mt-3 text-xs text-muted-foreground">This event has no checkpoints. <Link className="font-semibold text-primary underline underline-offset-2" to={`/organizer/events/${eventId}/checkpoints`}>Create one to start check-in</Link>.</p>}
         </section>
 
