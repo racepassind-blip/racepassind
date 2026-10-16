@@ -4,7 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 const items = [
-  { title: "My Tickets", url: "/dashboard", icon: Ticket },
+  { title: "My Tickets", url: "/dashboard", icon: ClipboardList },
   { title: "My Registrations", url: "/dashboard/registrations", icon: ClipboardList },
   { title: "Upcoming Events", url: "/dashboard/upcoming", icon: CalendarDays },
   { title: "Past Events", url: "/dashboard/past", icon: History },

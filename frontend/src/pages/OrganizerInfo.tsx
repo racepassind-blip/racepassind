@@ -11,7 +11,6 @@ import {
   QrCode,
   ScanLine,
   Settings2,
-  Ticket,
   Trophy,
   Users,
   WalletCards,
@@ -55,7 +54,7 @@ const sportPlaybooks: Record<SportKey, SportPlaybook> = {
     summary: "Manage runners from distance selection and bib allocation through checkpoint scans and published finish times.",
     features: [
       { title: "Distances and entry tiers", description: "Set race distances, category capacity, ticket prices, and registration questions.", icon: Settings2 },
-      { title: "Bib allocation", description: "Assign bib numbers and keep each number linked to a confirmed runner.", icon: Ticket },
+      { title: "Bib allocation", description: "Assign bib numbers and keep each number linked to a confirmed runner.", icon: ClipboardCheck },
       { title: "Checkpoint scans", description: "Scan QR tickets at event stations and review each runner’s check-in history.", icon: ScanLine },
       { title: "Timed results", description: "Record finish times and publish category rankings with calculated pace.", icon: Trophy },
     ],
@@ -130,7 +129,7 @@ const journeySteps = [
 ];
 
 const coreFeatures = [
-  { icon: Ticket, title: "One registration link", description: "Participants see the event, choose a category, pay, and submit their details in one flow." },
+  { icon: ClipboardCheck, title: "One registration link", description: "Participants see the event, choose a category, pay, and submit their details in one flow." },
   { icon: WalletCards, title: "Choose one payment mode per event", description: "Use admin-enabled Direct UPI with SportPass Credits or admin-enabled Cashfree checkout, with the payment status attached to every registration." },
   { icon: ClipboardCheck, title: "Waivers and pickup points", description: "Collect event-specific acknowledgements and publish meeting or pickup instructions before participants arrive." },
   { icon: Users, title: "A usable participant list", description: "Search by name, phone, email, or registration number and export the exact view you need." },
