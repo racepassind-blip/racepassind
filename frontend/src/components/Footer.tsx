@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import { Ticket } from "lucide-react";
 import { createWhatsAppUrl, WHATSAPP_MESSAGES } from "@/lib/whatsapp";
 
 export function Footer() {
@@ -12,9 +11,7 @@ export function Footer() {
           {/* Brand */}
           <div className="space-y-3">
             <Link to="/" className="flex items-center gap-2 text-lg font-black tracking-tight">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-                <Ticket className="h-4 w-4 text-primary" />
-              </span>
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-[10px] font-black text-primary">SP</span>
               SportPass <span className="text-primary">India</span>
             </Link>
             <p className="text-sm leading-relaxed text-muted-foreground">

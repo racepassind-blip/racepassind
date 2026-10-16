@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut, Menu, ShieldCheck, Ticket } from "lucide-react";
+import { LayoutDashboard, LogOut, Menu, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -52,9 +52,7 @@ export function Navbar() {
       <div className="h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" />
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
         <Link to="/" className="flex shrink-0 items-center gap-2 text-lg font-black tracking-tight sm:text-xl">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/15">
-            <Ticket className="h-5 w-5 text-primary" />
-          </span>
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-xs font-black text-primary ring-1 ring-primary/15">SP</span>
           <span>SportPass <span className="text-primary">India</span></span>
         </Link>
 

@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Ticket } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList } from "lucide-react";
 
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { ParticipantRegistrationCard } from "@/components/ParticipantRegistrationCard";
@@ -50,7 +50,7 @@ const ParticipantRegistrations = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg"><Ticket className="h-5 w-5 text-primary" />Claim a guest registration</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-lg"><ClipboardList className="h-5 w-5 text-primary" />Claim a guest registration</CardTitle>
             <CardDescription>Enter the registration reference and private claim code from your confirmation. Never share the claim code publicly.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -85,7 +85,7 @@ const ParticipantRegistrations = () => {
             <Card><CardContent className="flex items-start gap-2 py-6 text-sm text-destructive"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{loadError}</span></CardContent></Card>
           )}
           {!isLoading && !isError && registrations.length === 0 && (
-            <Card><CardContent className="py-10 text-center"><Ticket className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p className="font-medium">No linked registrations yet</p><p className="mt-1 text-sm text-muted-foreground">Use the claim form above to link a guest registration.</p></CardContent></Card>
+            <Card><CardContent className="py-10 text-center"><ClipboardList className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p className="font-medium">No linked registrations yet</p><p className="mt-1 text-sm text-muted-foreground">Use the claim form above to link a guest registration.</p></CardContent></Card>
           )}
           {!isLoading && !isError && registrations.length > 0 && (
             <div className="grid gap-5 lg:grid-cols-2">

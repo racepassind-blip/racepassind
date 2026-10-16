@@ -1,5 +1,5 @@
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { AlertCircle, ArrowLeft, BarChart3, CalendarDays, ClipboardList, Copy, Edit3, ExternalLink, Hash, MapPin, MoreHorizontal, Package, Power, RefreshCw, ScanLine, Ticket, Timer, Trash2, UserPlus, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, BarChart3, CalendarDays, ClipboardList, Copy, Edit3, ExternalLink, Hash, MapPin, MoreHorizontal, Package, Power, RefreshCw, ScanLine, Timer, Trash2, UserPlus, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -168,7 +168,7 @@ const OrganizerEventDashboard = () => {
               <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" />{eventDate}</span>
                 <span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" />{location}</span>
-                <span className="inline-flex items-center gap-2 capitalize"><Ticket className="h-4 w-4 text-primary" />{event.sport.replaceAll("_", " ")}</span>
+                <span className="inline-flex items-center gap-2 capitalize"><BarChart3 className="h-4 w-4 text-primary" />{event.sport.replaceAll("_", " ")}</span>
               </div>
               <div className="mt-7 grid gap-2 sm:flex sm:flex-wrap">
                 <Button className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><ClipboardList className="h-4 w-4" /> Manage registrations</Button>

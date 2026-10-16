@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight, Building2, CheckCircle2, Eye, EyeOff, KeyRound, ShieldCheck, Ticket, UserPlus } from "lucide-react";
+import { ArrowRight, Building2, CheckCircle2, Eye, EyeOff, KeyRound, ShieldCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { Layout } from "@/components/Layout";
@@ -103,7 +103,7 @@ const Signup = () => {
               <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Join the race day community.</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Create an account to keep your registrations, tickets, and results together.</p>
             </div>
-            <div className="hidden h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary sm:flex"><Ticket className="h-6 w-6" /></div>
+            <div className="hidden h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-sm font-black text-primary sm:flex">SP</div>
           </div>
 
           <div className="grid overflow-hidden rounded-3xl border bg-card shadow-xl lg:grid-cols-[0.85fr_1.15fr]">

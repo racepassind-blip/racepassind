@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Clock3, MapPin, MessageCircle, QrCode, Ticket, Trophy, X } from "lucide-react";
+import { Clock3, MapPin, MessageCircle, QrCode, Trophy, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -165,9 +165,7 @@ export function ParticipantRegistrationCard({
           </div>
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Ticket</p>
-            <p className="mt-1 flex items-center gap-1.5 font-medium">
-              <Ticket className="h-3.5 w-3.5 text-muted-foreground" />{registration.ticketType.name}
-            </p>
+            <p className="mt-1 font-medium">{registration.ticketType.name}</p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Payment</p>

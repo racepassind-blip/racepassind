@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, Building2, CalendarDays, CheckCircle2, CircleDollarSign, Clock3, RefreshCw, Ticket, UserPlus, UsersRound } from "lucide-react";
+import { ArrowUpRight, Building2, CalendarDays, CheckCircle2, CircleDollarSign, Clock3, RefreshCw, UserPlus, UsersRound, type LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
@@ -69,7 +69,7 @@ interface AdminDashboardResponse {
 function formatINR(paise: number) { return `₹${(paise / 100).toLocaleString("en-IN")}`; }
 function formatDate(value: string | null) { if (!value) return "—"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-IN", { day: "numeric", month: "short" }); }
 
-function MetricCard({ title, value, description, icon: Icon, tone = "primary", href }: { title: string; value: string; description: string; icon: typeof Ticket; tone?: "primary" | "orange" | "green" | "blue"; href?: string }) {
+function MetricCard({ title, value, description, icon: Icon, tone = "primary", href }: { title: string; value: string; description: string; icon: LucideIcon; tone?: "primary" | "orange" | "green" | "blue"; href?: string }) {
   const content = <Card className="h-full transition-shadow hover:shadow-md"><CardContent className="flex items-start justify-between gap-4 p-5"><div><p className="text-sm font-medium text-muted-foreground">{title}</p><p className="mt-3 text-3xl font-black tracking-tight">{value}</p><p className="mt-1 text-xs text-muted-foreground">{description}</p></div><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone === "orange" ? "bg-orange-100 text-orange-700" : tone === "green" ? "bg-emerald-100 text-emerald-700" : tone === "blue" ? "bg-blue-100 text-blue-700" : "bg-primary/10 text-primary"}`}><Icon className="h-5 w-5" /></span></CardContent></Card>;
   return href ? <Link to={href} className="block h-full">{content}</Link> : content;
 }
@@ -99,7 +99,7 @@ const AdminDashboard = () => {
         {loading && !data ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <Card key={index}><CardContent className="h-36 animate-pulse p-5"><div className="h-4 w-32 rounded bg-muted" /><div className="mt-6 h-8 w-20 rounded bg-muted" /><div className="mt-3 h-3 w-40 rounded bg-muted" /></CardContent></Card>)}</div> : error ? <Card><CardContent className="flex flex-col gap-4 p-6"><p role="alert" className="text-sm text-destructive">{error}</p><Button onClick={() => void load()} className="w-fit">Try again</Button></CardContent></Card> : data ? <>
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard title="Onboarding requests" value={data.metrics.pendingOrganizerApplications.toLocaleString("en-IN")} description="Waiting for your review" icon={UserPlus} tone="orange" href="/admin/organizer-applications" />
-            <MetricCard title="Entries sold this month" value={data.metrics.registrationsThisMonth.toLocaleString("en-IN")} description="Confirmed participant entries" icon={Ticket} tone="green" href="/organizer/registrations" />
+            <MetricCard title="Entries sold this month" value={data.metrics.registrationsThisMonth.toLocaleString("en-IN")} description="Confirmed participant entries" icon={UsersRound} tone="green" href="/organizer/registrations" />
             <MetricCard title="Races published this month" value={data.metrics.racesPublishedThisMonth.toLocaleString("en-IN")} description={`${data.metrics.activeRaces.toLocaleString("en-IN")} active races overall`} icon={CalendarDays} tone="blue" href="/organizer" />
             <MetricCard title="Participant sales" value={formatINR(data.metrics.participantSalesThisMonthPaise)} description={`${data.period.label} approved registration value`} icon={CircleDollarSign} />
           </section>
@@ -111,7 +111,7 @@ const AdminDashboard = () => {
                   <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center gap-4">
                       <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${data.emailUsage.status === "limit_reached" ? "bg-destructive/10 text-destructive" : data.emailUsage.status === "warning" ? "bg-orange-100 text-orange-700" : "bg-primary/10 text-primary"}`}>
-                        <Ticket className="h-6 w-6" />
+                        <CircleDollarSign className="h-6 w-6" />
                       </span>
                       <div>
                         <p className="text-sm font-medium text-muted-foreground">Email Usage</p>

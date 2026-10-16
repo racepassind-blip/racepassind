@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { ArchiveRestore, Banknote, Building2, CalendarDays, ChevronRight, CreditCard, ExternalLink, LayoutDashboard, LockOpen, LogOut, RefreshCcw, ShieldCheck, Ticket, UserPlus } from "lucide-react";
+import { ArchiveRestore, Banknote, Building2, CalendarDays, ChevronRight, CreditCard, ExternalLink, LayoutDashboard, LockOpen, LogOut, RefreshCcw, ShieldCheck, UserPlus } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -51,7 +51,7 @@ function AdminSidebarContent() {
   return (
     <div className="flex h-full flex-col p-4 lg:sticky lg:top-0 lg:h-screen">
       <Link to="/admin" className="mb-7 flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-white/10">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Ticket className="h-5 w-5" /></span>
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-xs font-black text-primary-foreground">SP</span>
         <span><span className="block text-sm font-black tracking-tight">SportPass <span className="text-primary">India</span></span><span className="mt-0.5 block text-xs text-slate-400">Admin workspace</span></span>
       </Link>
       <nav className="space-y-6">

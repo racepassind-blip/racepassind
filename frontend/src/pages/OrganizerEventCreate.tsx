@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { eachDayOfInterval, format, startOfDay } from "date-fns";
-import { ArrowLeft, ArrowRight, Calculator, CalendarIcon, Check, CircleHelp, ClipboardList, Eye, Minus, Plus, Save, ShieldCheck, Shirt, Ticket, Trash2, UserRound, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, ArrowRight, Calculator, CalendarIcon, Check, CircleHelp, ClipboardList, Eye, Minus, Plus, Save, ShieldCheck, Shirt, Trash2, UserRound, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
@@ -1538,7 +1538,7 @@ const OrganizerEventCreate = () => {
                     })}</div>
                   </div>)}</div>
                   <aside className="border-t bg-muted/20 p-4 lg:border-l lg:border-t-0 sm:p-5">
-                    <div className="lg:sticky lg:top-24"><div className="flex items-center gap-2"><Ticket className="h-4 w-4 text-primary" /><p className="font-bold">Order summary</p></div>
+                    <div className="lg:sticky lg:top-24"><div className="flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary" /><p className="font-bold">Order summary</p></div>
                       {selectedPreviewTickets.length === 0 ? <p className="mt-4 text-sm text-muted-foreground">No tickets selected.</p> : <div className="mt-4 space-y-3">{selectedPreviewTickets.map(({ category, ticket }) => { const quantity = previewQuantity(ticket.id); const pricePaise = Number.isFinite(Number(ticket.price)) ? Math.max(0, Math.round(Number(ticket.price) * 100)) : 0; return <div key={`summary-${ticket.id}`} className="flex items-start justify-between gap-3 text-sm"><div><p className="font-medium">{category.name || "Category"} · {ticket.name || "Ticket"}</p><p className="text-xs text-muted-foreground">{quantity} {quantity === 1 ? "entry" : "entries"}</p></div><span className="font-semibold">{formatPaise(pricePaise * quantity)}</span></div>; })}</div>}
                       <div className="mt-4 flex items-center justify-between border-t pt-4"><span className="font-bold">Registration subtotal</span><span className="text-xl font-extrabold text-primary">{formatPaise(previewSubtotalPaise)}</span></div>
                       <p className="mt-2 text-xs leading-5 text-muted-foreground">{platformFeeBearer === "PARTICIPANT" ? "The applicable SportPass fee is calculated separately at checkout." : "Participants pay this subtotal before any optional add-ons."}</p>
