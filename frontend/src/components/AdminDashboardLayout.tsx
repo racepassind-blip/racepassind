@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { ArchiveRestore, Banknote, Building2, CalendarDays, ChevronRight, CreditCard, ExternalLink, LayoutDashboard, LockOpen, LogOut, RefreshCcw, ShieldCheck, UserPlus } from "lucide-react";
+import { ArchiveRestore, Banknote, Building2, CalendarDays, ChevronRight, CreditCard, ExternalLink, LayoutDashboard, LockOpen, LogOut, ReceiptText, RefreshCcw, ShieldCheck, UserPlus } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -38,6 +38,7 @@ const navGroups: NavGroup[] = [
       { label: "SportPass Credits", to: "/admin/credits", icon: CreditCard },
       { label: "Organizer pricing", to: "/admin/organizer-pricing", icon: CreditCard },
       { label: "Organizer settlements", to: "/admin/settlements", icon: Banknote },
+      { label: "Cashfree ledger", to: "/admin/cashfree", icon: ReceiptText },
     ],
   },
 ];

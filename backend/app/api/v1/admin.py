@@ -37,6 +37,7 @@ from app.services.organizer_settlement_service import (
     settlement_summary,
     update_pending_settlement,
 )
+from app.services.payment_reconciliation_service import payment_reconciliation, reconciliation_csv
 from app.services.platform_fee_service import (
     PlatformFeeValidationError,
     get_effective_pricing,
@@ -49,6 +50,75 @@ from app.services.event_archive_service import restore_event_record
 from models import CreditTopupRequest, CreditTransaction, Event, OrganizerApplication, Organization, OrganizationMember, OrganizationPaymentDestination, OrganizationVerificationSubmission, Registration, User
 
 router = APIRouter()
+
+
+def cashfree_ledger_filters(
+    event_id: UUID | None = None,
+    date_from: dt.date | None = None,
+    date_to: dt.date | None = None,
+    status: Literal["all", "successful", "awaiting", "needs_review", "refund_in_progress", "refunded", "partially_refunded", "expired", "failed", "cancelled", "not_required"] = "all",
+    environment: Literal["production", "sandbox", "all"] = "production",
+    search: str = Query(default="", max_length=120),
+) -> dict:
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="Start date must be on or before end date")
+    if date_to == dt.date.max:
+        raise HTTPException(status_code=422, detail="End date is outside the supported range")
+    return dict(event_id=event_id, date_from=date_from, date_to=date_to, status=status, environment=environment, search=search)
+
+
+@router.get("/cashfree-ledger/events")
+def cashfree_ledger_events(_: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    from models import CheckoutPayment, Payment
+    rows = db.execute(select(Event.id, Event.name, Organization.name.label("organizer"))
+        .join(Organization, Organization.id == Event.organization_id)
+        .where(select(Registration.id).join(Payment, Payment.registration_id == Registration.id)
+            .join(CheckoutPayment, CheckoutPayment.event_order_id == Payment.order_id)
+            .where(Registration.event_id == Event.id, CheckoutPayment.mode.in_(("CASHFREE_PLATFORM", "CASHFREE_SPLIT"))).exists())
+        .order_by(Event.name, Event.id)).mappings().all()
+    return {"items": [dict(row) for row in rows]}
+
+
+@router.get("/cashfree-ledger")
+def admin_cashfree_ledger(filters: dict = Depends(cashfree_ledger_filters),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+    _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    from app.services.cashfree_ledger_service import cashfree_ledger
+    return cashfree_ledger(db, page=page, page_size=page_size, **filters)
+
+
+@router.get("/cashfree-ledger/export")
+def export_cashfree_ledger(filters: dict = Depends(cashfree_ledger_filters),
+    _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> Response:
+    from app.services.cashfree_ledger_service import cashfree_ledger_csv
+    return Response("".join(cashfree_ledger_csv(db, **filters)), media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="cashfree-registration-ledger.csv"', "Cache-Control": "no-store"})
+
+
+@router.get("/payment-reconciliation")
+def get_payment_reconciliation(
+    search: str = Query(default="", max_length=120),
+    payment_status: str = Query(default="all", alias="status", max_length=40),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    _: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    return payment_reconciliation(db, search=search, status=payment_status, page=page, page_size=page_size)
+
+
+@router.get("/payment-reconciliation/export")
+def export_payment_reconciliation(
+    search: str = Query(default="", max_length=120),
+    payment_status: str = Query(default="all", alias="status", max_length=40),
+    _: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> Response:
+    report = payment_reconciliation(db, search=search, status=payment_status, page=1, page_size=100_000)
+    return Response(
+        reconciliation_csv(report["items"]), media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="sportpass-payment-reconciliation.csv"'},
+    )
 
 class CreditAdjustmentIn(BaseModel):
     organization_id: UUID

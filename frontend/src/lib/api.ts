@@ -292,3 +292,24 @@ export async function uploadFile<T>(path: string, file: File, fieldName = "file"
     throw new Error(`Upload failed: ${error instanceof Error ? error.message : "Unknown upload error"}`);
   }
 }
+
+/** Download an authenticated API response without exposing credentials in a URL. */
+export async function downloadApiFile(path: string, fallbackFilename: string): Promise<void> {
+  beginApiRequest();
+  try {
+    const response = await executeRequest(path, { method: "GET" }, null);
+    if (response.status === 401) unauthorizedHandler?.();
+    if (!response.ok) {
+      const body = await readResponseBody(response);
+      throw new ApiError(response.status, errorMessage(body, `Download failed (${response.status})`), response.headers.get("X-Request-ID"));
+    }
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? fallbackFilename;
+    const href = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = href; link.download = filename; document.body.appendChild(link); link.click(); link.remove();
+    URL.revokeObjectURL(href);
+  } finally {
+    endApiRequest();
+  }
+}

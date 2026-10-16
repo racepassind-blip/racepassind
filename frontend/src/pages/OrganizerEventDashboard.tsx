@@ -1,5 +1,5 @@
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { AlertCircle, ArrowLeft, BarChart3, CalendarDays, ClipboardList, Copy, Edit3, ExternalLink, Hash, MapPin, MoreHorizontal, Package, Power, RefreshCw, ScanLine, Timer, Trash2, UserPlus, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, Banknote, BarChart3, CalendarDays, ClipboardList, Copy, Edit3, ExternalLink, Hash, MapPin, MoreHorizontal, Package, Power, RefreshCw, ScanLine, Timer, Trash2, UserPlus, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -173,6 +173,7 @@ const OrganizerEventDashboard = () => {
               <div className="mt-7 grid gap-2 sm:flex sm:flex-wrap">
                 <Button className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><ClipboardList className="h-4 w-4" /> Manage registrations</Button>
                 <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ScanLine className="h-4 w-4" /> Check-in</Button>
+                <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/finance`)}><Banknote className="h-4 w-4" /> Finance</Button>
                 {!event.isArchived && <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event</Button>}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild><Button variant="outline" className="h-11 w-full justify-center gap-2 sm:w-auto"><MoreHorizontal className="h-4 w-4" /> More actions</Button></DropdownMenuTrigger>

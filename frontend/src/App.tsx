@@ -51,6 +51,7 @@ import AdminRefunds from "./pages/AdminRefunds";
 import AdminCredits from "./pages/AdminCredits";
 import AdminOrganizerPricing from "./pages/AdminOrganizerPricing";
 import AdminSettlements from "./pages/AdminSettlements";
+import AdminPaymentReconciliation from "./pages/AdminPaymentReconciliation";
 import AdminMfaSetup from "./pages/AdminMfaSetup";
 import OrganizerCredits from "./pages/OrganizerCredits";
 import OrganizerRefunds from "./pages/OrganizerRefunds";
@@ -68,6 +69,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import PublicEventAnnouncements from "./pages/PublicEventAnnouncements";
 import OrganizerEventAnnouncements from "./pages/OrganizerEventAnnouncements";
+import OrganizerEventFinance from "./pages/OrganizerEventFinance";
 
 const queryClient = new QueryClient();
 
@@ -136,6 +138,8 @@ const App = () => (
             <Route path="/admin/credits" element={<ProtectedRoute allowedRoles={["admin"]}><AdminCredits /></ProtectedRoute>} />
             <Route path="/admin/organizer-pricing" element={<ProtectedRoute allowedRoles={["admin"]}><AdminOrganizerPricing /></ProtectedRoute>} />
             <Route path="/admin/settlements" element={<ProtectedRoute allowedRoles={["admin"]}><AdminSettlements /></ProtectedRoute>} />
+            <Route path="/admin/payments" element={<ProtectedRoute allowedRoles={["admin"]}><AdminPaymentReconciliation /></ProtectedRoute>} />
+            <Route path="/admin/cashfree" element={<ProtectedRoute allowedRoles={["admin"]}><AdminPaymentReconciliation /></ProtectedRoute>} />
 
             {/* Admin/Organizer routes */}
             <Route path="/organizer" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerDashboard /></ProtectedRoute>} />
@@ -157,6 +161,7 @@ const App = () => (
             <Route path="/organizer/events/:eventId/tournament/bracket" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventTournamentBracket /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/allocations" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventAllocations /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/race-results" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventRaceResults /></ProtectedRoute>} />
+            <Route path="/organizer/events/:eventId/finance" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventFinance /></ProtectedRoute>} />
             <Route path="/event/:eventId/number-list" element={<PublicEventNumberList />} />
             <Route path="/organizer/events/:eventId" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventDashboard /></ProtectedRoute>} />
             <Route path="/organizer/setup" element={<ProtectedRoute allowedRoles={["organizer"]}><OrganizerSetup /></ProtectedRoute>} />

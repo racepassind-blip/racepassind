@@ -6,7 +6,7 @@ import datetime as dt
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -26,6 +26,8 @@ from app.services.organization_qr_service import (
     upload_organization_qr,
 )
 from app.services.organizer_dashboard_service import build_organizer_event_dashboard
+from app.services.organizer_settlement_service import settlement_summary
+from app.services.payment_reconciliation_service import payment_reconciliation, reconciliation_csv
 from app.services.organizer_visibility_service import get_event_visibility, get_visibility_for_events, serialize_visibility
 from app.services.registration_config_service import normalize_event_configs
 from app.services.storage_service import StorageError, StorageService
@@ -34,6 +36,42 @@ from db import get_db
 from models import Event, EventCategory, EventCheckpoint, EventPaymentSettings, Organization, OrganizationMember, Registration, Ticket, User
 
 router = APIRouter()
+
+
+@router.get("/events/{event_id}/finance")
+def organizer_event_finance(
+    event_id: UUID,
+    search: str = Query(default="", max_length=120),
+    payment_status: str = Query(default="all", alias="status", max_length=40),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    user: User = Depends(require_roles("admin", "organizer")),
+    db: Session = Depends(get_db),
+) -> dict:
+    # Authorization is event-scoped: organizers cannot enumerate another
+    # organizer's collections, receipts or settlement balance.
+    event = get_authorized_event(db, user, event_id)
+    return {
+        "event": {"id": str(event.id), "name": event.name, "paymentMode": event.payment_collection_method},
+        "settlement": settlement_summary(db, event_id=event.id),
+        "payments": payment_reconciliation(db, event_id=event.id, search=search, status=payment_status, page=page, page_size=page_size),
+    }
+
+
+@router.get("/events/{event_id}/finance/export")
+def export_organizer_event_finance(
+    event_id: UUID,
+    search: str = Query(default="", max_length=120),
+    payment_status: str = Query(default="all", alias="status", max_length=40),
+    user: User = Depends(require_roles("admin", "organizer")),
+    db: Session = Depends(get_db),
+) -> Response:
+    event = get_authorized_event(db, user, event_id)
+    report = payment_reconciliation(db, event_id=event.id, search=search, status=payment_status, page=1, page_size=100_000)
+    return Response(
+        reconciliation_csv(report["items"]), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{event.name[:60].replace(chr(34), "")}-payment-audit.csv"'},
+    )
 
 
 def _normalize_whatsapp_group_url(value: str | None) -> str | None:

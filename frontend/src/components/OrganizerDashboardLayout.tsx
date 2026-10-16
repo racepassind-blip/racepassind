@@ -71,7 +71,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
     ...(supportsRaceResults ? [{ label: "Race Results", icon: Timer, to: `/organizer/events/${eventId}/race-results` }] : []),
     // Refunds: event-scoped when inside an event, global when on the dashboard
     ...(eventId
-      ? [{ label: "Refunds", icon: ReceiptText, to: `/organizer/events/${eventId}/refunds` }]
+      ? [{ label: "Event finance", icon: CreditCard, to: `/organizer/events/${eventId}/finance` }, { label: "Refunds", icon: ReceiptText, to: `/organizer/events/${eventId}/refunds` }]
       : [{ label: "Refunds", icon: ReceiptText, to: "/organizer/refunds" }]
     ),
   ];
