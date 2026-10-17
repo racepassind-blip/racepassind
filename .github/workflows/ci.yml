@@ -24,6 +24,7 @@ jobs:
       DATABASE_URL: sqlite:////tmp/racepass-ci.db
       ENVIRONMENT: test
       FRONTEND_ORIGINS: http://localhost:8080
+      STORAGE_MODE: local
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
