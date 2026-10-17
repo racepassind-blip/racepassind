@@ -87,6 +87,7 @@ const Login = () => {
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">Use the email and password linked to your SportPass membership.</p>
               </div>
 
+              <Button variant="link" className="mb-4 px-0" onClick={() => navigate("/signup?type=organizer&status=1")}>Applied as an organizer? Track your application</Button>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email address</Label>

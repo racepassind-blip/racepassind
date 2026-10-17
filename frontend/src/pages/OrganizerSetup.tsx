@@ -23,6 +23,8 @@ type Organization = {
   website: string | null;
   logoUrl: string | null;
   status: string;
+  allowDirectUpi: boolean;
+  allowCashfree: boolean;
 };
 
 type UploadedLogo = {
@@ -62,6 +64,7 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [application, setApplication] = useState<{paymentPreference: string; paymentDetails: {upiId?: string; payeeName?: string}; reviewedAt: string | null} | null>(null);
 
   useEffect(() => {
     if (!logoFile) { setLogoPreviewUrl(null); return; }
@@ -78,6 +81,8 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
         if (!firstOrganization) throw new Error("No organizer organization is available for this account.");
         const profile = await apiRequest<Organization>(`/organizer/organizations/${firstOrganization.id}`);
         setOrganization(profile);
+        const onboarding = await apiRequest<{application: typeof application}>("/auth/organizer-application/mine");
+        setApplication(onboarding.application);
         setForm({
           name: profile.name,
           organizationType: profile.organizationType ?? "",
@@ -144,6 +149,16 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
 
   const content = (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+        {application && <Card className="border-primary/20"><CardHeader><CardTitle>Your onboarding progress</CardTitle><CardDescription>Your application was approved. Complete the remaining steps before collecting paid registrations.</CardDescription></CardHeader><CardContent className="space-y-3 text-sm">
+          <p>✓ Organizer account and organization profile approved</p>
+          <p>✓ Identity proof submitted and available for payment verification</p>
+          <p>Payment route: {application.paymentPreference === "DIRECT_UPI" ? "Direct UPI" : application.paymentPreference === "CASHFREE" ? "Payment gateway" : "Discuss with SportPass"}</p>
+          {application.paymentPreference === "DIRECT_UPI" && <p className="text-muted-foreground">Requested UPI: {application.paymentDetails.upiId} · {application.paymentDetails.payeeName}. After verification and payment access approval, confirm these details in your event payment settings.</p>}
+          {application.paymentPreference === "CASHFREE" && <p className="text-muted-foreground">Your legal name, PAN and billing address have been carried into verification. Confirm GST and terms below, then coordinate settlement details with SportPass.</p>}
+          <p>{organization?.allowDirectUpi || organization?.allowCashfree ? "✓ Payment access enabled: " + [organization.allowDirectUpi && "Direct UPI", organization.allowCashfree && "Gateway"].filter(Boolean).join(", ") : "Payment access: awaiting separate admin approval"}</p>
+          <Button variant="outline" onClick={() => setSection("verification")}>Continue paid-event verification</Button>
+          <p className="text-muted-foreground">Free events do not require paid-event verification.</p>
+        </CardContent></Card>}
         <div>
           <p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Organizer settings</p>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Your organization</h1>

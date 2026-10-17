@@ -38,6 +38,7 @@ from app.services.organizer_settlement_service import (
     update_pending_settlement,
 )
 from app.services.payment_reconciliation_service import payment_reconciliation, reconciliation_csv
+from app.infrastructure.storage.factory import get_storage_service
 from app.services.platform_fee_service import (
     PlatformFeeValidationError,
     get_effective_pricing,
@@ -516,6 +517,22 @@ def _serialize_organizer_application(application: OrganizerApplication) -> dict:
         "email": application.email,
         "phone": application.phone,
         "message": application.message,
+        "organizationType": application.organization_type,
+        "address": application.address,
+        "city": application.city,
+        "state": application.state,
+        "pincode": application.pincode,
+        "eventHistory": application.event_history,
+        "discoverySource": application.discovery_source,
+        "paymentPreference": application.payment_preference,
+        "paymentDetails": application.payment_details or {},
+        "idProofType": application.id_proof_type,
+        "idProofFilename": application.id_proof_filename,
+        "idProofContentType": application.id_proof_content_type,
+        "idProofSizeBytes": application.id_proof_size_bytes,
+        "idProofUrl": None,
+        "hasIdProof": bool(application.id_proof_object_key),
+        "privacyPolicyAccepted": application.privacy_policy_accepted_at is not None,
         "status": application.status,
         "rejectionReason": application.rejection_reason,
         "createdAt": application.created_at.isoformat() if application.created_at else None,
@@ -525,12 +542,14 @@ def _serialize_organizer_application(application: OrganizerApplication) -> dict:
 
 @router.get("/organizer-applications")
 def list_organizer_applications(
-    application_status: Literal["pending", "approved", "rejected"] | None = Query(default=None, alias="status"),
+    response: Response,
+    application_status: Literal["pending", "changes_requested", "approved", "rejected"] | None = Query(default=None, alias="status"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     _: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
 ) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     filters = []
     if application_status is not None:
         filters.append(OrganizerApplication.status == application_status)
@@ -551,6 +570,60 @@ def list_organizer_applications(
     }
 
 
+@router.get("/organizer-applications/{application_id}/history")
+def organizer_application_history(application_id: UUID, _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    from app.services.audit_service import audit_history
+    return {"items": audit_history(db, resource_type="organizer_application", resource_id=application_id)}
+
+
+@router.post("/organizer-applications/{application_id}/id-proof")
+def read_application_proof(application_id: UUID, response: Response, admin: User = Depends(require_roles("admin")),
+    _: None = Depends(require_csrf), db: Session = Depends(get_db), storage=Depends(get_storage_service)) -> dict:
+    application = db.get(OrganizerApplication, application_id)
+    if not application or not application.id_proof_object_key:
+        raise HTTPException(404, "Document not available")
+    url = storage.get_read_url(application.id_proof_object_key, expires_in=300)
+    record_audit(db, actor_user_id=admin.id, action="organizer_application_document_accessed", resource_type="organizer_application", resource_id=application.id)
+    db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return {"url": url}
+
+
+class ApplicationChangesIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=2000)
+
+
+def notify_application_review(db: Session, application: OrganizerApplication) -> None:
+    from app.config import get_settings
+    import logging
+    try:
+        origin = get_settings().frontend_origins[0].rstrip("/")
+        send_email(db, recipient=application.email, subject="SportPass organizer application update",
+            body=f"Your organizer application is {application.status.replace('_', ' ')}.\nCheck your status and next steps securely at {origin}/signup?type=organizer&status=1",
+            email_type="ORGANIZER_APPLICATION")
+    except Exception:
+        db.rollback()
+        logging.getLogger(__name__).exception("Organizer review notification failed")
+
+
+@router.post("/organizer-applications/{application_id}/request-changes")
+def request_application_changes(application_id: UUID, payload: ApplicationChangesIn,
+    admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    application = db.scalar(select(OrganizerApplication).where(OrganizerApplication.id == application_id).with_for_update())
+    if not application or application.status != "pending":
+        raise HTTPException(409, "Only pending applications can be returned for corrections")
+    if len(payload.reason.strip()) < 5:
+        raise HTTPException(422, "Explain which details need correcting")
+    application.status = "changes_requested"
+    application.rejection_reason = payload.reason.strip()
+    application.reviewed_by = admin.id
+    application.reviewed_at = utc_now()
+    record_audit(db, actor_user_id=admin.id, action="organizer_application_changes_requested", resource_type="organizer_application", resource_id=application.id)
+    db.commit()
+    notify_application_review(db, application)
+    return {"application": _serialize_organizer_application(application)}
+
+
 @router.post("/organizer-applications/{application_id}/approve")
 def approve_organizer_application(
     application_id: UUID,
@@ -567,6 +640,20 @@ def approve_organizer_application(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organizer application not found")
     if application.status != "pending":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This application has already been reviewed")
+
+    missing = []
+    if not application.id_proof_object_key:
+        missing.append("ID proof")
+    if not all((application.address, application.city, application.state, application.pincode)):
+        missing.append("complete address")
+    if not application.event_history:
+        missing.append("event background")
+    if not application.payment_preference:
+        missing.append("payment preference")
+    if not application.privacy_policy_accepted_at or not application.phone or not application.organization_type:
+        missing.append("consent and contact profile")
+    if missing:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Complete verification before approval: " + ", ".join(missing))
 
     existing_user = db.scalar(select(User).where(User.normalized_email == application.normalized_email))
     if existing_user is not None:
@@ -586,6 +673,18 @@ def approve_organizer_application(
     )
     organization = Organization(
         name=application.organization_name,
+        organization_type=application.organization_type.lower() if application.organization_type in {"RUNNING_CLUB", "CYCLING_CLUB", "OTHER"} else "sports_club",
+        city=application.city,
+        state=application.state,
+        description=application.event_history,
+        billing_name=application.organization_name,
+        billing_address=application.address,
+        billing_city=application.city,
+        billing_state=application.state,
+        billing_pincode=application.pincode,
+        pan_number=(application.payment_details or {}).get("panNumber"),
+        name_as_per_pan=(application.payment_details or {}).get("legalName"),
+        onboarding_completed_at=utc_now(),
         created_by=admin.id,
         status="active",
         fee_type="none",
@@ -596,7 +695,14 @@ def approve_organizer_application(
     try:
         db.flush()
         db.add(OrganizationMember(organization_id=organization.id, user_id=organizer.id, member_role="organizer"))
+        from models import OrganizationVerificationDocument
+        db.add(OrganizationVerificationDocument(organization_id=organization.id, uploaded_by=organizer.id,
+            document_type=application.id_proof_type, original_filename=application.id_proof_filename,
+            object_key=application.id_proof_object_key, content_type=application.id_proof_content_type,
+            size_bytes=application.id_proof_size_bytes))
         application.status = "approved"
+        application.recovery_token_hash = None
+        application.recovery_expires_at = None
         application.reviewed_by = admin.id
         application.reviewed_at = utc_now()
         application.approved_user_id = organizer.id
@@ -615,6 +721,7 @@ def approve_organizer_application(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Organizer application could not be approved") from exc
 
+    notify_application_review(db, application)
     return {
         "application": _serialize_organizer_application(application),
         "organizer": public_user(organizer),
@@ -640,11 +747,12 @@ def reject_organizer_application(
     if application.status != "pending":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This application has already been reviewed")
 
+    if not payload.reason or len(payload.reason.strip()) < 5:
+        raise HTTPException(422, "Provide a clear rejection reason")
     application.status = "rejected"
     application.reviewed_by = admin.id
     application.reviewed_at = utc_now()
     application.rejection_reason = payload.reason.strip() if payload.reason else None
-    application.password_hash = ""
     record_audit(
         db,
         actor_user_id=admin.id,
@@ -654,6 +762,7 @@ def reject_organizer_application(
         metadata={"has_reason": bool(application.rejection_reason)},
     )
     db.commit()
+    notify_application_review(db, application)
     return {"application": _serialize_organizer_application(application)}
 
 

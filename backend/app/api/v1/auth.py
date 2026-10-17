@@ -3,11 +3,13 @@ from __future__ import annotations
 import secrets
 import datetime as dt
 import hashlib
+import io
+import re
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, select
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
+from pydantic import BaseModel, Field, ValidationError, field_validator
+from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -32,6 +34,7 @@ from app.services.mfa_service import (
     verify_totp_code,
 )
 from app.services.payment_service import generate_qr_data_url
+from app.infrastructure.storage.factory import get_storage_service
 from app.services.rate_limit_service import (
     RateLimitExceeded,
     enforce_account_registration_limit,
@@ -110,6 +113,10 @@ class OrganizerApplicationIn(BaseModel):
     @classmethod
     def _require_phone(cls, value: str) -> str:
         return validate_required_phone(value)
+
+
+ORGANIZER_ID_PROOF_TYPES = {"PAN", "GST", "REGISTRATION_CERTIFICATE", "ASSOCIATION_ID", "OTHER"}
+ORGANIZER_ID_PROOF_MIME = {"application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
 
 class DeleteAccountIn(BaseModel):
@@ -199,12 +206,60 @@ def register(
 
 @router.post("/organizer-signup", status_code=status.HTTP_201_CREATED)
 def organizer_signup(
-    payload: OrganizerApplicationIn,
     request: Request,
+    organization_name: str = Form(...), name: str = Form(...), email: str = Form(...), phone: str = Form(...),
+    password: str = Form(...), privacy_policy_accepted: bool = Form(...), organization_type: str = Form(...),
+    address: str = Form(...), city: str = Form(...), state: str = Form(...), pincode: str = Form(...),
+    event_history: str = Form(...), discovery_source: str = Form(...), payment_preference: str = Form(...),
+    id_proof_type: str = Form(...), id_proof: UploadFile = File(...),
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
+    upi_id: str = Form(""), payee_name: str = Form(""), legal_name: str = Form(""), pan_number: str = Form(""),
 ) -> dict:
     """Submit an organizer application for admin review."""
+    try:
+        payload = OrganizerApplicationIn(organization_name=organization_name.strip(), name=name.strip(), email=email, phone=phone,
+            password=password, privacy_policy_accepted=privacy_policy_accepted)
+    except ValidationError:
+        raise HTTPException(422, "Check your contact details, password and privacy consent")
+    for value, minimum, maximum in ((address, 5, 1000), (city, 2, 120), (state, 2, 120), (event_history, 10, 2000)):
+        if not minimum <= len(value.strip()) <= maximum:
+            raise HTTPException(422, "Complete your address and event background within the stated limits")
+    if not re.fullmatch(r"[1-9][0-9]{5}", pincode.strip()):
+        raise HTTPException(422, "Enter a valid six-digit PIN code")
+    if discovery_source not in {"REFERRAL", "SOCIAL_MEDIA", "SEARCH", "EVENT", "OTHER"}:
+        raise HTTPException(422, "Choose how you heard about SportPass")
+    organization_type = organization_type.strip().upper()
+    payment_preference = payment_preference.strip().upper()
+    id_proof_type = id_proof_type.strip().upper()
+    if organization_type not in {"RUNNING_CLUB", "CYCLING_CLUB", "TREK_ORGANIZER", "BADMINTON_ACADEMY", "SPORTS_ACADEMY", "OTHER"}:
+        raise HTTPException(422, "Choose a valid organization type")
+    if payment_preference not in {"DIRECT_UPI", "CASHFREE", "UNSURE"}:
+        raise HTTPException(422, "Choose a valid payment preference")
+    payment_details = {}
+    if payment_preference == "DIRECT_UPI":
+        if not isinstance(upi_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]{2,256}@[A-Za-z]{2,64}", upi_id.strip()) or not 2 <= len(payee_name.strip()) <= 200:
+            raise HTTPException(422, "Enter your UPI ID and payee name")
+        payment_details = {"upiId": upi_id.strip(), "payeeName": payee_name.strip()}
+    elif payment_preference == "CASHFREE":
+        if not isinstance(pan_number, str) or not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", pan_number.strip().upper()) or not 2 <= len(legal_name.strip()) <= 200:
+            raise HTTPException(422, "Enter your legal name and valid PAN for gateway verification")
+        payment_details = {"legalName": legal_name.strip(), "panNumber": pan_number.strip().upper()}
+    if id_proof_type not in ORGANIZER_ID_PROOF_TYPES:
+        raise HTTPException(422, "Choose a valid ID proof type")
+    settings = get_settings()
+    proof_payload = id_proof.file.read(settings.storage_max_upload_bytes + 1)
+    proof_type = (id_proof.content_type or "").lower()
+    if not proof_payload or len(proof_payload) > settings.storage_max_upload_bytes or proof_type not in ORGANIZER_ID_PROOF_MIME:
+        raise HTTPException(422, f"Upload a PDF, PNG, JPEG, or WebP ID proof up to {settings.storage_max_upload_bytes / 1_000_000:g} MB")
+    if proof_type == "application/pdf" and not proof_payload.startswith(b"%PDF-"):
+        raise HTTPException(422, "The uploaded PDF is invalid")
+    if proof_type == "image/png" and not proof_payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise HTTPException(422, "The uploaded PNG is invalid")
+    if proof_type == "image/jpeg" and not proof_payload.startswith(b"\xff\xd8\xff"):
+        raise HTTPException(422, "The uploaded JPEG is invalid")
+    if proof_type == "image/webp" and not (proof_payload.startswith(b"RIFF") and proof_payload[8:12] == b"WEBP"):
+        raise HTTPException(422, "The uploaded WebP is invalid")
     email = normalize_email(payload.email)
     client_ip = request.client.host if request.client else "unknown"
     try:
@@ -218,6 +273,11 @@ def organizer_signup(
             headers={"Retry-After": str(exc.retry_after_seconds)},
         ) from exc
 
+    # Serialize submissions for the same email, including the first submission
+    # where there is no application row to lock yet.
+    if db.get_bind().dialect.name == "postgresql":
+        lock_key = int.from_bytes(hashlib.sha256(("organizer-application:" + email).encode()).digest()[:8], "big", signed=True)
+        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
     existing_user = db.scalar(select(User).where(User.normalized_email == email))
     if existing_user is None:
         existing_user = db.scalar(select(User).where(User.email == email))
@@ -231,6 +291,17 @@ def organizer_signup(
     if pending_application is not None:
         raise HTTPException(status_code=409, detail="An organizer application for this email is already pending")
 
+    previous = db.scalar(select(OrganizerApplication).where(OrganizerApplication.normalized_email == email).order_by(OrganizerApplication.created_at.desc()).with_for_update())
+    if previous and (previous.status != "changes_requested" or not verify_password(payload.password, previous.password_hash)):
+        raise HTTPException(409, "Sign in to check your application status. Resubmission requires a request for changes and your original password.")
+    storage = get_storage_service()
+    from app.services.storage_service import StorageMetadata
+    try:
+        object_key = storage.put_private(io.BytesIO(proof_payload), StorageMetadata(content_type=proof_type, extension=ORGANIZER_ID_PROOF_MIME[proof_type], size_bytes=len(proof_payload), width=0, height=0, purpose="organizer_application"))
+    except Exception as exc:
+        raise HTTPException(503, "ID proof storage is temporarily unavailable") from exc
+    old_key = previous.id_proof_object_key if previous else None
+
     try:
         application = OrganizerApplication(
             organization_name=payload.organization_name.strip(),
@@ -243,13 +314,25 @@ def organizer_signup(
             privacy_policy_version=PRIVACY_POLICY_VERSION,
             privacy_policy_accepted_at=dt.datetime.now(dt.timezone.utc),
             status="pending",
+            organization_type=organization_type, address=address.strip(), city=city.strip(), state=state.strip(), pincode=pincode.strip(),
+            event_history=event_history.strip(), discovery_source=discovery_source.strip(), payment_preference=payment_preference,
+            payment_details=payment_details,
+            id_proof_type=id_proof_type, id_proof_filename=(id_proof.filename or "id-proof")[:255], id_proof_object_key=object_key,
+            id_proof_content_type=proof_type, id_proof_size_bytes=len(proof_payload),
         )
+        if previous:
+            for column in ("organization_name", "applicant_name", "phone", "normalized_phone", "privacy_policy_version", "privacy_policy_accepted_at", "organization_type", "address", "city", "state", "pincode", "event_history", "discovery_source", "payment_preference", "id_proof_type", "id_proof_filename", "id_proof_object_key", "id_proof_content_type", "id_proof_size_bytes"):
+                setattr(previous, column, getattr(application, column))
+            application = previous
+            application.payment_details = payment_details
+            application.status = "pending"
+            application.rejection_reason = None
         db.add(application)
         db.flush()
         record_audit(
             db,
             actor_user_id=None,
-            action="organizer_application_submitted",
+            action="organizer_application_resubmitted" if previous else "organizer_application_submitted",
             resource_type="organizer_application",
             resource_id=application.id,
             metadata={"organization_name": application.organization_name},
@@ -257,12 +340,57 @@ def organizer_signup(
         db.commit()
     except ValueError as exc:
         db.rollback()
+        if object_key: storage.remove(object_key)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
+        if object_key: storage.remove(object_key)
         raise HTTPException(status_code=409, detail="Could not submit organizer application") from exc
+    except Exception:
+        db.rollback()
+        try:
+            storage.remove(object_key)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning("Could not clean up an uncommitted organizer proof")
+        raise
 
+    if old_key and old_key != object_key:
+        try:
+            storage.remove(old_key)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning("Could not remove superseded organizer proof for application %s", application.id)
+    from app.api.v1.admin import notify_application_review
+    notify_application_review(db, application)
     return {"applicationId": str(application.id), "status": "pending"}
+
+
+@router.post("/organizer-application/status")
+def organizer_application_status(payload: LoginIn, request: Request, response: Response,
+    _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    email = normalize_email(payload.email)
+    try:
+        enforce_login_limit(db, email=email, client_ip=request.client.host if request.client else "unknown")
+        db.commit()
+    except RateLimitExceeded as exc:
+        db.rollback()
+        raise HTTPException(429, str(exc), headers={"Retry-After": str(exc.retry_after_seconds)}) from exc
+    application = db.scalar(select(OrganizerApplication).where(OrganizerApplication.normalized_email == email).order_by(OrganizerApplication.created_at.desc()))
+    user = db.get(User, application.approved_user_id) if application and application.approved_user_id else None
+    if not application or not verify_password(payload.password, user.password_hash if user else application.password_hash):
+        raise HTTPException(401, "Invalid email or password")
+    from app.api.v1.admin import _serialize_organizer_application
+    response.headers["Cache-Control"] = "no-store"
+    return _serialize_organizer_application(application)
+
+
+@router.get("/organizer-application/mine")
+def my_organizer_application(response: Response, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    from app.api.v1.admin import _serialize_organizer_application
+    application = db.scalar(select(OrganizerApplication).where(OrganizerApplication.approved_user_id == user.id))
+    response.headers["Cache-Control"] = "no-store"
+    return {"application": _serialize_organizer_application(application) if application else None}
 
 
 @router.post("/login")
@@ -327,7 +455,19 @@ def forgot_password(payload: ForgotPasswordIn, request: Request, _: None = Depen
         base = str(request.base_url).rstrip("/")
         frontend = get_settings().frontend_origins[0] if get_settings().frontend_origins else base
         send_email(db, recipient=user.email, subject="Reset your SportPass password", body=f"Use this link within 30 minutes to reset your password: {frontend}/reset-password?token={raw}", email_type="PASSWORD_RESET")
-    return {"message": "If an account exists for this email, you will receive a reset link shortly."}
+    elif user is None:
+        application = db.scalar(select(OrganizerApplication).where(OrganizerApplication.normalized_email == email,
+            OrganizerApplication.status.in_(("pending", "changes_requested", "rejected"))).order_by(OrganizerApplication.created_at.desc()).with_for_update())
+        if application:
+            raw = secrets.token_urlsafe(48)
+            application.recovery_token_hash = hashlib.sha256(raw.encode()).hexdigest()
+            application.recovery_expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=30)
+            db.commit()
+            frontend = get_settings().frontend_origins[0] if get_settings().frontend_origins else str(request.base_url).rstrip("/")
+            send_email(db, recipient=application.email, subject="Reset your SportPass application password",
+                body=f"Use this link within 30 minutes: {frontend}/reset-password?token={raw}\nAfter resetting, track your application at {frontend}/signup?type=organizer&status=1",
+                email_type="PASSWORD_RESET")
+    return {"message": "If an account or application exists for this email, you will receive a reset link shortly."}
 
 
 @router.post("/reset-password")
@@ -341,6 +481,20 @@ def reset_password(payload: ResetPasswordIn, response: Response, request: Reques
         raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": str(exc.retry_after_seconds)}) from exc
     now = dt.datetime.now(dt.timezone.utc)
     token = db.scalar(select(PasswordResetToken).where(PasswordResetToken.token_hash == hashlib.sha256(payload.token.encode()).hexdigest(), PasswordResetToken.used_at.is_(None)).with_for_update())
+    if token is None:
+        application = db.scalar(select(OrganizerApplication).where(OrganizerApplication.recovery_token_hash == hashlib.sha256(payload.token.encode()).hexdigest(),
+            OrganizerApplication.status.in_(("pending", "changes_requested", "rejected"))).with_for_update())
+        expires = application.recovery_expires_at if application else None
+        if expires and expires.tzinfo is None:
+            expires = expires.replace(tzinfo=dt.timezone.utc)
+        if not application or not expires or expires <= now:
+            raise HTTPException(400, "This reset link is invalid or expired")
+        application.password_hash = hash_password(payload.password)
+        application.recovery_token_hash = None
+        application.recovery_expires_at = None
+        record_audit(db, actor_user_id=None, action="organizer_application_password_reset", resource_type="organizer_application", resource_id=application.id)
+        db.commit()
+        return {"message": "Password reset successfully. Check your organizer application status.", "next": "/signup?type=organizer&status=1"}
     if token is None or token.expires_at <= now:
         raise HTTPException(status_code=400, detail="This reset link is invalid or expired")
     user = db.get(User, token.user_id)
