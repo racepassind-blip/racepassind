@@ -71,3 +71,28 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+
+  notify:
+    name: Notify Slack
+    if: ${{ always() }}
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    env:
+      SLACK_CI_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }}
+    steps:
+      - name: Post CI summary to Slack
+        if: ${{ env.SLACK_CI_WEBHOOK_URL != '' }}
+        env:
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+        run: |
+          status="passed"
+          if [ "$BACKEND_RESULT" != "success" ] || [ "$FRONTEND_RESULT" != "success" ]; then
+            status="failed"
+          fi
+          export status
+          payload=$(python -c 'import json,os; print(json.dumps({"text": "SportPass CI *" + os.environ["status"].upper() + "*\\nBackend: " + os.environ["BACKEND_RESULT"] + "\\nFrontend: " + os.environ["FRONTEND_RESULT"] + "\\nCommit: " + os.environ["GITHUB_SHA"] + "\\nDetails: " + os.environ["GITHUB_SERVER_URL"] + "/" + os.environ["GITHUB_REPOSITORY"] + "/actions/runs/" + os.environ["GITHUB_RUN_ID"]}))' )
+          curl --fail-with-body --silent --show-error -X POST \
+            -H 'Content-Type: application/json' \
+            --data "$payload" \
+            "$SLACK_CI_WEBHOOK_URL"
