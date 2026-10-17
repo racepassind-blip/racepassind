@@ -234,17 +234,17 @@ def organizer_signup(
     id_proof_type = id_proof_type.strip().upper()
     if organization_type not in {"RUNNING_CLUB", "CYCLING_CLUB", "TREK_ORGANIZER", "BADMINTON_ACADEMY", "SPORTS_ACADEMY", "OTHER"}:
         raise HTTPException(422, "Choose a valid organization type")
-    if payment_preference not in {"DIRECT_UPI", "CASHFREE", "UNSURE"}:
+    if payment_preference not in {"DIRECT_UPI", "CASHFREE", "BOTH", "UNSURE"}:
         raise HTTPException(422, "Choose a valid payment preference")
     payment_details = {}
-    if payment_preference == "DIRECT_UPI":
+    if payment_preference in {"DIRECT_UPI", "BOTH"}:
         if not isinstance(upi_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]{2,256}@[A-Za-z]{2,64}", upi_id.strip()) or not 2 <= len(payee_name.strip()) <= 200:
             raise HTTPException(422, "Enter your UPI ID and payee name")
-        payment_details = {"upiId": upi_id.strip(), "payeeName": payee_name.strip()}
-    elif payment_preference == "CASHFREE":
+        payment_details.update({"upiId": upi_id.strip(), "payeeName": payee_name.strip()})
+    if payment_preference in {"CASHFREE", "BOTH"}:
         if not isinstance(pan_number, str) or not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", pan_number.strip().upper()) or not 2 <= len(legal_name.strip()) <= 200:
             raise HTTPException(422, "Enter your legal name and valid PAN for gateway verification")
-        payment_details = {"legalName": legal_name.strip(), "panNumber": pan_number.strip().upper()}
+        payment_details.update({"legalName": legal_name.strip(), "panNumber": pan_number.strip().upper()})
     if id_proof_type not in ORGANIZER_ID_PROOF_TYPES:
         raise HTTPException(422, "Choose a valid ID proof type")
     settings = get_settings()

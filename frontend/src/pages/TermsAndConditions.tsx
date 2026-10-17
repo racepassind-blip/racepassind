@@ -14,7 +14,7 @@ const PrivacyPolicy = () => {
           <ScrollArea className="h-[calc(100vh-200px)] pr-4">
             <div className="prose max-w-none space-y-6">
               <p className="text-sm text-muted-foreground">
-                <strong>Last Updated:</strong> 15 October 2026
+                <strong>Last Updated:</strong> 17 October 2026
               </p>
 
               <p>
@@ -36,6 +36,9 @@ const PrivacyPolicy = () => {
               </p>
               <p>
                 Registration forms can collect additional information required by a specific event. That information is used to run that event and is shared only with its authorized organizer and service providers needed to deliver the service. We do not sell personal data or use it for unrelated advertising.
+              </p>
+              <p>
+                If you apply for organizer access, we also collect the organization, event, payment and identity-verification details listed in section 5. We use them to review your application, verify your identity and proposed payment arrangements, communicate a decision or request corrections, and administer an approved organizer account. An application does not itself enable payment collection; that requires separate approval.
               </p>
 
               <h2 className="text-xl font-semibold mt-6">1. Information We Collect</h2>
@@ -120,20 +123,27 @@ const PrivacyPolicy = () => {
 
               <h2 className="text-xl font-semibold mt-6">5. Organizer Information</h2>
               <p>
-                If you create, organize or manage events through SportPass India, we may collect:
+                If you apply to organize events or manage an organizer account, we may collect:
               </p>
               <ul className="list-disc pl-6 space-y-1">
-                <li>Organizer name</li>
-                <li>Organization, club or community name</li>
-                <li>Email address</li>
-                <li>Mobile number</li>
-                <li>Event information</li>
-                <li>Payment information configured for the event</li>
-                <li>Billing information</li>
-                <li>Account information</li>
-                <li>Administrative information</li>
+                <li>Applicant name, email address, mobile number and account credentials</li>
+                <li>Organization or club name and type</li>
+                <li>Office or correspondence address, city, state and PIN code</li>
+                <li>Information you provide about past and planned events</li>
+                <li>How you heard about SportPass India</li>
+                <li>Your preferred payment route: direct UPI, payment gateway, both or guidance</li>
+                <li>If direct UPI is requested, UPI ID and payee name</li>
+                <li>If a payment gateway is requested, legal name and PAN</li>
+                <li>Selected identity-proof type and the document you upload, such as a PAN card, GST certificate, registration certificate, association ID or other government ID</li>
+                <li>Application status, review notes, correction requests and the record of your privacy acknowledgement</li>
+                <li>Event, billing, payment and administrative information generated if your application is approved and you use the organizer tools</li>
               </ul>
-              <p>We may also collect information reasonably required to approve, verify or manage organizer accounts.</p>
+              <p>
+                Authorized SportPass India administrators review application details and uploaded proof to decide whether to grant organizer access, request corrections, or decline an application. Payment details are used to assess and configure the payment route you request; additional verification may be required before paid events can be published. We may use your contact details to communicate application decisions and account-related matters. Uploaded proof is not displayed publicly or made available to event participants or other organizers.
+              </p>
+              <p>
+                Our service providers may store or process this information only as needed to operate the platform, including secure file storage, hosting and email delivery, as described in section 16. Retention, security, access and correction requests are described in sections 14, 15 and 17. To ask about an organizer application or request a correction or deletion, use the contact in section 23; some records may need to be retained for the reasons listed in section 14.
+              </p>
 
               <h2 className="text-xl font-semibold mt-6">6. Technical Information</h2>
               <p>

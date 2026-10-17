@@ -146,6 +146,22 @@ const Signup = () => {
   };
 
   const isParticipant = mode === "participant";
+  const contactFields = (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2"><Label htmlFor="signup-name">Your name</Label><Input id="signup-name" value={form.name} onChange={(event) => updateForm("name", event.target.value)} required minLength={2} maxLength={120} autoComplete="name" placeholder="Your full name" /></div>
+        <div className="space-y-2"><Label htmlFor="signup-phone">Phone {isParticipant ? <span className="font-normal text-muted-foreground">(optional)</span> : null}</Label><Input id="signup-phone" type="tel" inputMode="tel" value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} required={!isParticipant} maxLength={20} autoComplete="tel" placeholder="+91 98765 43210" /></div>
+      </div>
+      <div className="space-y-2"><Label htmlFor="signup-email">Email address</Label><Input id="signup-email" type="email" value={form.email} onChange={(event) => updateForm("email", event.target.value)} required maxLength={320} autoComplete="email" placeholder="you@example.com" /></div>
+      <div className="space-y-2"><Label htmlFor="signup-password">Password</Label><div className="relative"><Input id="signup-password" type={showPassword ? "text" : "password"} value={form.password} onChange={(event) => updateForm("password", event.target.value)} required minLength={8} maxLength={256} autoComplete="new-password" placeholder="At least 8 characters" className="pr-10" /><button type="button" onClick={() => setShowPassword((visible) => !visible)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div><p className="text-xs text-muted-foreground">At least 8 characters.</p></div>
+    </>
+  );
+  const sectionHeading = (number: string, title: string, description: string) => (
+    <div className="flex items-start gap-3 border-b pb-4">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{number}</span>
+      <div><h3 className="font-bold text-foreground">{title}</h3><p className="mt-0.5 text-sm leading-5 text-muted-foreground">{description}</p></div>
+    </div>
+  );
 
   return (
     <Layout>
@@ -153,17 +169,17 @@ const Signup = () => {
         <div className="pointer-events-none absolute -left-32 top-16 h-72 w-72 rounded-full bg-primary/15 blur-3xl" />
         <div className="pointer-events-none absolute -right-24 bottom-0 h-80 w-80 rounded-full bg-accent/10 blur-3xl" />
 
-        <div className="relative mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-16 lg:px-8">
+        <div className="relative mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-12 lg:px-8">
           <div className="mb-8 flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">SportPass account</p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Join the race day community.</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Create an account to keep your registrations, tickets, and results together.</p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">{isParticipant ? "Join the race day community." : "Bring your events to SportPass."}</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{isParticipant ? "Create an account to keep your registrations and results together." : "Tell us about your organization. We’ll review your application before enabling event tools."}</p>
             </div>
           </div>
 
           <div className="grid overflow-hidden rounded-3xl border bg-card shadow-xl lg:grid-cols-[0.85fr_1.15fr]">
-            <aside className="relative overflow-hidden bg-slate-950 px-6 py-8 text-white sm:p-10 lg:p-12">
+            <aside className="relative hidden overflow-hidden bg-slate-950 px-6 py-8 text-white lg:block lg:p-12">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500 via-white to-green-500" />
               <div className="absolute -bottom-20 -right-20 h-64 w-64 rounded-full bg-primary/20 blur-3xl" />
               <div className="relative flex h-full flex-col">
@@ -185,12 +201,12 @@ const Signup = () => {
               </div>
             </aside>
 
-            <section className="bg-background px-6 py-8 sm:p-10 lg:p-12">
+            <section className="bg-background px-5 py-7 sm:p-10 lg:p-12">
               <div className="mb-7 flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Get started</p>
                   <h2 className="mt-2 text-2xl font-black tracking-tight">{isParticipant ? "Create your participant account" : "Apply as an organizer"}</h2>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{isParticipant ? "It takes less than a minute. You can also register as a guest later." : "Apply for organizer access. Once an admin approves your application, you can create events. Paid events also need verification before publishing."}</p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{isParticipant ? "It takes less than a minute. You can also register as a guest later." : "Your details stay private while we review your application. Paid events require payment verification before publishing."}</p>
                 </div>
                 <KeyRound className="mt-1 hidden h-5 w-5 text-primary sm:block" />
               </div>
@@ -227,10 +243,12 @@ const Signup = () => {
               ) : (
                 <Card className="border-0 bg-transparent shadow-none">
                   <CardContent className="p-0">
-              <form onSubmit={submit} className="space-y-5">
+              <form onSubmit={submit} className="space-y-6">
+                      {!isParticipant && <section className="space-y-4">{sectionHeading("01", "Your contact details", "The person we’ll contact about this application.")}{contactFields}</section>}
                       {mode === "organizer" && <>
                         {application?.status === "changes_requested" && <p className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950">Requested corrections: {application.rejectionReason}. Use your original email and password and upload a replacement proof to resubmit.</p>}
-                        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm leading-6 text-muted-foreground"><span className="font-semibold text-foreground">Organizer verification</span><br />We review these details before granting access to participant data and event tools. Your ID proof is stored privately and visible only to admins.</div>
+                        <section className="space-y-4 border-t pt-6">
+                        {sectionHeading("02", "Organization & events", "Help us understand your club and what you run.")}
                         <div className="space-y-2"><Label htmlFor="organization-name">Organization or club name</Label><Input id="organization-name" value={form.organizationName} onChange={(event) => updateForm("organizationName", event.target.value)} required minLength={2} maxLength={160} placeholder="Your race organization" /></div>
                         <div className="grid gap-5 sm:grid-cols-2">
                           <div className="space-y-2"><Label htmlFor="organization-type">Organization type</Label><select id="organization-type" value={form.organizationType} onChange={(event) => updateForm("organizationType", event.target.value)} required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="">Select type</option><option value="RUNNING_CLUB">Running club</option><option value="CYCLING_CLUB">Cycling club</option><option value="TREK_ORGANIZER">Trek organizer</option><option value="BADMINTON_ACADEMY">Badminton academy</option><option value="SPORTS_ACADEMY">Sports academy</option><option value="OTHER">Other</option></select></div>
@@ -239,21 +257,21 @@ const Signup = () => {
                         <div className="space-y-2"><Label htmlFor="signup-address">Office or correspondence address</Label><textarea id="signup-address" value={form.address} onChange={(event) => updateForm("address", event.target.value)} required maxLength={1000} rows={2} placeholder="Full address" className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></div>
                         <div className="grid gap-5 sm:grid-cols-3"><div className="space-y-2"><Label htmlFor="signup-city">City</Label><Input id="signup-city" value={form.city} onChange={(event) => updateForm("city", event.target.value)} required maxLength={120} /></div><div className="space-y-2"><Label htmlFor="signup-state">State</Label><Input id="signup-state" value={form.state} onChange={(event) => updateForm("state", event.target.value)} required maxLength={120} /></div><div className="space-y-2"><Label htmlFor="signup-pincode">PIN code</Label><Input id="signup-pincode" inputMode="numeric" value={form.pincode} onChange={(event) => updateForm("pincode", event.target.value)} required maxLength={10} /></div></div>
                         <div className="space-y-2"><Label htmlFor="event-history">Tell us about your events</Label><textarea id="event-history" value={form.eventHistory} onChange={(event) => updateForm("eventHistory", event.target.value)} required maxLength={2000} rows={3} placeholder="What events do you run, and what are you planning next?" className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></div>
-                        <div className="grid gap-5 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="payment-preference">How will you collect registration payments?</Label><select id="payment-preference" value={form.paymentPreference} onChange={(event) => updateForm("paymentPreference", event.target.value)} required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="">Select one</option><option value="DIRECT_UPI">Direct UPI</option><option value="CASHFREE">Payment gateway</option><option value="UNSURE">I need guidance</option></select></div><div className="space-y-2"><Label htmlFor="id-proof-type">Identity proof</Label><select id="id-proof-type" value={form.idProofType} onChange={(event) => updateForm("idProofType", event.target.value)} required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="">Select proof</option><option value="PAN">PAN card</option><option value="GST">GST certificate</option><option value="REGISTRATION_CERTIFICATE">Registration certificate</option><option value="ASSOCIATION_ID">Association ID</option><option value="OTHER">Other government ID</option></select></div></div>
+                        </section>
+                        <section className="space-y-4 border-t pt-6">
+                        {sectionHeading("03", "Payments & verification", "Choose how you expect to collect payments and upload proof of identity.")}
+                        <div className="grid gap-5 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="payment-preference">How will you collect registration payments?</Label><select id="payment-preference" value={form.paymentPreference} onChange={(event) => updateForm("paymentPreference", event.target.value)} required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="">Select one</option><option value="DIRECT_UPI">Direct UPI</option><option value="CASHFREE">Payment gateway</option><option value="BOTH">Both, depending on the event</option><option value="UNSURE">I need guidance</option></select><p className="text-xs text-muted-foreground">You can use different payment methods for different events.</p></div><div className="space-y-2"><Label htmlFor="id-proof-type">Identity proof</Label><select id="id-proof-type" value={form.idProofType} onChange={(event) => updateForm("idProofType", event.target.value)} required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="">Select proof</option><option value="PAN">PAN card</option><option value="GST">GST certificate</option><option value="REGISTRATION_CERTIFICATE">Registration certificate</option><option value="ASSOCIATION_ID">Association ID</option><option value="OTHER">Other government ID</option></select></div></div>
                         <div className="space-y-2"><Label htmlFor="id-proof">Upload ID proof</Label><Input id="id-proof" type="file" accept="application/pdf,image/png,image/jpeg,image/webp" required onChange={(event) => updateForm("idProof", event.target.files?.[0] ?? null)} /><p className="text-xs text-muted-foreground">PDF, PNG, JPG, or WebP. Stored securely for admin verification.</p></div>
-                        {form.paymentPreference === "DIRECT_UPI" && <fieldset className="space-y-3 rounded-xl border p-4"><legend className="px-1 text-sm font-semibold">Direct UPI details</legend><Label htmlFor="apply-upi">UPI ID</Label><Input id="apply-upi" required maxLength={320} value={form.upiId} onChange={e => updateForm("upiId", e.target.value)} placeholder="club@bank" /><Label htmlFor="apply-payee">Payee name</Label><Input id="apply-payee" required minLength={2} maxLength={200} value={form.payeeName} onChange={e => updateForm("payeeName", e.target.value)} /><p className="text-xs text-muted-foreground">Payments go directly to you. You reconcile participant payments; payment access is enabled separately after review.</p></fieldset>}
-                        {form.paymentPreference === "CASHFREE" && <fieldset className="space-y-3 rounded-xl border p-4"><legend className="px-1 text-sm font-semibold">Payment gateway details</legend><Label htmlFor="apply-legal">Legal name as on PAN</Label><Input id="apply-legal" required minLength={2} maxLength={200} value={form.legalName} onChange={e => updateForm("legalName", e.target.value)} /><Label htmlFor="apply-pan">PAN</Label><Input id="apply-pan" required maxLength={10} pattern="[A-Z]{5}[0-9]{4}[A-Z]" value={form.panNumber} onChange={e => updateForm("panNumber", e.target.value.toUpperCase())} /><p className="text-xs text-muted-foreground">After account approval, complete paid-event verification and confirm settlement details with SportPass before accepting gateway payments.</p></fieldset>}
+                        {(form.paymentPreference === "DIRECT_UPI" || form.paymentPreference === "BOTH") && <fieldset className="space-y-3 rounded-xl border p-4"><legend className="px-1 text-sm font-semibold">Direct UPI details</legend><Label htmlFor="apply-upi">UPI ID</Label><Input id="apply-upi" required maxLength={320} value={form.upiId} onChange={e => updateForm("upiId", e.target.value)} placeholder="club@bank" /><Label htmlFor="apply-payee">Payee name</Label><Input id="apply-payee" required minLength={2} maxLength={200} value={form.payeeName} onChange={e => updateForm("payeeName", e.target.value)} /><p className="text-xs text-muted-foreground">Payments go directly to you. Payment access is enabled separately after review.</p></fieldset>}
+                        {(form.paymentPreference === "CASHFREE" || form.paymentPreference === "BOTH") && <fieldset className="space-y-3 rounded-xl border p-4"><legend className="px-1 text-sm font-semibold">Payment gateway details</legend><Label htmlFor="apply-legal">Legal name as on PAN</Label><Input id="apply-legal" required minLength={2} maxLength={200} value={form.legalName} onChange={e => updateForm("legalName", e.target.value)} /><Label htmlFor="apply-pan">PAN</Label><Input id="apply-pan" required maxLength={10} pattern="[A-Z]{5}[0-9]{4}[A-Z]" value={form.panNumber} onChange={e => updateForm("panNumber", e.target.value.toUpperCase())} /><p className="text-xs text-muted-foreground">Gateway access requires separate verification and approval.</p></fieldset>}
                         {form.paymentPreference === "UNSURE" && <p className="text-sm text-muted-foreground">We will discuss your payment needs during review. Payment collection remains disabled until configured and approved.</p>}
+                        <p className="rounded-xl bg-muted/50 px-4 py-3 text-xs leading-5 text-muted-foreground">Your proof is kept private and used only by admins to verify your application.</p>
+                        </section>
                       </>}
-                      <div className="grid gap-5 sm:grid-cols-2">
-                        <div className="space-y-2"><Label htmlFor="signup-name">Your name</Label><Input id="signup-name" value={form.name} onChange={(event) => updateForm("name", event.target.value)} required minLength={2} maxLength={120} autoComplete="name" placeholder="Your full name" /></div>
-                        <div className="space-y-2"><Label htmlFor="signup-phone">Phone {isParticipant ? <span className="font-normal text-muted-foreground">(optional)</span> : null}</Label><Input id="signup-phone" type="tel" inputMode="numeric" value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} required={!isParticipant} maxLength={20} autoComplete="tel" placeholder="+91 98765 43210" /><p className="text-xs text-muted-foreground">Indian mobile number only.</p></div>
-                      </div>
-                      <div className="space-y-2"><Label htmlFor="signup-email">Email address</Label><Input id="signup-email" type="email" value={form.email} onChange={(event) => updateForm("email", event.target.value)} required maxLength={320} autoComplete="email" placeholder="you@example.com" /></div>
-                      <div className="space-y-2"><Label htmlFor="signup-password">Password</Label><div className="relative"><Input id="signup-password" type={showPassword ? "text" : "password"} value={form.password} onChange={(event) => updateForm("password", event.target.value)} required minLength={8} maxLength={256} autoComplete="new-password" placeholder="At least 8 characters" className="pr-10" /><button type="button" onClick={() => setShowPassword((visible) => !visible)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div><p className="text-xs text-muted-foreground">Use at least 8 characters. A longer passphrase is even better.</p></div>
+                      {isParticipant && contactFields}
                       <label className="flex items-start gap-3 rounded-xl border bg-muted/30 p-3 text-sm leading-5">
                         <input type="checkbox" checked={form.privacyPolicyAccepted} onChange={(event) => { setSubmitted(false); setForm((current) => ({ ...current, privacyPolicyAccepted: event.target.checked })); }} className="mt-1 h-4 w-4 accent-primary" required />
-                        <span>I have read the <Link to="/privacy-policy" target="_blank" className="font-semibold text-primary underline underline-offset-2">Privacy Policy</Link> and consent to the collection and use of my data to create and operate my SportPass account and registrations.</span>
+                        <span>I have read the <Link to="/privacy-policy" target="_blank" className="font-semibold text-primary underline underline-offset-2">Privacy Policy</Link>{isParticipant ? " and consent to the collection and use of my data to create and operate my SportPass account and registrations." : " and consent to the collection and use of my contact, organization, event, payment and uploaded identity-proof details to review my organizer application, verify my details, contact me about the decision, and administer my account if approved."}</span>
                       </label>
                       <Button type="submit" className="w-full gap-2" size="lg" disabled={loading}>{loading ? "Submitting…" : mode === "participant" ? "Create participant account" : "Submit organizer application"}<ArrowRight className="h-4 w-4" /></Button>
                     </form>
