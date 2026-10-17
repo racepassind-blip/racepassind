@@ -19,8 +19,13 @@ Endpoints:
 from __future__ import annotations
 
 from uuid import UUID
+import csv
+import datetime as dt
+import io
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
@@ -58,6 +63,44 @@ from models import (
 )
 
 router = APIRouter()
+
+
+def _refund_list_response(refunds, limit, export_csv):
+    if not export_csv:
+        return {"refunds": [serialize_refund(r) for r in refunds[:limit]],
+                "hasMore": len(refunds) > limit,
+                "nextCursor": str(refunds[limit - 1].id) if len(refunds) > limit else None}
+    if len(refunds) > 10000:
+        raise HTTPException(422, "Export exceeds 10,000 refunds. Narrow the event or date filters.")
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["refund_id", "registration_reference", "event", "organization_id", "provider",
+                     "status", "provider_status", "provider_refund_id", "refund_utr", "original_paid_paise",
+                     "approved_refund_paise", "requested_refund_paise", "platform_fee_refund_paise",
+                     "accounting_treatment", "credit_fee_treatment", "requested_at", "sent_at", "completed_at"])
+    def safe(value):
+        text = str(value) if value is not None else ""
+        return "'" + text if text.lstrip().startswith(("=", "+", "-", "@")) or text.startswith(("\t", "\r", "\n")) else text
+    def timestamp(value):
+        if value is None:
+            return ""
+        return (value.replace(tzinfo=dt.timezone.utc) if value.tzinfo is None else value).astimezone(
+            dt.timezone(dt.timedelta(hours=5, minutes=30))).isoformat()
+    for refund in refunds:
+        writer.writerow([safe(value) for value in [refund.id,
+            refund.registration.registration_reference if refund.registration else "", refund.event.name,
+            refund.organizer_id, refund.payment_provider, refund.status, refund.provider_refund_status,
+            refund.provider_refund_id, refund.refund_utr, refund.original_total_paid,
+            refund.approved_refund_amount, refund.requested_refund_amount, refund.platform_fee_refund_amount,
+            "audit_only" if refund.is_manual_refund else "registration_refund", "retained",
+            timestamp(refund.requested_at), timestamp(refund.refunded_at), timestamp(refund.confirmed_at)]])
+    return Response(output.getvalue(), media_type="text/csv", headers={
+        "Content-Disposition": 'attachment; filename="refund-ledger.csv"', "Cache-Control": "no-store"})
+
+
+def _validate_refund_dates(date_from, date_to):
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(422, "Start date must be on or before end date")
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +239,7 @@ def organizer_create_manual_refund(
     Use this for participants who paid outside the platform (cash, direct transfer,
     in-person) and need a refund record for your own audit trail.
 
-    These records are flagged is_manual_refund=True and are NEVER included in
+    Unlinked records are flagged is_manual_refund=True and are NEVER included in
     event earnings totals or SportPass billing calculations.
     """
     from uuid import UUID as _UUID
@@ -295,10 +338,17 @@ def organizer_list_refunds(event_id: UUID | None = None,
     payment_provider: str | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     cursor: UUID | None = None,
+    date_from: dt.date | None = None,
+    date_to: dt.date | None = None,
+    date_field: Literal["requested", "sent", "completed"] = "requested",
+    export_csv: bool = False,
     user: User = Depends(require_roles("organizer", "admin")),
     db: Session = Depends(get_db),
 ):
     """List refunds for the organizer's events."""
+    _validate_refund_dates(date_from, date_to)
+    if export_csv:
+        limit, cursor = 10000, None
     if user.role == "admin":
         # Admin calling this endpoint sees all (use /admin/refunds for filtering by org)
         refunds = list_refunds_for_admin(
@@ -308,13 +358,9 @@ def organizer_list_refunds(event_id: UUID | None = None,
             payment_provider=payment_provider,
             limit=limit,
             cursor=str(cursor) if cursor else None,
+            date_from=date_from, date_to=date_to, date_field=date_field,
         )
-        has_more = len(refunds) > limit
-        return {
-            "refunds": [serialize_refund(r) for r in refunds[:limit]],
-            "hasMore": has_more,
-            "nextCursor": str(refunds[limit - 1].id) if has_more and refunds else None,
-        }
+        return _refund_list_response(refunds, limit, export_csv)
 
     # Find organizer_id for this user
     membership = db.scalar(
@@ -324,7 +370,7 @@ def organizer_list_refunds(event_id: UUID | None = None,
         )
     )
     if membership is None:
-        return {"refunds": [], "hasMore": False, "nextCursor": None}
+        return _refund_list_response([], limit, export_csv)
 
     refunds = list_refunds_for_organizer(
         db,
@@ -334,13 +380,9 @@ def organizer_list_refunds(event_id: UUID | None = None,
         payment_provider=payment_provider,
         limit=limit,
         cursor=str(cursor) if cursor else None,
+        date_from=date_from, date_to=date_to, date_field=date_field,
     )
-    has_more = len(refunds) > limit
-    return {
-        "refunds": [serialize_refund(r) for r in refunds[:limit]],
-        "hasMore": has_more,
-        "nextCursor": str(refunds[limit - 1].id) if has_more and refunds else None,
-    }
+    return _refund_list_response(refunds, limit, export_csv)
 
 
 @router.get("/organizer/refunds/{refund_id}")
@@ -451,10 +493,17 @@ def admin_list_refunds(
     payment_provider: str | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     cursor: UUID | None = None,
+    date_from: dt.date | None = None,
+    date_to: dt.date | None = None,
+    date_field: Literal["requested", "sent", "completed"] = "requested",
+    export_csv: bool = False,
     user: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
 ):
     """Admin view: all refunds across SportPass with full filtering."""
+    _validate_refund_dates(date_from, date_to)
+    if export_csv:
+        limit, cursor = 10000, None
     refunds = list_refunds_for_admin(
         db,
         event_id=event_id,
@@ -463,13 +512,9 @@ def admin_list_refunds(
         payment_provider=payment_provider,
         limit=limit,
         cursor=str(cursor) if cursor else None,
+        date_from=date_from, date_to=date_to, date_field=date_field,
     )
-    has_more = len(refunds) > limit
-    return {
-        "refunds": [serialize_refund(r) for r in refunds[:limit]],
-        "hasMore": has_more,
-        "nextCursor": str(refunds[limit - 1].id) if has_more and refunds else None,
-    }
+    return _refund_list_response(refunds, limit, export_csv)
 
 
 @router.get("/admin/refunds/filter-options")

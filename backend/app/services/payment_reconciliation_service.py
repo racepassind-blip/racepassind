@@ -31,7 +31,7 @@ def _iso(value):
     return value.isoformat() if value else None
 
 
-def _payment_label(checkout: CheckoutPayment, resolution: CashfreePaymentResolution | None, refunds: list[Refund]) -> str:
+def _payment_label(checkout: CheckoutPayment, resolution: CashfreePaymentResolution | None, refunds: list[Refund], amount_paise: int | None = None) -> str:
     if resolution is not None:
         if resolution.status == "REFUNDED":
             return "refunded"
@@ -40,7 +40,9 @@ def _payment_label(checkout: CheckoutPayment, resolution: CashfreePaymentResolut
     if refunds and any(refund.status in {"REQUESTED", "APPROVED", "PROCESSING", "REFUND_SENT"} for refund in refunds):
         return "refund_in_progress"
     if refunds and any(refund.status == "REFUNDED" for refund in refunds):
-        return "partially_refunded"
+        total = sum(int(refund.approved_refund_amount or 0) for refund in refunds if refund.status == "REFUNDED" and not refund.is_manual_refund)
+        if total:
+            return "refunded" if total >= (amount_paise if amount_paise is not None else checkout.amount_paise) else "partially_refunded"
     return checkout.status
 
 
@@ -105,13 +107,13 @@ def payment_reconciliation(
         receipts = receipts_by_checkout[key]
         registration_refunds = [refund for registration in registrations for refund in refunds_by_registration[registration.id]]
         resolution = resolution_by_checkout.get(key)
-        display_status = _payment_label(checkout, resolution, registration_refunds)
         # Checkout orders can contain registrations for multiple events. Use the
         # frozen participant total on each registration, so a platform-wide
         # report never counts the same Cashfree charge once per event.
         registration_total = sum(int(registration.participant_total_paise or 0) for registration in registrations)
         fee_total = sum(int(registration.platform_fee_paise or 0) for registration in registrations)
         amount_paise = registration_total or checkout.amount_paise
+        display_status = _payment_label(checkout, resolution, registration_refunds, amount_paise)
         fee_paise = fee_total or checkout.fee_paise
         references = sorted({registration.registration_reference for registration in registrations if registration.registration_reference})
         payment_ids = sorted({receipt.payment_id for receipt in receipts if receipt.payment_id})
@@ -123,7 +125,7 @@ def payment_reconciliation(
             continue
         if status != "all" and display_status != status:
             continue
-        total_refunded = sum(int(refund.approved_refund_amount or 0) for refund in registration_refunds if refund.status == "REFUNDED")
+        total_refunded = sum(int(refund.approved_refund_amount or 0) for refund in registration_refunds if refund.status == "REFUNDED" and not refund.is_manual_refund)
         items.append({
             "checkoutId": str(checkout.id),
             "eventId": str(event.id),

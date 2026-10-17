@@ -37,7 +37,7 @@ def ticket_qr_payload(ticket_token: str) -> str:
 
 
 def verified_ticket_qr_payload(registration: Registration) -> str | None:
-    if registration.status not in {"confirmed", "checked_in"} or not registration.ticket_token_hash:
+    if registration.payment_status == "refunded" or registration.status not in {"confirmed", "checked_in"} or not registration.ticket_token_hash:
         return None
     ticket_token = ticket_token_for_registration(registration)
     if not hmac.compare_digest(hash_opaque_token(ticket_token), registration.ticket_token_hash):

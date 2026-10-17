@@ -121,16 +121,16 @@ export function ParticipantRegistrationCard({
   };
 
   return (
-    <Card>
+    <Card className="overflow-hidden rounded-2xl shadow-sm">
       <CardHeader className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-xl">
+          <div className="min-w-0">
+            <CardTitle className="break-words text-xl leading-snug">
               <Link to={`/event/${encodeURIComponent(registration.event.id)}`} className="transition-colors hover:text-primary hover:underline">
                 {registration.event.name}
               </Link>
             </CardTitle>
-            <CardDescription className="mt-1 flex items-center gap-1.5">
+            <CardDescription className="mt-2 flex flex-wrap items-center gap-1.5">
               {formatRegistrationDate(registration.event.date)}
               <span aria-hidden="true">·</span>
               <MapPin className="h-3.5 w-3.5" />
@@ -138,7 +138,7 @@ export function ParticipantRegistrationCard({
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <RegistrationStatusBadge status={registration.status} />
+            <RegistrationStatusBadge status={["refunded", "partially_refunded"].includes(registration.paymentStatus) ? registration.paymentStatus : registration.status} />
             <Button asChild size="sm" variant="outline" className="gap-1.5">
               <Link to={`/event/${encodeURIComponent(registration.event.id)}`}>View event</Link>
             </Button>
@@ -152,7 +152,9 @@ export function ParticipantRegistrationCard({
       </CardHeader>
 
       <CardContent className="space-y-5">
-        <div className="grid gap-4 text-sm sm:grid-cols-2">
+        {registration.paymentStatus === "refunded" && <p className="rounded-lg bg-muted p-3 text-sm">Fully refunded. This ticket is no longer valid for check-in.</p>}
+        {registration.paymentStatus === "partially_refunded" && <p className="rounded-lg bg-muted p-3 text-sm">Part of your payment has been refunded. Your registration remains active.</p>}
+        <div className="grid grid-cols-2 gap-4 rounded-xl bg-muted/30 p-4 text-sm [&_p]:break-words">
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Registration reference</p>
             <p className="mt-1 font-mono font-semibold">{registration.registrationReference}</p>
@@ -184,7 +186,7 @@ export function ParticipantRegistrationCard({
         </div>
 
         {/* QR ticket */}
-        {registration.ticket && (
+        {registration.ticket && registration.paymentStatus !== "refunded" && (
           <div className="border-t border-dashed pt-5 text-center">
             <p className="mb-3 flex items-center justify-center gap-2 text-sm font-semibold">
               <QrCode className="h-4 w-4 text-accent" />Event ticket QR
@@ -192,7 +194,7 @@ export function ParticipantRegistrationCard({
             <img
               src={registration.ticket.qrDataUrl}
               alt={`Ticket QR for ${registration.event.name}`}
-              className="mx-auto h-52 w-52 rounded-lg bg-white p-2"
+              className="mx-auto h-auto w-52 max-w-full rounded-lg bg-white p-2"
             />
             <p className="mt-3 text-xs text-muted-foreground">
               This QR contains only an opaque ticket credential. Keep it private and show it at check-in.

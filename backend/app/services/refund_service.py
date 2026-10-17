@@ -157,6 +157,28 @@ def check_refund_eligibility(
 # Participant actions
 # ---------------------------------------------------------------------------
 
+def apply_completed_refund(db: Session, refund: Refund) -> None:
+    """Keep registration payment state consistent without rewriting the collection.
+
+    Full refunds revoke admission; partial refunds retain admission. Organizer
+    credit fees are retained and any credit adjustment is recorded separately.
+    """
+    if refund.registration_id is None or refund.is_manual_refund:
+        return
+    registration = db.scalar(select(Registration).where(Registration.id == refund.registration_id)
+                             .with_for_update().execution_options(populate_existing=True))
+    if registration is None:
+        return
+    db.flush()
+    completed = db.scalars(select(Refund).where(
+        Refund.registration_id == registration.id, Refund.is_manual_refund.is_(False),
+        Refund.status == REFUND_STATUS_REFUNDED,
+    )).all()
+    total_refunded = sum(int(item.approved_refund_amount or 0) for item in completed)
+    total_paid = registration.participant_total_paise or registration.total_amount_paise or 0
+    registration.payment_status = "refunded" if total_refunded >= total_paid else "partially_refunded"
+
+
 def request_refund(
     db: Session,
     *,
@@ -263,10 +285,7 @@ def confirm_refund_received(
     refund.confirmed_at = now
     refund.updated_at = now
 
-    # Update registration payment_status
-    registration = db.get(Registration, refund.registration_id)
-    if registration is not None:
-        registration.payment_status = "refunded"
+    apply_completed_refund(db, refund)
 
     record_audit(
         db,
@@ -274,7 +293,7 @@ def confirm_refund_received(
         action="refund_confirmed_received",
         resource_type="refund",
         resource_id=refund.id,
-        metadata={"refundId": str(refund.id)},
+        metadata={"refundId": str(refund.id), "creditFeeTreatment": "retained", "creditAdjustmentPaise": 0},
     )
     db.commit()
     return refund
@@ -445,7 +464,10 @@ def _refund_page_after(db: Session, cursor: str):
     boundary = db.execute(select(Refund.created_at, Refund.id).where(Refund.id == cursor_id)).one_or_none()
     if boundary is None:
         raise ValueError("Refund cursor not found")
-    created_at, refund_id = boundary
+    _, refund_id = boundary
+    # Compare database timestamps directly. Rebinding a rounded timestamp can
+    # repeat the boundary row (notably server-default timestamps in SQLite).
+    created_at = select(Refund.created_at).where(Refund.id == refund_id).correlate(None).scalar_subquery()
     return or_(Refund.created_at < created_at,
                and_(Refund.created_at == created_at, Refund.id < refund_id))
 
@@ -477,6 +499,9 @@ def list_refunds_for_organizer(
     payment_provider: str | None = None,
     limit: int = 50,
     cursor: str | None = None,
+    date_from: dt.date | None = None,
+    date_to: dt.date | None = None,
+    date_field: str = "requested",
 ) -> list[Refund]:
     query = (
         select(Refund)
@@ -496,6 +521,7 @@ def list_refunds_for_organizer(
         query = query.where(Refund.payment_provider == payment_provider)
     if cursor:
         query = query.where(_refund_page_after(db, cursor))
+    query = _filter_refund_dates(query, date_from, date_to, date_field)
     return list(db.scalars(query.limit(limit + 1)))
 
 
@@ -508,6 +534,9 @@ def list_refunds_for_admin(
     payment_provider: str | None = None,
     limit: int = 50,
     cursor: str | None = None,
+    date_from: dt.date | None = None,
+    date_to: dt.date | None = None,
+    date_field: str = "requested",
 ) -> list[Refund]:
     query = (
         select(Refund)
@@ -529,7 +558,19 @@ def list_refunds_for_admin(
         query = query.where(Refund.payment_provider == payment_provider)
     if cursor:
         query = query.where(_refund_page_after(db, cursor))
+    query = _filter_refund_dates(query, date_from, date_to, date_field)
     return list(db.scalars(query.limit(limit + 1)))
+
+
+def _filter_refund_dates(query, date_from, date_to, date_field):
+    column = {"requested": Refund.requested_at, "sent": Refund.refunded_at,
+              "completed": Refund.confirmed_at}[date_field]
+    ist = dt.timezone(dt.timedelta(hours=5, minutes=30))
+    if date_from:
+        query = query.where(column >= dt.datetime.combine(date_from, dt.time.min, ist).astimezone(dt.timezone.utc))
+    if date_to:
+        query = query.where(column < dt.datetime.combine(date_to + dt.timedelta(days=1), dt.time.min, ist).astimezone(dt.timezone.utc))
+    return query
 
 
 def create_manual_refund(
@@ -546,13 +587,11 @@ def create_manual_refund(
     refund_utr: str | None,
     actor_user_id: UUID,
 ) -> Refund:
-    """Organizer creates a manual refund not tied to any SportPass registration.
+    """Record a Direct UPI refund, optionally linked to a paid registration.
 
-    These records are flagged is_manual_refund=True and are excluded from
-    event earnings and billing calculations. They exist purely as an audit
-    trail for cash/outside-platform refunds the organizer issues manually.
-    If registration_id is supplied the refund is linked to that registration
-    for tracking but still excluded from automated billing calculations.
+    Only unlinked outside-platform records are audit-only. Linked records
+    preserve the actual original amounts and update registration state on
+    participant confirmation. Neither flow automatically reverses credit fees.
     """
     # Verify the event belongs to this organizer
     event = db.scalar(
@@ -566,6 +605,7 @@ def create_manual_refund(
     # The event ownership check above is not sufficient on its own because a
     # caller could otherwise attach another organizer's registration ID.
     participant_id = None
+    reg = None
     if registration_id:
         reg = db.scalar(
             select(Registration)
@@ -579,8 +619,12 @@ def create_manual_refund(
         )
         if reg is None:
             raise ValueError("Registration not found for this event or organisation")
-        if reg.payment and reg.payment.payment_gateway == "cashfree":
+        if reg.payment and _payment_provider_for_payment(reg.payment) == PAYMENT_PROVIDER_CASHFREE:
             raise ValueError("Cashfree registrations must use the managed refund flow")
+        if reg.payment_status != "approved" or reg.status not in {"confirmed", "checked_in"}:
+            raise ValueError("Only an approved, paid registration can be refunded")
+        if amount_paise > (reg.participant_total_paise or reg.total_amount_paise or 0):
+            raise ValueError("Refund amount cannot exceed the original amount paid")
         if db.scalar(select(Refund.id).where(Refund.registration_id == reg.id,
                 Refund.status.in_(REFUND_ACTIVE_STATUSES | {REFUND_STATUS_REFUNDED}))) is not None:
             raise ValueError("A refund already exists for this registration")
@@ -594,14 +638,14 @@ def create_manual_refund(
         event_id=event_id,
         participant_id=participant_id,
         organizer_id=organizer_id,
-        is_manual_refund=True,
+        is_manual_refund=reg is None,
         manual_participant_name=participant_name.strip(),
         manual_participant_contact=(participant_contact or "").strip() or None,
         payment_method="manual",
         payment_provider=PAYMENT_PROVIDER_DIRECT_UPI,
-        original_registration_amount=amount_paise,
-        original_platform_fee=0,
-        original_total_paid=amount_paise,
+        original_registration_amount=reg.total_amount_paise if reg else amount_paise,
+        original_platform_fee=(reg.platform_fee_paise or 0) if reg else 0,
+        original_total_paid=(reg.participant_total_paise or reg.total_amount_paise) if reg else amount_paise,
         requested_refund_amount=amount_paise,
         approved_refund_amount=amount_paise,
         platform_fee_refund_amount=0,
@@ -652,6 +696,10 @@ def serialize_refund(refund: Refund) -> dict:
         "participantId": str(refund.participant_id) if refund.participant_id else None,
         "organizerId": str(refund.organizer_id),
         "isManualRefund": refund.is_manual_refund,
+        "accountingTreatment": "audit_only" if refund.is_manual_refund else "registration_refund",
+        "creditFeeTreatment": "retained",
+        "creditAdjustmentPaise": 0,
+        "refundExtent": "full" if (refund.approved_refund_amount or 0) >= refund.original_total_paid else "partial",
         "manualParticipantName": refund.manual_participant_name,
         "manualParticipantContact": refund.manual_participant_contact,
         "paymentMethod": refund.payment_method,

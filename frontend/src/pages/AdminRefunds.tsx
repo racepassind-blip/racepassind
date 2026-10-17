@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertCircle, ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 
 import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
+import { RefundAuditFilters, emptyRefundDates } from "@/components/RefundAuditFilters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -10,6 +11,7 @@ import { apiRequest } from "@/lib/api";
 import { CashfreePaymentReviews, PaymentAuditHistory, type AuditEntry } from "@/components/CashfreePaymentReviews";
 
 interface RefundRecord {
+  isManualRefund?: boolean;
   id: string;
   registrationId: string;
   eventId: string;
@@ -145,6 +147,7 @@ function DetailDrawer({ refund, onClose, onUpdated }: { refund: RefundRecord; on
               <div className="flex justify-between"><span className="text-muted-foreground">SportPass fee</span><span>{fmt(refund.originalPlatformFee)}</span></div>
               <div className="flex justify-between border-t pt-1 font-semibold"><span>Total paid</span><span>{fmt(refund.originalTotalPaid)}</span></div>
               <div className="flex justify-between text-primary font-bold border-t pt-1"><span>Refund amount</span><span>{fmt(amount)}</span></div>
+              <p className="pt-2 text-xs text-muted-foreground">{refund.isManualRefund ? "Audit-only record; excluded from registration accounting." : `${amount < refund.originalTotalPaid ? "Partial" : "Full"} registration refund. Organizer credit fees are retained; any credit adjustment is recorded separately.`}</p>
             </div>
           </section>
           <section>
@@ -199,6 +202,7 @@ function DetailDrawer({ refund, onClose, onUpdated }: { refund: RefundRecord; on
 
 const AdminRefunds = () => {
   const [refunds, setRefunds] = useState<RefundRecord[]>([]);
+  const [refundDates, setRefundDates] = useState(emptyRefundDates);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -223,7 +227,9 @@ const AdminRefunds = () => {
   }, [filterSearch]);
 
   useEffect(() => {
+    let active = true;
     const params = new URLSearchParams();
+    Object.entries(refundDates).forEach(([key, value]) => { if (value) params.set(key, value); });
     if (statusFilter !== "all") params.set("refund_status", statusFilter);
     if (eventFilter !== "all") params.set("event_id", eventFilter);
     if (organizerFilter !== "all") params.set("organizer_id", organizerFilter);
@@ -236,12 +242,14 @@ const AdminRefunds = () => {
       `/admin/refunds?${params}`
     )
       .then((data) => {
+        if (!active) return;
         setRefunds(data.refunds);
         setNextCursor(data.nextCursor);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Could not load refunds"))
-      .finally(() => setLoading(false));
-  }, [statusFilter, eventFilter, organizerFilter, cursor, reloadKey]);
+      .catch((err) => { if (active) setError(err instanceof Error ? err.message : "Could not load refunds"); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [statusFilter, eventFilter, organizerFilter, cursor, reloadKey, refundDates]);
 
   const goPrev = () => {
     setCursor(cursorHistory[cursorHistory.length - 1] ?? null);
@@ -267,6 +275,7 @@ const AdminRefunds = () => {
         </div>
 
         <CashfreePaymentReviews reloadKey={reloadKey} />
+        <RefundAuditFilters value={refundDates} onChange={value => { setRefundDates(value); setCursor(null); setCursorHistory([]); }} endpoint="/admin/refunds" filters={{ refund_status: statusFilter, event_id: eventFilter, organizer_id: organizerFilter }} />
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3 rounded-xl border bg-card p-4">

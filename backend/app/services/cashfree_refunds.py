@@ -94,12 +94,12 @@ def reconcile_cashfree_refund(db: Session, *, refund_id: UUID, initiate: bool, a
         refund.status = REFUND_STATUS_REFUNDED
         refund.refunded_at = utc_now()
         refund.confirmed_at = refund.refunded_at
-        registration = db.get(Registration, refund.registration_id)
-        if registration is not None:
-            registration.payment_status = "refunded"
+        from app.services.refund_service import apply_completed_refund
+        apply_completed_refund(db, refund)
         record_audit(db, actor_user_id=actor_user_id, action="cashfree_refund_confirmed",
             resource_type="refund", resource_id=refund.id,
             metadata={"providerRefundId": provider_refund_id, "amountPaise": approved,
+                      "creditFeeTreatment": "retained", "creditAdjustmentPaise": 0,
                       "initiatedBy": str(refund.initiated_by) if refund.initiated_by else None,
                       "source": "admin" if actor_user_id else "recovery"})
     db.commit()

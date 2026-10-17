@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
+import { RefundAuditFilters, emptyRefundDates } from "@/components/RefundAuditFilters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -232,7 +233,7 @@ function CreateRefundModal({
           {/* Note */}
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 space-y-1">
             <p className="font-semibold">For record-keeping only</p>
-            <p>This creates an audit record only. SportPass does not move any money. The refund amount will <strong>not</strong> affect event earnings or billing totals.</p>
+            <p>Send the refund directly to the participant and record its reference here. Linking a registration tracks the refund against its original payment. Without a registration, this is an audit-only record. Organizer credit fees are retained.</p>
           </div>
 
           {/* Event */}
@@ -641,6 +642,7 @@ function RefundDetailDrawer({ refund, onClose }: { refund: RefundRecord; onClose
               <div className="flex justify-between"><span className="text-muted-foreground">SportPass fee</span><span>{formatPaise(refund.originalPlatformFee)}</span></div>
               <div className="flex justify-between border-t pt-1 font-semibold"><span>Total paid</span><span>{formatPaise(refund.originalTotalPaid)}</span></div>
               <div className="flex justify-between text-primary font-bold border-t pt-1"><span>Refund amount</span><span>{formatPaise(amount)}</span></div>
+              <p className="pt-2 text-xs text-muted-foreground">{refund.isManualRefund ? "Audit-only record; excluded from registration accounting." : `${amount < refund.originalTotalPaid ? "Partial" : "Full"} registration refund. Organizer credit fees are retained; any credit adjustment is recorded separately.`}</p>
             </div>
           </section>
           <section>
@@ -677,6 +679,7 @@ function RefundDetailDrawer({ refund, onClose }: { refund: RefundRecord; onClose
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 const OrganizerRefunds = ({ embedded = false }: { embedded?: boolean }) => {
+  const [refundDates, setRefundDates] = useState(emptyRefundDates);
   const { eventId: pathEventId } = useParams<{ eventId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [refunds, setRefunds] = useState<RefundRecord[]>([]);
@@ -703,6 +706,8 @@ const OrganizerRefunds = ({ embedded = false }: { embedded?: boolean }) => {
 
   useEffect(() => {
     const params = new URLSearchParams();
+    let active = true;
+    Object.entries(refundDates).forEach(([key, value]) => { if (value) params.set(key, value); });
     if (statusFilter !== "all") params.set("refund_status", statusFilter);
     if (eventFilter !== "all") params.set("event_id", eventFilter);
     if (cursor) params.set("cursor", cursor);
@@ -714,12 +719,14 @@ const OrganizerRefunds = ({ embedded = false }: { embedded?: boolean }) => {
       `/organizer/refunds?${params}`
     )
       .then((data) => {
+        if (!active) return;
         setRefunds(data.refunds);
         setNextCursor(data.nextCursor);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Could not load refunds"))
-      .finally(() => setLoading(false));
-  }, [statusFilter, eventFilter, cursor, reloadKey]);
+      .catch((err) => { if (active) setError(err instanceof Error ? err.message : "Could not load refunds"); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [statusFilter, eventFilter, cursor, reloadKey, refundDates]);
 
   const handleRefundUpdated = (updated: RefundRecord) => {
     setRefunds((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
@@ -757,6 +764,7 @@ const OrganizerRefunds = ({ embedded = false }: { embedded?: boolean }) => {
           </div>
         </div>
 
+        <RefundAuditFilters value={refundDates} onChange={value => { setRefundDates(value); setCursor(null); setCursorHistory([]); }} endpoint="/organizer/refunds" filters={{ refund_status: statusFilter, event_id: eventFilter }} />
         {/* Filters */}
         <div className="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
           <div className="space-y-1">

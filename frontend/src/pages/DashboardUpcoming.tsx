@@ -14,7 +14,7 @@ const DashboardUpcoming = () => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const upcoming = registrations
-    .filter((registration) => !["rejected", "expired"].includes(registration.status) && registrationDateValue(registration.event.date) >= today.getTime())
+    .filter((registration) => registration.paymentStatus !== "refunded" && !["rejected", "expired"].includes(registration.status) && registrationDateValue(registration.event.date) >= today.getTime())
     .sort((first, second) => registrationDateValue(first.event.date) - registrationDateValue(second.event.date));
   const errorMessage = error instanceof Error ? error.message : "Failed to load your upcoming registrations.";
   const pageSize = 12;

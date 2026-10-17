@@ -14,6 +14,8 @@ export const registrationStatusDetails: Record<string, RegistrationStatusDetails
   checked_in: { label: "Checked in", variant: "default", icon: CheckCircle2 },
   rejected: { label: "Rejected", variant: "destructive", icon: XCircle },
   expired: { label: "Expired", variant: "destructive", icon: XCircle },
+  refunded: { label: "Fully refunded", variant: "outline", icon: XCircle },
+  partially_refunded: { label: "Partially refunded", variant: "outline", icon: CheckCircle2 },
 };
 
 export function formatRegistrationDate(date: string): string {

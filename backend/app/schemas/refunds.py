@@ -71,10 +71,8 @@ class RefundMarkSentIn(BaseModel):
 class ManualRefundCreateIn(BaseModel):
     """Organizer creates a manual refund record (no registration required).
 
-    is_manual_refund is always True for this flow.
-    These records are excluded from earnings/billing calculations.
-    If registration_id is provided the refund is linked to that registration
-    for tracking purposes but still flagged as organizer-created.
+    Unlinked records are audit-only. A linked record is a registration refund
+    bounded by the original paid amount, with fees retained separately.
     """
     model_config = ConfigDict(extra="forbid")
 

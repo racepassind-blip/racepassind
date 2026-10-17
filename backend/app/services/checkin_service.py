@@ -163,6 +163,10 @@ def check_in_registration(
     if registration is None:
         raise CheckinCredentialError("Check-in credential invalid or not authorized")
 
+    # Check before the duplicate-scan fast path: old printed QR codes remain in circulation.
+    if registration.payment_status == "refunded":
+        raise CheckinNotAllowedError("This registration has been fully refunded and is not valid for check-in")
+
     event = db.get(Event, registration.event_id)
     if event is None:
         raise CheckinCredentialError("Check-in credential invalid or not authorized")
