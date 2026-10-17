@@ -11,8 +11,9 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_current_user
 from app.api.v1.admin import router
+from app.api.v1.organizer import router as organizer_router
 from db import Base, get_db
-from models import CheckoutPayment, CheckoutReceipt, Payment, Refund, CashfreePaymentResolution
+from models import CheckoutPayment, CheckoutReceipt, Payment, Refund, CashfreePaymentResolution, Organization, OrganizationMember
 from tests import test_organizer_settlement_service as fixtures
 
 
@@ -30,6 +31,7 @@ class CashfreeLedgerTests(unittest.TestCase):
         self.f.db.commit()
         app = FastAPI()
         app.include_router(router, prefix="/admin")
+        app.include_router(organizer_router, prefix="/organizer")
         app.dependency_overrides[get_db] = lambda: self.f.db
         app.dependency_overrides[get_current_user] = lambda: self.f.admin
         self.client = TestClient(app)
@@ -112,3 +114,33 @@ class CashfreeLedgerTests(unittest.TestCase):
         self.f.admin.role = "organizer"
         for path in ("", "/export", "/events"):
             self.assertEqual(self.client.get("/admin/cashfree-ledger" + path).status_code, 403)
+
+    def test_organizer_payments_exports_and_overview_are_membership_scoped(self):
+        other_org = Organization(name="Other organizer", status="active")
+        self.f.db.add(other_org)
+        self.f.db.flush()
+        other_event = self.f._event(other_org, "Private event", "CASHFREE_MANAGED")
+        self.f._payment(90000, event=other_event)
+        self.f.db.add(OrganizationMember(organization_id=self.f.organization.id,
+            user_id=self.f.admin.id, member_role="organizer"))
+        self.f.admin.role = "organizer"
+        self.f.db.commit()
+        result = self.client.get("/organizer/payments")
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()["total"], 1)
+        overview = self.client.get("/organizer/payments/overview")
+        self.assertEqual(overview.status_code, 200, overview.text)
+        self.assertEqual([e["id"] for e in overview.json()["events"]], [str(self.f.event.id)])
+        self.assertEqual(overview.json()["summary"]["organizerPayablePaise"], 9500)
+        exported = self.client.get("/organizer/payments/export")
+        self.assertEqual(exported.status_code, 200, exported.text)
+        self.assertNotIn("Private event", exported.text)
+        self.assertEqual(len(list(csv.DictReader(io.StringIO(exported.text)))), 1)
+        for path in ("", "/overview", "/export"):
+            self.assertEqual(self.client.get(f"/organizer/payments{path}?event_id={other_event.id}").status_code, 404)
+
+    def test_organizer_without_membership_has_no_financial_data(self):
+        self.f.admin.role = "organizer"
+        self.f.db.commit()
+        self.assertEqual(self.client.get("/organizer/payments").json()["total"], 0)
+        self.assertEqual(self.client.get("/organizer/payments/overview").json()["events"], [])

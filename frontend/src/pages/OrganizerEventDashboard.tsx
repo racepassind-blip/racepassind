@@ -173,7 +173,7 @@ const OrganizerEventDashboard = () => {
               <div className="mt-7 grid gap-2 sm:flex sm:flex-wrap">
                 <Button className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><ClipboardList className="h-4 w-4" /> Manage registrations</Button>
                 <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ScanLine className="h-4 w-4" /> Check-in</Button>
-                <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/finance`)}><Banknote className="h-4 w-4" /> Finance</Button>
+                <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/payments?event_id=${event.id}`)}><Banknote className="h-4 w-4" /> Payments & Settlements</Button>
                 {!event.isArchived && <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event</Button>}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild><Button variant="outline" className="h-11 w-full justify-center gap-2 sm:w-auto"><MoreHorizontal className="h-4 w-4" /> More actions</Button></DropdownMenuTrigger>

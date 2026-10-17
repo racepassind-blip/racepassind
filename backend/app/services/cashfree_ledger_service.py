@@ -11,7 +11,7 @@ from models import (CashfreePaymentResolution, CheckoutPayment, CheckoutReceipt,
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 
 
-def ledger_query(*, event_id=None, date_from=None, date_to=None, status="all", search="", environment="production"):
+def ledger_query(*, event_id=None, date_from=None, date_to=None, status="all", search="", environment="production", organization_ids=None):
     completed_refund = select(func.coalesce(func.sum(Refund.approved_refund_amount), 0)).where(
         Refund.registration_id == Registration.id, Refund.payment_provider == "CASHFREE",
         Refund.is_manual_refund.is_(False), Refund.status == "REFUNDED").correlate(Registration).scalar_subquery()
@@ -57,6 +57,8 @@ def ledger_query(*, event_id=None, date_from=None, date_to=None, status="all", s
     ).where(CheckoutPayment.mode.in_(("CASHFREE_PLATFORM", "CASHFREE_SPLIT")))
     if environment != "all":
         query = query.where(CheckoutPayment.provider_environment == environment)
+    if organization_ids is not None:
+        query = query.where(Event.organization_id.in_(organization_ids))
     if event_id:
         query = query.where(Event.id == event_id)
     if date_from:

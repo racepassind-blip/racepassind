@@ -54,7 +54,6 @@ import AdminSettlements from "./pages/AdminSettlements";
 import AdminPaymentReconciliation from "./pages/AdminPaymentReconciliation";
 import AdminMfaSetup from "./pages/AdminMfaSetup";
 import OrganizerCredits from "./pages/OrganizerCredits";
-import OrganizerRefunds from "./pages/OrganizerRefunds";
 import OrganizerEventRaceResults from "./pages/OrganizerEventRaceResults";
 import Signup from "./pages/Signup";
 import Confirmation from "./pages/Confirmation";
@@ -69,7 +68,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import PublicEventAnnouncements from "./pages/PublicEventAnnouncements";
 import OrganizerEventAnnouncements from "./pages/OrganizerEventAnnouncements";
-import OrganizerEventFinance from "./pages/OrganizerEventFinance";
+import OrganizerPayments, { OrganizerFinanceRedirect } from "./pages/OrganizerPayments";
 
 const queryClient = new QueryClient();
 
@@ -161,13 +160,14 @@ const App = () => (
             <Route path="/organizer/events/:eventId/tournament/bracket" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventTournamentBracket /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/allocations" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventAllocations /></ProtectedRoute>} />
             <Route path="/organizer/events/:eventId/race-results" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventRaceResults /></ProtectedRoute>} />
-            <Route path="/organizer/events/:eventId/finance" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventFinance /></ProtectedRoute>} />
+            <Route path="/organizer/events/:eventId/finance" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerFinanceRedirect /></ProtectedRoute>} />
+            <Route path="/organizer/payments" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerPayments /></ProtectedRoute>} />
             <Route path="/event/:eventId/number-list" element={<PublicEventNumberList />} />
             <Route path="/organizer/events/:eventId" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventDashboard /></ProtectedRoute>} />
             <Route path="/organizer/setup" element={<ProtectedRoute allowedRoles={["organizer"]}><OrganizerSetup /></ProtectedRoute>} />
-            <Route path="/organizer/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerRefunds /></ProtectedRoute>} />
+            <Route path="/organizer/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerFinanceRedirect refunds /></ProtectedRoute>} />
             <Route path="/organizer/credits" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerCredits /></ProtectedRoute>} />
-            <Route path="/organizer/events/:eventId/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerRefunds /></ProtectedRoute>} />
+            <Route path="/organizer/events/:eventId/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerFinanceRedirect refunds /></ProtectedRoute>} />
             <Route path="/terms-and-conditions" element={<PrivacyPolicy />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/terms-of-service" element={<TermsOfService />} />

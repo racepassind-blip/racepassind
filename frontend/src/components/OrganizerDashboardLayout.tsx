@@ -55,7 +55,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const supportsRaceResults = eventId ? currentSportConfig.result_type === "race_time" : false;
 
   const availableItems: NavItem[] = [
-    ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: isAdmin ? "All events" : "Events", icon: CalendarDays, to: "/organizer" }, ...(!isAdmin ? [{ label: "Merchandise", icon: Package, to: "/organizer/products" }, { label: "SportPass Credits", icon: CreditCard, to: "/organizer/credits" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }] : [])]),
+    ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: isAdmin ? "All events" : "Events", icon: CalendarDays, to: "/organizer" }, ...(!isAdmin ? [{ label: "Merchandise", icon: Package, to: "/organizer/products" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }] : [])]),
     { label: "Registrations", icon: ClipboardList, to: `/organizer/registrations${eventQuery}` },
     ...(eventId && supportsTournamentUnlocked ? [
       { label: "Tournament setup", icon: Settings2, to: `/organizer/events/${eventId}/tournament` },
@@ -69,11 +69,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
     ...(eventId && supportsCheckin ? [{ label: "Check-in", icon: ScanLine, to: `/organizer/events/${eventId}/check-in` }] : []),
     ...(eventId && supportsBib ? [{ label: "Bib Management", icon: Package, to: `/organizer/events/${eventId}/allocations` }] : []),
     ...(supportsRaceResults ? [{ label: "Race Results", icon: Timer, to: `/organizer/events/${eventId}/race-results` }] : []),
-    // Refunds: event-scoped when inside an event, global when on the dashboard
-    ...(eventId
-      ? [{ label: "Event finance", icon: CreditCard, to: `/organizer/events/${eventId}/finance` }, { label: "Refunds", icon: ReceiptText, to: `/organizer/events/${eventId}/refunds` }]
-      : [{ label: "Refunds", icon: ReceiptText, to: "/organizer/refunds" }]
-    ),
+    { label: "Transactions", icon: ReceiptText, to: `/organizer/payments${eventId ? `?event_id=${eventId}` : ""}` },
   ];
 
   const lockedItems: NavItem[] = freeEvent && !adminUnlocked ? [

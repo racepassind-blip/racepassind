@@ -73,6 +73,59 @@ def _credit_org_ids(db: Session, user: User) -> list[UUID]:
     return list(db.scalars(select(Organization.id).join(OrganizationMember, OrganizationMember.organization_id == Organization.id).where(OrganizationMember.user_id == user.id, OrganizationMember.member_role == "organizer", Organization.status == "active")).all())
 
 
+def organizer_payment_filters(event_id: UUID | None = None, date_from: dt.date | None = None,
+    date_to: dt.date | None = None, search: str = Query(default="", max_length=120),
+    status: Literal["all", "successful", "awaiting", "needs_review", "paid_needs_review", "refund_in_progress", "refunded", "partially_refunded", "expired", "failed"] = "all",
+    user: User = Depends(require_roles("organizer", "admin")), db: Session = Depends(get_db)) -> dict:
+    org_ids = _credit_org_ids(db, user)
+    if event_id:
+        event = get_authorized_event(db, user, event_id)
+        if event.organization_id not in org_ids:
+            raise HTTPException(status_code=404, detail="Event not found")
+    if date_from and date_to and date_from > date_to or date_to == dt.date.max:
+        raise HTTPException(status_code=422, detail="Choose a valid date range")
+    return dict(event_id=event_id, date_from=date_from, date_to=date_to, search=search,
+        status="needs_review" if status == "paid_needs_review" else status,
+        environment="production", organization_ids=org_ids)
+
+
+@router.get("/payments")
+def organizer_payments(filters: dict = Depends(organizer_payment_filters),
+    page: int = Query(default=1, ge=1), db: Session = Depends(get_db)) -> dict:
+    from app.services.cashfree_ledger_service import cashfree_ledger
+    return cashfree_ledger(db, page=page, **filters)
+
+
+@router.get("/payments/export")
+def organizer_payments_export(filters: dict = Depends(organizer_payment_filters), db: Session = Depends(get_db)) -> Response:
+    from app.services.cashfree_ledger_service import cashfree_ledger_csv
+    return Response("".join(cashfree_ledger_csv(db, **filters)), media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="event-payments.csv"', "Cache-Control": "no-store"})
+
+
+@router.get("/payments/overview")
+def organizer_payments_overview(event_id: UUID | None = None,
+    user: User = Depends(require_roles("organizer", "admin")), db: Session = Depends(get_db)) -> dict:
+    from app.services.organizer_settlement_service import settlement_summary
+    from models import OrganizerSettlement
+    org_ids = _credit_org_ids(db, user)
+    events = db.scalars(select(Event).where(Event.organization_id.in_(org_ids)).order_by(Event.name, Event.id)).all()
+    if event_id and event_id not in {e.id for e in events}:
+        raise HTTPException(status_code=404, detail="Event not found")
+    selected = [e for e in events if not event_id or e.id == event_id]
+    totals = dict(organizerPayablePaise=0, settledAmountPaise=0, outstandingAmountPaise=0, pendingSettlementPaise=0)
+    for event in sorted(selected, key=lambda e: str(e.id)):
+        summary = settlement_summary(db, event_id=event.id)
+        for key in totals:
+            totals[key] += summary[key]
+    payouts = db.scalars(select(OrganizerSettlement).where(OrganizerSettlement.event_id.in_([e.id for e in selected]),
+        OrganizerSettlement.organizer_id.in_(org_ids)).order_by(OrganizerSettlement.settlement_date.desc(), OrganizerSettlement.id)).all()
+    names = {e.id: e.name for e in events}
+    return {"events": [{"id": str(e.id), "name": e.name, "paymentMode": e.payment_collection_method} for e in events],
+        "summary": totals, "payouts": [{"id": str(p.id), "eventName": names[p.event_id], "amountPaise": p.amount_paise,
+            "status": p.status, "method": p.method, "reference": p.reference_number, "date": p.settlement_date} for p in payouts]}
+
+
 class OrganizationProfileIn(BaseModel):
     name: str = Field(min_length=2, max_length=160)
     organization_type: str = Field(min_length=2, max_length=80)

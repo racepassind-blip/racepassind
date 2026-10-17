@@ -676,7 +676,7 @@ function RefundDetailDrawer({ refund, onClose }: { refund: RefundRecord; onClose
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-const OrganizerRefunds = () => {
+const OrganizerRefunds = ({ embedded = false }: { embedded?: boolean }) => {
   const { eventId: pathEventId } = useParams<{ eventId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [refunds, setRefunds] = useState<RefundRecord[]>([]);
@@ -739,8 +739,8 @@ const OrganizerRefunds = () => {
     setCursor(nextCursor);
   };
 
-  return (
-    <OrganizerDashboardLayout eventId={pathEventId}>
+  const content = (
+    <>
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
@@ -771,7 +771,7 @@ const OrganizerRefunds = () => {
           </div>
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground">Event</p>
-            <Select value={eventFilter} onValueChange={(v) => { setEventFilter(v); setCursor(null); setCursorHistory([]); }}>
+            <Select value={eventFilter} onValueChange={(v) => { setEventFilter(v); setCursor(null); setCursorHistory([]); if (embedded) { const next = new URLSearchParams(searchParams); if (v === "all") next.delete("event_id"); else next.set("event_id", v); setSearchParams(next); } }}>
               <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All events</SelectItem>
@@ -886,7 +886,7 @@ const OrganizerRefunds = () => {
       {showCreateModal && (
         <CreateRefundModal
           events={events}
-          initialEventId={pathEventId}
+          initialEventId={pathEventId ?? (eventFilter !== "all" ? eventFilter : undefined)}
           onClose={() => setShowCreateModal(false)}
           onDone={(r) => {
             setRefunds((prev) => [r, ...prev]);
@@ -894,8 +894,9 @@ const OrganizerRefunds = () => {
           }}
         />
       )}
-    </OrganizerDashboardLayout>
+    </>
   );
+  return embedded ? content : <OrganizerDashboardLayout eventId={pathEventId}>{content}</OrganizerDashboardLayout>;
 };
 
 export default OrganizerRefunds;

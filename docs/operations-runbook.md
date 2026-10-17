@@ -172,7 +172,8 @@ For every major event, create `#event-<event-name>` and post the event date, ven
 
 Use the right screen for the question being answered:
 
-- **Organizer event → Event finance:** an organizer can see only their event's verified Cashfree collections, refunds, calculated payable balance, and CSV export.
+- **Organizer → SportPass Credits** (`/organizer/credits`): credit balance, top-up requests and usage.
+- **Organizer → Payments & Settlements** (`/organizer/payments`): the single home for collections, refunds and payout history across authorized events. Event/date/status filters and CSV export apply to collections; payable and payout balances cover all dates for the selected event(s). Direct UPI payments are excluded from platform-held balances. Old event-finance/refund links redirect here with the event selected. Refund actions remain available in the Refunds tab.
 - **Admin → Cashfree ledger** (`/admin/cashfree`): one row per event registration, including participant, registration status, Cashfree order/payment IDs and refund details. Filter by event, checkout creation dates (inclusive Indian calendar dates), payment status and environment. Search by participant name, registration reference, order, payment or refund ID. Live payments are the default; sandbox data is excluded from live totals. CSV exports every matching registration across all pages; columns ending in `_paise` are integer paise and timestamps include the IST offset. This is the SportPass event-registration ledger, not an import of every Cashfree gateway attempt or bank settlement.
 - **Admin → Organizer settlements:** record or review the bank/UPI transfer to the organizer. A paid transfer must include its bank or UPI reference.
 
