@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import get_optional_current_user, require_csrf, require_roles
+from app.api.deps import get_client_ip, get_optional_current_user, require_csrf, require_roles
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
 from app.services.audit_service import record_audit
@@ -230,7 +230,7 @@ def create_registration(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
     db: Session = Depends(get_db),
 ) -> dict:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     try:
         enforce_race_registration_limit(
             db,
@@ -273,7 +273,7 @@ def create_batch_registration(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
     db: Session = Depends(get_db),
 ) -> dict:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     try:
         for entry in payload.effective_entries:
             enforce_race_registration_limit(
@@ -370,7 +370,7 @@ def submit_payment_reference(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     try:
         enforce_payment_reference_limit(
             db,
@@ -400,7 +400,7 @@ def get_confirmation(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     try:
         enforce_confirmation_lookup_limit(
             db,
@@ -447,7 +447,7 @@ def download_confirmation_ticket(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> Response:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     try:
         enforce_confirmation_lookup_limit(
             db,
@@ -551,7 +551,7 @@ def claim_guest_registration(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     try:
         enforce_claim_attempt_limit(
             db,

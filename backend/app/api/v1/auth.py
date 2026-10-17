@@ -13,7 +13,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import CSRF_COOKIE, SESSION_COOKIE, get_current_user, require_csrf
+from app.api.deps import CSRF_COOKIE, SESSION_COOKIE, get_client_ip, get_current_user, require_csrf
 from app.services.audit_service import record_audit
 from app.config import get_settings
 from app.services.auth_service import (
@@ -158,7 +158,7 @@ def register(
     db: Session = Depends(get_db),
 ) -> dict:
     email = normalize_email(payload.email)
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     try:
         enforce_account_registration_limit(db, email=email, client_ip=client_ip)
         db.commit()
@@ -189,7 +189,7 @@ def register(
             db,
             user,
             user_agent=request.headers.get("user-agent"),
-            ip_address=request.client.host if request.client else None,
+            ip_address=get_client_ip(request),
         )
         record_audit(db, actor_user_id=user.id, action="account_registered", resource_type="user", resource_id=user.id)
         db.commit()
@@ -261,7 +261,7 @@ def organizer_signup(
     if proof_type == "image/webp" and not (proof_payload.startswith(b"RIFF") and proof_payload[8:12] == b"WEBP"):
         raise HTTPException(422, "The uploaded WebP is invalid")
     email = normalize_email(payload.email)
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     try:
         enforce_account_registration_limit(db, email=email, client_ip=client_ip)
         db.commit()
@@ -371,7 +371,7 @@ def organizer_application_status(payload: LoginIn, request: Request, response: R
     _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
     email = normalize_email(payload.email)
     try:
-        enforce_login_limit(db, email=email, client_ip=request.client.host if request.client else "unknown")
+        enforce_login_limit(db, email=email, client_ip=get_client_ip(request))
         db.commit()
     except RateLimitExceeded as exc:
         db.rollback()
@@ -402,7 +402,7 @@ def login(
     db: Session = Depends(get_db),
 ) -> dict:
     email = normalize_email(payload.email)
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     try:
         enforce_login_limit(db, email=email, client_ip=client_ip)
         db.commit()
@@ -429,7 +429,7 @@ def login(
         db,
         user,
         user_agent=request.headers.get("user-agent"),
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
     record_audit(db, actor_user_id=user.id, action="login_succeeded", resource_type="user", resource_id=user.id)
     db.commit()
@@ -440,7 +440,7 @@ def login(
 @router.post("/forgot-password")
 def forgot_password(payload: ForgotPasswordIn, request: Request, _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict[str, str]:
     email = normalize_email(payload.email)
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     try:
         enforce_password_reset_request_limit(db, email=email, client_ip=client_ip)
         db.commit()
@@ -472,7 +472,7 @@ def forgot_password(payload: ForgotPasswordIn, request: Request, _: None = Depen
 
 @router.post("/reset-password")
 def reset_password(payload: ResetPasswordIn, response: Response, request: Request, db: Session = Depends(get_db)) -> dict[str, str]:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     try:
         enforce_password_reset_attempt_limit(db, token=payload.token, client_ip=client_ip)
         db.commit()

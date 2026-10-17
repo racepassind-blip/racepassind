@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_csrf, require_roles
+from app.api.deps import get_client_ip, require_csrf, require_roles
 from app.schemas.checkins import CheckinScanIn
 from app.services.checkin_service import (
     CheckinCredentialError,
@@ -26,7 +26,7 @@ def scan_checkin(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     material = payload.credential or payload.registration_reference or ""
     try:
         enforce_checkin_attempt_limit(db, material=material, user_id=str(user.id), client_ip=client_ip)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.sports import get_adapter
 
 import datetime as dt
+import ipaddress
 from collections.abc import Callable
 
 from fastapi import Cookie, Depends, Header, HTTPException, Request, status
@@ -16,6 +17,17 @@ from models import AuthSession, Organization, OrganizationMember, User
 
 SESSION_COOKIE = "racepass_session"
 CSRF_COOKIE = "racepass_csrf"
+
+
+def get_client_ip(request: Request) -> str:
+    """Return the validated visitor IP when traffic comes through Cloudflare."""
+    settings = get_settings()
+    candidate = request.headers.get("CF-Connecting-IP") if settings.is_production else None
+    candidate = candidate or (request.client.host if request.client else "unknown")
+    try:
+        return str(ipaddress.ip_address(candidate.strip()))
+    except ValueError:
+        return "unknown"
 
 
 def get_current_user(

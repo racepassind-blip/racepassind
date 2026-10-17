@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_authorized_event, get_authorized_organization, get_current_user, require_csrf, require_roles
+from app.api.deps import get_authorized_event, get_authorized_organization, get_client_ip, get_current_user, require_csrf, require_roles
 from app.config import get_settings
 from app.infrastructure.storage.factory import get_storage_service
 from app.schemas.checkins import CheckpointCreateIn, CheckpointUpdateIn
@@ -798,7 +798,7 @@ def approve_registration(
     db: Session = Depends(get_db),
 ) -> dict:
     get_authorized_event(db, user, event_id)
-    return _decide_registration(event_id, registration_id, "approve", payload, user, db, request.client.host if request.client else "unknown", background_tasks)
+    return _decide_registration(event_id, registration_id, "approve", payload, user, db, get_client_ip(request), background_tasks)
 
 
 @router.post("/events/{event_id}/registrations/{registration_id}/reject")
@@ -812,7 +812,7 @@ def reject_registration(
     db: Session = Depends(get_db),
 ) -> dict:
     get_authorized_event(db, user, event_id)
-    return _decide_registration(event_id, registration_id, "reject", payload, user, db, request.client.host if request.client else "unknown")
+    return _decide_registration(event_id, registration_id, "reject", payload, user, db, get_client_ip(request))
 
 
 @router.post("/events/{event_id}/registrations/{registration_id}/transfer-category")

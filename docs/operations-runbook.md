@@ -119,6 +119,46 @@ Test a restore at least once before the first paid event, then periodically. Nev
 - Do not make the R2 backup bucket public.
 - Do not remove the R2 30-day lifecycle rule or the default 7-day incomplete-upload rule.
 
+## Security and abuse protection
+
+### Cloudflare edge protection
+
+Cloudflare is the public edge for `sportpassindia.com` and `api.sportpassindia.com`. The root, `www`, and `api` web records must remain **Proxied** (orange cloud). Email records, if added later, must remain **DNS only**.
+
+Current Free-plan login rule:
+
+- Rule: `POST` requests to `/api/v1/auth/login`.
+- Characteristic: client IP.
+- Threshold: 5 requests in 10 seconds.
+- Action: Block.
+- Duration: 10 seconds.
+
+This rule is a first barrier against credential stuffing. If it blocks legitimate users, lower the sensitivity only after reviewing Cloudflare Security Events; do not remove protection without replacing it. Add equivalent rules for signup and password-reset endpoints when the Free-plan rule allowance permits, prioritising login first.
+
+### Application security controls
+
+The API also applies database-backed limits over a 10-minute window:
+
+- Login: 10 attempts per email/IP and 30 per IP.
+- Account registration: 5 attempts per email/IP and 20 per IP.
+- Password-reset requests: 3 per email/IP and 10 per IP.
+- Payment, confirmation, registration, claim, and check-in actions have separate limits.
+- Rate-limited responses return HTTP 429 with `Retry-After`.
+
+Deploy and verify the centralized client-IP helper before relying on IP-based limits. In production it validates Cloudflare's `CF-Connecting-IP`; it must not trust arbitrary forwarded headers in development or direct-origin traffic.
+
+### Admin and incident response
+
+Before inviting real organizers or processing live payments:
+
+1. Set `ADMIN_MFA_ENABLED=true` and verify every admin account has MFA configured.
+2. Confirm Cloudflare DNS remains Active and the web/API records are proxied.
+3. Test `/health` and `/ready` after any DNS or security change.
+4. Watch Cloudflare Security Events, Render logs, Neon connections, and API 429/5xx counts.
+5. For an attack, preserve the incident time, request IDs, Cloudflare event IDs, affected paths, and Render logs; then tighten the Cloudflare rule and revoke suspicious sessions or credentials.
+
+Never test with a large automated flood. Use a few controlled failed logins and confirm the request is blocked at Cloudflare while normal browsing and successful login still work.
+
 ## Slack operations and lead generation
 
 Slack is the lightweight operations hub for SportPass. Keep these channels small and purposeful:
