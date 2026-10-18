@@ -54,22 +54,22 @@ const Login = () => {
 
         <div className="relative mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-14 lg:px-8">
           <div className="grid overflow-hidden rounded-[2rem] border border-border/70 bg-card shadow-[0_24px_80px_-36px_rgba(15,23,42,0.45)] lg:grid-cols-[0.92fr_1.08fr]">
-            <section className="relative overflow-hidden bg-slate-950 px-6 py-8 text-white sm:p-10 lg:p-12">
+            <section className="relative order-2 min-w-0 overflow-hidden bg-slate-950 px-5 py-5 text-white sm:p-10 lg:order-1 lg:p-12">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500 via-white to-green-500" />
               <div className="absolute -bottom-20 -right-20 h-52 w-52 rounded-full bg-primary/20 blur-3xl" />
               <div className="relative">
-                <div className="mb-8 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15 sm:mb-8 sm:h-12 sm:w-12">
                   <ShieldCheck className="h-6 w-6 text-orange-300" />
                 </div>
-                <p className="mb-4 inline-flex items-center rounded-full border border-orange-300/30 bg-orange-300/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-orange-200">
+                <p className="mb-3 inline-flex items-center rounded-full border border-orange-300/30 bg-orange-300/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-200 sm:mb-4 sm:text-xs">
                   Members only
                 </p>
-                <h1 className="max-w-sm text-3xl font-black tracking-tight sm:text-4xl">Welcome back to race day.</h1>
-                <p className="mt-4 max-w-sm text-sm leading-6 text-slate-300">
+                <h1 className="max-w-sm break-words text-2xl font-black tracking-tight sm:text-4xl">Welcome back to race day.</h1>
+                <p className="mt-2 max-w-sm break-words text-sm leading-6 text-slate-300 sm:mt-4">
                   Sign in with your existing SportPass account to keep your registrations, tickets, and race plans together.
                 </p>
 
-                <ul className="mt-7 space-y-3 text-sm text-slate-200">
+                <ul className="mt-4 hidden space-y-3 text-sm text-slate-200 sm:mt-7 sm:block">
                   <li className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-400" /><span>View your registrations and tickets</span></li>
                   <li className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-400" /><span>Keep your race-day details in one place</span></li>
                   <li className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-400" /><span>Access your participant dashboard</span></li>
@@ -77,7 +77,7 @@ const Login = () => {
               </div>
             </section>
 
-            <section className="px-6 py-8 sm:p-10 lg:p-12">
+            <section className="order-1 min-w-0 px-5 py-6 sm:p-10 lg:order-2 lg:p-12">
               <div className="mb-7">
                 <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <LogIn className="h-5 w-5" />

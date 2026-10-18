@@ -129,7 +129,7 @@ const OrganizerDashboard = () => {
 
   return (
     <OrganizerDashboardLayout showNavigation={false}>
-      <div className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+      <div className="mx-auto max-w-7xl space-y-5 px-3 py-4 sm:space-y-8 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
         <OrganizerWorkspaceTabs organizationEmbedded={organizationTabOpen} onOrganizationSelect={() => setOrganizationTabOpen(true)} onEventsSelect={() => setOrganizationTabOpen(false)} />
         {organizationTabOpen ? <OrganizerSetup embedded /> : <>
         {onboardingPending && (
@@ -146,14 +146,14 @@ const OrganizerDashboard = () => {
             </Button>
           </section>
         )}
-        <section className="grid overflow-hidden rounded-2xl border bg-card shadow-sm lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="p-6 sm:p-8">
+        <section className="grid overflow-hidden rounded-xl border bg-card shadow-sm sm:rounded-2xl lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="p-4 sm:p-8">
             <p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">{user?.role === "admin" ? "Admin event operations" : "Organizer workspace"}</p>
-            <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">{user?.role === "admin" ? "All organizer events" : `Welcome back${firstName ? `, ${firstName}` : ""}`}</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{user?.role === "admin" ? "Review and operate events across the platform without switching into an organizer account." : "See what needs attention, open registrations, and move into event operations without searching through menus."}</p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Button variant="outline" className="gap-2" onClick={() => navigate("/organizer/products")}><Package className="h-4 w-4" /> Sell products</Button><Button className="gap-2" onClick={() => navigate("/organizer/events/new")}><Plus className="h-4 w-4" /> Create event</Button>
-              <Button variant="outline" className="gap-2" onClick={() => navigate("/organizer/registrations?status=all")}><ClipboardList className="h-4 w-4" /> View registrations</Button>
+            <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-4xl">{user?.role === "admin" ? "All organizer events" : `Welcome back${firstName ? `, ${firstName}` : ""}`}</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground sm:mt-3">{user?.role === "admin" ? "Review and operate events across the platform without switching into an organizer account." : "See what needs attention and move into event operations quickly."}</p>
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:flex sm:flex-wrap sm:gap-3">
+              <Button variant="outline" className="h-10 gap-2 sm:h-auto" onClick={() => navigate("/organizer/products")}><Package className="h-4 w-4" /> Sell products</Button><Button className="h-10 gap-2 sm:h-auto" onClick={() => navigate("/organizer/events/new")}><Plus className="h-4 w-4" /> Create event</Button>
+              <Button variant="outline" className="col-span-2 h-10 justify-center gap-2 sm:h-auto sm:w-auto" onClick={() => navigate("/organizer/registrations?status=all")}><ClipboardList className="h-4 w-4" /> View registrations</Button>
             </div>
           </div>
           <div className="flex flex-col justify-between border-t bg-slate-950 p-6 text-white lg:border-l lg:border-t-0 sm:p-8">

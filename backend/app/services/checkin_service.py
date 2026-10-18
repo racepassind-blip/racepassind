@@ -121,6 +121,25 @@ def _safe_device_info(device_info: str | None) -> str | None:
 
 def _checkin_response(registration: Registration, event: Event, checkpoint: EventCheckpoint, scan: Checkin, *, already_scanned: bool) -> dict:
     participant_names = [member.participant.name for member in registration.participant_memberships] or [registration.participant.name]
+    addon_selections = []
+    addon_defs = {
+        addon.get("id"): addon
+        for addon in (event.addon_config or {}).get("addons", [])
+        if isinstance(addon, dict) and addon.get("id")
+    }
+    for addon_id, selection in (registration.selections or {}).items():
+        addon = addon_defs.get(addon_id)
+        if not addon or not isinstance(selection, dict):
+            continue
+        if "selected" in selection:
+            addon_selections.append({"name": addon.get("name", addon_id), "option": str(selection.get("selected") or ""), "quantity": 1})
+        elif "qty" in selection:
+            try:
+                quantity = int(selection.get("qty") or 0)
+            except (TypeError, ValueError):
+                quantity = 0
+            if quantity > 0:
+                addon_selections.append({"name": addon.get("name", addon_id), "option": None, "quantity": quantity})
     scanned_at = scan.checked_in_at
     time_text = scanned_at.strftime("%I:%M %p").lstrip("0") if scanned_at else ""
     return {
@@ -130,6 +149,7 @@ def _checkin_response(registration: Registration, event: Event, checkpoint: Even
         "participantNames": participant_names,
         "participantCount": registration.participant_count,
         "ticketName": registration.ticket.name,
+        "addOnSelections": addon_selections,
         "checkpoint": {"id": str(checkpoint.id), "name": checkpoint.name, "position": checkpoint.position},
         "status": "checked_in",
         "alreadyCheckedIn": already_scanned,

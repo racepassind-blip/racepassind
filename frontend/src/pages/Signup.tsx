@@ -169,12 +169,12 @@ const Signup = () => {
         <div className="pointer-events-none absolute -left-32 top-16 h-72 w-72 rounded-full bg-primary/15 blur-3xl" />
         <div className="pointer-events-none absolute -right-24 bottom-0 h-80 w-80 rounded-full bg-accent/10 blur-3xl" />
 
-        <div className="relative mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-12 lg:px-8">
-          <div className="mb-8 flex items-center justify-between gap-4">
+        <div className="relative mx-auto max-w-6xl px-3 py-4 sm:px-6 sm:py-12 lg:px-8">
+          <div className="mb-4 flex items-center justify-between gap-4 sm:mb-8">
             <div>
               <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">SportPass account</p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">{isParticipant ? "Join the race day community." : "Bring your events to SportPass."}</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{isParticipant ? "Create an account to keep your registrations and results together." : "Tell us about your organization. We’ll review your application before enabling event tools."}</p>
+              <h1 className="mt-1 text-2xl font-black tracking-tight sm:mt-2 sm:text-4xl">{isParticipant ? "Join the race day community." : "Bring your events to SportPass."}</h1>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground sm:mt-2 sm:leading-6">{isParticipant ? "Create an account to keep your registrations and results together." : "Tell us about your organization. We’ll review your application before enabling event tools."}</p>
             </div>
           </div>
 
@@ -201,8 +201,8 @@ const Signup = () => {
               </div>
             </aside>
 
-            <section className="bg-background px-5 py-7 sm:p-10 lg:p-12">
-              <div className="mb-7 flex items-start justify-between gap-4">
+            <section className="bg-background px-4 py-5 sm:p-10 lg:p-12">
+              <div className="mb-5 flex items-start justify-between gap-4 sm:mb-7">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Get started</p>
                   <h2 className="mt-2 text-2xl font-black tracking-tight">{isParticipant ? "Create your participant account" : "Apply as an organizer"}</h2>
@@ -211,7 +211,7 @@ const Signup = () => {
                 <KeyRound className="mt-1 hidden h-5 w-5 text-primary sm:block" />
               </div>
 
-              <div className="mb-7 grid grid-cols-2 gap-2 rounded-xl bg-muted/60 p-1">
+              <div className="mb-5 grid grid-cols-2 gap-2 rounded-xl bg-muted/60 p-1 sm:mb-7">
                 <button type="button" aria-pressed={isParticipant} onClick={() => { setMode("participant"); setSubmitted(false); }} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all ${isParticipant ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}><UserPlus className="h-4 w-4" /> Participant</button>
                 <button type="button" aria-pressed={!isParticipant} onClick={() => { setMode("organizer"); setSubmitted(false); }} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all ${!isParticipant ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}><Building2 className="h-4 w-4" /> Organizer</button>
               </div>

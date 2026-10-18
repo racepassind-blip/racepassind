@@ -1,5 +1,5 @@
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { AlertCircle, ArrowLeft, Banknote, BarChart3, CalendarDays, ClipboardList, Copy, Edit3, ExternalLink, Hash, MapPin, MoreHorizontal, Package, Power, RefreshCw, ScanLine, Timer, Trash2, UserPlus, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, Banknote, BarChart3, CalendarDays, ClipboardList, Copy, Download, Edit3, ExternalLink, Hash, MapPin, MoreHorizontal, Package, Power, RefreshCw, ScanLine, Timer, Trash2, UserPlus, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -53,6 +53,7 @@ const OrganizerEventDashboard = () => {
   const { data: organizerEvents = [] } = useOrganizerEventOptions();
   const queryClient = useQueryClient();
   const [resultsCopied, setResultsCopied] = useState(false);
+  const [exportingAddons, setExportingAddons] = useState(false);
 
   useEffect(() => {
     if (data?.event.isArchived) navigate("/organizer", { replace: true });
@@ -71,6 +72,16 @@ const OrganizerEventDashboard = () => {
   }
 
   const { event, inventory, registrations, overview, byCategory, signupTrend, recentRegistrations, byAddon } = data;
+  const exportAddonsCsv = async () => {
+    setExportingAddons(true);
+    try {
+      const content = await apiRequest<string>(`/organizer/events/${eventId}/addons.csv`);
+      const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = `addons-${eventId}.csv`; anchor.click(); URL.revokeObjectURL(url);
+      toast.success("Add-on CSV downloaded.");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not export add-ons"); }
+    finally { setExportingAddons(false); }
+  };
   const supportsTournament = eventSupportsTournament(event.sport, event.categories);
   const sportOperations = getSportConfig(event.sport);
   const supportsRaceResults = sportOperations.result_type === "race_time";
@@ -144,7 +155,7 @@ const OrganizerEventDashboard = () => {
 
   return (
     <OrganizerDashboardLayout eventId={event.id}>
-      <div className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <div className="mx-auto max-w-[1500px] space-y-4 px-3 py-3 sm:space-y-6 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-2">
             <Button variant="ghost" className="w-fit shrink-0 gap-2 px-2 text-muted-foreground" onClick={() => navigate("/organizer")}><ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">All events</span><span className="sm:hidden">Events</span></Button>
@@ -159,22 +170,22 @@ const OrganizerEventDashboard = () => {
           </div>
         </div>
 
-        <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <section className="overflow-hidden rounded-xl border bg-card shadow-sm sm:rounded-2xl">
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <div className="p-5 sm:p-7 lg:p-8">
+            <div className="p-4 sm:p-7 lg:p-8">
               <div className="flex flex-wrap items-center gap-2"><Badge variant={event.status === "published" ? "default" : "secondary"} className="capitalize">{event.status}</Badge><Badge variant={event.registrationStatus === "open" ? "outline" : "secondary"}>{event.registrationStatus === "open" ? "Registration open" : "Registration closed"}</Badge><Badge variant="outline">{isPastEvent ? "Completed" : "Upcoming"}</Badge>{event.eventDate === new Date().toISOString().slice(0, 10) && <Badge variant="outline">Today</Badge>}</div>
-              <h1 className="mt-4 break-words text-3xl font-black tracking-tight sm:text-4xl">{event.name}</h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">{event.description || "Track registrations, ticket inventory, and event-day readiness for this event."}</p>
-              <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-muted-foreground">
+              <h1 className="mt-3 break-words text-2xl font-black tracking-tight sm:mt-4 sm:text-4xl">{event.name}</h1>
+              <p className="mt-2 line-clamp-3 max-w-3xl text-sm leading-6 text-muted-foreground sm:mt-3">{event.description || "Track registrations, ticket inventory, and event-day readiness for this event."}</p>
+              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground sm:mt-5 sm:gap-x-6 sm:gap-y-3">
                 <span className="inline-flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" />{eventDate}</span>
                 <span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" />{location}</span>
                 <span className="inline-flex items-center gap-2 capitalize"><BarChart3 className="h-4 w-4 text-primary" />{event.sport.replaceAll("_", " ")}</span>
               </div>
-              <div className="mt-7 grid gap-2 sm:flex sm:flex-wrap">
-                <Button className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><ClipboardList className="h-4 w-4" /> Manage registrations</Button>
-                <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ScanLine className="h-4 w-4" /> Check-in</Button>
-                <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/payments?event_id=${event.id}`)}><Banknote className="h-4 w-4" /> Payments & Settlements</Button>
-                {!event.isArchived && <Button variant="outline" className="h-11 justify-center gap-2 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event</Button>}
+              <div className="mt-5 grid grid-cols-2 gap-2 sm:mt-7 sm:flex sm:flex-wrap">
+                <Button className="col-span-2 h-10 justify-center gap-2 sm:h-11 sm:w-auto" onClick={() => navigate(`/organizer/registrations?event_id=${event.id}&status=all`)}><ClipboardList className="h-4 w-4" /> Manage registrations</Button>
+                <Button variant="outline" className="h-10 justify-center gap-2 sm:h-11 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}><ScanLine className="h-4 w-4" /> Check-in</Button>
+                <Button variant="outline" className="h-10 justify-center gap-2 sm:h-11 sm:w-auto" onClick={() => navigate(`/organizer/payments?event_id=${event.id}`)}><Banknote className="h-4 w-4" /> <span className="truncate">Payments</span><span className="hidden sm:inline"> & Settlements</span></Button>
+                {!event.isArchived && <Button variant="outline" className="h-10 justify-center gap-2 sm:h-11 sm:w-auto" onClick={() => navigate(`/organizer/events/${event.id}/edit`)}><Edit3 className="h-4 w-4" /> Edit event</Button>}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild><Button variant="outline" className="h-11 w-full justify-center gap-2 sm:w-auto"><MoreHorizontal className="h-4 w-4" /> More actions</Button></DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-60">
@@ -188,7 +199,7 @@ const OrganizerEventDashboard = () => {
                 </DropdownMenu>
               </div>
             </div>
-            <div className="relative min-h-52 overflow-hidden border-t bg-muted xl:min-h-full xl:border-l xl:border-t-0">
+            <div className="relative min-h-32 overflow-hidden border-t bg-muted sm:min-h-52 xl:min-h-full xl:border-l xl:border-t-0">
               <img src={event.bannerUrl ?? "/placeholder.svg"} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(image) => { image.currentTarget.onerror = null; image.currentTarget.src = "/placeholder.svg"; }} />
               <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/5 to-transparent" />
               <div className="absolute inset-x-5 bottom-5 flex items-end justify-between gap-4 text-white"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/70">Confirmed participants</p><p className="mt-1 text-3xl font-black">{overview.confirmedParticipants.toLocaleString()}</p></div><Badge className="border-white/20 bg-black/45 text-white hover:bg-black/45">{salesPercent}% filled</Badge></div>
@@ -203,17 +214,17 @@ const OrganizerEventDashboard = () => {
           </section>
         )}
 
-        <section className="grid gap-3 rounded-2xl border bg-card p-4 shadow-sm sm:grid-cols-3 sm:p-5">
+        <section className="grid gap-3 rounded-xl border bg-card p-3 shadow-sm sm:grid-cols-3 sm:rounded-2xl sm:p-5">
           <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Next priority</p><p className="mt-1 font-semibold">{pendingReviewCount > 0 ? "Review payment references" : registrations.confirmed === 0 ? "Get your first registrations" : isPastEvent ? "Publish final results" : "Prepare event day"}</p></div>
           <div className="flex items-center gap-3"><div className="min-w-0 flex-1"><div className="flex justify-between text-xs"><span className="text-muted-foreground">Registration capacity</span><span className="font-semibold">{salesPercent}%</span></div><Progress className="mt-2" value={salesPercent} /></div></div>
           <div className="flex items-center justify-between gap-3 sm:justify-end"><span className="text-sm text-muted-foreground">{registrations.checkedIn} of {registrations.confirmed} checked in</span><Button size="sm" variant="outline" onClick={() => navigate(`/organizer/events/${event.id}/check-in`)}>Open check-in</Button></div>
         </section>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Registrations</p><ClipboardList className="h-5 w-5 text-primary" /></div><p className="mt-3 text-3xl font-black">{overview.totalRegistrationRecords.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">{overview.signupsToday.toLocaleString()} participant{overview.signupsToday === 1 ? "" : "s"} added today</p></CardContent></Card>
-          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Confirmed participants</p><Users className="h-5 w-5 text-blue-600" /></div><p className="mt-3 text-3xl font-black">{overview.confirmedParticipants.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">Across {registrations.confirmed.toLocaleString()} confirmed registration records</p></CardContent></Card>
-          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Approved payments</p><BarChart3 className="h-5 w-5 text-emerald-600" /></div><p className="mt-3 text-3xl font-black">{overview.approvedAmountPaise === 0 ? "₹0" : formatINR(overview.approvedAmountPaise)}</p><p className="mt-1 text-xs text-muted-foreground">{overview.paymentSuccessRate}% payment success rate</p></CardContent></Card>
-          <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm font-medium text-muted-foreground">Check-in progress</p><ScanLine className="h-5 w-5 text-violet-600" /></div><p className="mt-3 text-3xl font-black">{overview.checkInRate}%</p><p className="mt-1 text-xs text-muted-foreground">{registrations.checkedIn.toLocaleString()} of {registrations.confirmed.toLocaleString()} confirmed records scanned</p></CardContent></Card>
+        <div className="grid grid-cols-2 gap-2 sm:gap-4 xl:grid-cols-4">
+          <Card><CardContent className="p-3 sm:p-5"><div className="flex items-start justify-between gap-1"><p className="text-xs font-medium leading-4 text-muted-foreground sm:text-sm">Registrations</p><ClipboardList className="h-4 w-4 shrink-0 text-primary sm:h-5 sm:w-5" /></div><p className="mt-2 text-2xl font-black sm:mt-3 sm:text-3xl">{overview.totalRegistrationRecords.toLocaleString()}</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground sm:text-xs">{overview.signupsToday.toLocaleString()} added today</p></CardContent></Card>
+          <Card><CardContent className="p-3 sm:p-5"><div className="flex items-start justify-between gap-1"><p className="text-xs font-medium leading-4 text-muted-foreground sm:text-sm">Confirmed</p><Users className="h-4 w-4 shrink-0 text-blue-600 sm:h-5 sm:w-5" /></div><p className="mt-2 text-2xl font-black sm:mt-3 sm:text-3xl">{overview.confirmedParticipants.toLocaleString()}</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground sm:text-xs">{registrations.confirmed.toLocaleString()} records</p></CardContent></Card>
+          <Card><CardContent className="p-3 sm:p-5"><div className="flex items-start justify-between gap-1"><p className="text-xs font-medium leading-4 text-muted-foreground sm:text-sm">Payments</p><BarChart3 className="h-4 w-4 shrink-0 text-emerald-600 sm:h-5 sm:w-5" /></div><p className="mt-2 text-2xl font-black sm:mt-3 sm:text-3xl">{overview.approvedAmountPaise === 0 ? "₹0" : formatINR(overview.approvedAmountPaise)}</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground sm:text-xs">{overview.paymentSuccessRate}% success</p></CardContent></Card>
+          <Card><CardContent className="p-3 sm:p-5"><div className="flex items-start justify-between gap-1"><p className="text-xs font-medium leading-4 text-muted-foreground sm:text-sm">Check-in</p><ScanLine className="h-4 w-4 shrink-0 text-violet-600 sm:h-5 sm:w-5" /></div><p className="mt-2 text-2xl font-black sm:mt-3 sm:text-3xl">{overview.checkInRate}%</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground sm:text-xs">{registrations.checkedIn} of {registrations.confirmed} scanned</p></CardContent></Card>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
@@ -288,7 +299,9 @@ const OrganizerEventDashboard = () => {
                 <CardTitle>Add-on summary</CardTitle>
                 <CardDescription>Selections from confirmed registrations.</CardDescription>
               </div>
-              <Package className="h-5 w-5 text-muted-foreground" />
+              <Button size="sm" variant="outline" onClick={() => void exportAddonsCsv()} disabled={exportingAddons} className="gap-2">
+                <Download className="h-4 w-4" />{exportingAddons ? "Exporting…" : "Export add-on CSV"}
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="space-y-5">
@@ -322,6 +335,35 @@ const OrganizerEventDashboard = () => {
                     )}
                     {addon.type === "single_select" && addon.totalQuantity === 0 && (
                       <p className="mt-2 text-xs text-muted-foreground">No selections yet.</p>
+                    )}
+                    {addon.entries.length > 0 && (
+                      <div className="mt-4 border-t pt-3">
+                        <p className="mb-2 text-sm font-semibold">Who opted in</p>
+                        <div className="max-h-64 overflow-auto rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Participant</TableHead>
+                                <TableHead>Reference</TableHead>
+                                {addon.type === "single_select" && <TableHead>Option</TableHead>}
+                                <TableHead className="text-right">Qty</TableHead>
+                                <TableHead className="text-right">Amount</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {addon.entries.map((entry) => (
+                                <TableRow key={`${addon.addonId}-${entry.registrationReference}`}>
+                                  <TableCell className="font-medium">{entry.participantName}</TableCell>
+                                  <TableCell className="font-mono text-xs">{entry.registrationReference || "—"}</TableCell>
+                                  {addon.type === "single_select" && <TableCell>{entry.selection || "—"}</TableCell>}
+                                  <TableCell className="text-right">{entry.quantity}</TableCell>
+                                  <TableCell className="text-right">{entry.amountPaise ? formatINR(entry.amountPaise) : "Free"}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
                     )}
                   </div>
                 ))}

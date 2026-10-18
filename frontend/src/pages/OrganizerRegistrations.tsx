@@ -908,12 +908,12 @@ const OrganizerRegistrations = () => {
 
   return (
     <OrganizerDashboardLayout eventId={filters.eventId || undefined}>
-      <div className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <section className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
+      <div className="mx-auto max-w-[1500px] space-y-3 px-3 py-3 sm:space-y-6 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+        <section className="rounded-xl border bg-card p-3 shadow-sm sm:rounded-2xl sm:p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 items-start gap-3">
               <Button variant="ghost" size="icon" className="mt-0.5 shrink-0" onClick={() => navigate(eventScoped ? `/organizer/events/${filters.eventId}` : "/organizer")} aria-label={eventScoped ? "Back to event dashboard" : "Back to organizer dashboard"}><ArrowLeft className="h-4 w-4" /></Button>
-              <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Registration workspace</p><h1 className="mt-1 truncate text-2xl font-black tracking-tight sm:text-3xl">{eventScoped ? selectedEvent?.name ?? "Event registrations" : "All registrations"}</h1><p className="mt-1 text-sm text-muted-foreground">Review payments, confirm participants, and keep each registration’s audit details in one place.</p></div>
+              <div className="min-w-0"><p className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary sm:text-xs">Registration workspace</p><h1 className="mt-1 truncate text-xl font-black tracking-tight sm:text-3xl">{eventScoped ? selectedEvent?.name ?? "Event registrations" : "All registrations"}</h1><p className="mt-1 hidden text-sm text-muted-foreground sm:block">Review payments, confirm participants, and keep each registration’s audit details in one place.</p></div>
             </div>
             <div className="flex flex-wrap gap-2 sm:pl-12 lg:pl-0">
               {eventScoped && <Button variant="outline" onClick={() => navigate(`/organizer/events/${filters.eventId}/check-in`)} className="h-11 gap-2"><ScanLine className="h-4 w-4" /> Check-in matrix</Button>}
@@ -923,7 +923,7 @@ const OrganizerRegistrations = () => {
         </section>
 
         {eventsError && <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{eventsError}</div>}
-        <div className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
+        <div className="space-y-3 rounded-xl border bg-card p-3 shadow-sm sm:space-y-4 sm:rounded-2xl sm:p-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative w-full lg:max-w-xl"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label="Search registrations" value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder="Search name, email, phone or reference" className="h-11 pl-9" /></div>
             <div className="flex flex-wrap gap-2">
@@ -1026,31 +1026,31 @@ const OrganizerRegistrations = () => {
         )}
 
         {pickupEnabled && pickupPoints.length > 0 && (
-          <section className="rounded-2xl border bg-card p-5 shadow-sm">
+          <section className="rounded-xl border bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="font-bold">{meetingLabel}s</h2>
                   <Badge variant="secondary">per participant</Badge>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">Choose a point to see the matching registration list. Click a registration to see each group member’s {meetingLabel.toLowerCase()} choice.</p>
+                <p className="mt-1 hidden text-xs text-muted-foreground sm:block">Choose a point to see the matching registration list. Click a registration to see each group member’s {meetingLabel.toLowerCase()} choice.</p>
               </div>
               <Button type="button" variant="outline" size="sm" disabled={pickupFilter === "all"} onClick={() => { setPickupFilter("all"); setCursor(null); setCursorHistory([]); }}>Clear {meetingLabel.toLowerCase()} filter</Button>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-3 grid gap-2 sm:mt-4 sm:gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {pickupPoints.map((point) => (
                 <button
                   key={point.id}
                   type="button"
                   aria-pressed={pickupFilter === point.id}
                   onClick={() => { setPickupFilter((current) => current === point.id ? "all" : point.id); setCursor(null); setCursorHistory([]); }}
-                  className={`rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${pickupFilter === point.id ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-muted/20 hover:border-primary/50 hover:bg-muted/40"}`}
+                  className={`rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-3 ${pickupFilter === point.id ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-muted/20 hover:border-primary/50 hover:bg-muted/40"}`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-medium">{point.name}</p>
                     <Badge variant="secondary">{pickupSummary.get(point.id) ?? 0}</Badge>
                   </div>
-                  {point.address && <p className="mt-1 text-xs text-muted-foreground">{point.address}</p>}
+                  {point.address && <p className="mt-1 hidden text-xs text-muted-foreground sm:block">{point.address}</p>}
                   <p className="mt-3 text-xs font-semibold text-primary">{pickupFilter === point.id ? "Showing matching registrations · click to clear" : "View matching registrations →"}</p>
                 </button>
               ))}
@@ -1058,10 +1058,10 @@ const OrganizerRegistrations = () => {
           </section>
         )}
 
-        <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <section className="overflow-hidden rounded-xl border bg-card shadow-sm sm:rounded-2xl">
           <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-            <div><div className="flex items-center gap-2"><h2 className="font-bold">Registrations</h2>{!loading && <Badge variant="secondary">{displayedRegistrations.length} shown</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">Click a registration to view contact information, form answers, email status, refund details, and transfer history.</p></div>
-            <Button variant="outline" onClick={() => void exportCsv()} disabled={!filters.eventId || exporting} className="w-fit gap-2"><Download className="h-4 w-4" />{exporting ? "Exporting…" : exportIsFiltered ? "Export filtered CSV" : "Export event CSV"}</Button>
+            <div><div className="flex items-center gap-2"><h2 className="font-bold">Registrations</h2>{!loading && <Badge variant="secondary">{displayedRegistrations.length} shown</Badge>}</div><p className="mt-1 hidden text-xs text-muted-foreground sm:block">Click a registration to view contact information, form answers, email status, refund details, and transfer history.</p></div>
+            <Button variant="outline" onClick={() => void exportCsv()} disabled={!filters.eventId || exporting} className="w-full gap-2 sm:w-fit"><Download className="h-4 w-4" />{exporting ? "Exporting…" : exportIsFiltered ? "Export filtered CSV" : "Export event CSV"}</Button>
           </div>
           {loading ? <div className="p-12 text-center text-sm text-muted-foreground"><RefreshCw className="mx-auto mb-3 h-5 w-5 animate-spin" />Loading registrations…</div> : error ? <div className="p-12 text-center"><p className="text-sm text-destructive">{error}</p><Button variant="outline" className="mt-4" onClick={() => setRefreshNonce((value) => value + 1)}>Try again</Button></div> : registrations.length === 0 ? <div className="p-12 text-center"><Search className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-4 font-semibold">No registrations found</p><p className="mt-1 text-sm text-muted-foreground">No records match the current search and filters.</p>{activeFilterCount > 0 && <Button variant="ghost" className="mt-3" onClick={clearAllFilters}>Clear filters</Button>}</div> : <>
             <div className="divide-y md:hidden">

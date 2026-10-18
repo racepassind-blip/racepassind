@@ -28,6 +28,7 @@ class TicketPdfServiceTests(unittest.TestCase):
             country="India",
             description="A community run.",
             rules=["Bring a photo ID", "Arrive 30 minutes early"],
+            addon_config={"addons": [{"id": "breakfast", "name": "Extra breakfast", "type": "quantity"}]},
             organization=organization,
         )
         ticket = SimpleNamespace(
@@ -49,6 +50,7 @@ class TicketPdfServiceTests(unittest.TestCase):
             participant=participant,
             participant_memberships=[],
             ticket=ticket,
+            selections={"breakfast": {"qty": 2}},
         )
         return registration, event
 

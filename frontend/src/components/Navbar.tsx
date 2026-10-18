@@ -108,9 +108,9 @@ export function Navbar() {
           <SheetTrigger asChild><Button variant="ghost" size="icon" className="ml-auto h-11 w-11 xl:hidden" aria-label="Open navigation menu"><Menu className="h-5 w-5" /></Button></SheetTrigger>
           <SheetContent side="right" className="flex w-[min(22rem,90vw)] flex-col overflow-y-auto p-5 xl:hidden">
             <SheetTitle className="border-b pb-4 text-left text-lg font-black">SportPass <span className="text-primary">India</span></SheetTitle>
-            <nav aria-label="Mobile navigation" className="flex flex-1 flex-col gap-1 pt-3">
-              {links.map((link) => <Link key={link.to} to={link.to} onClick={() => setOpen(false)} aria-current={isActive(link.to) ? "page" : undefined} className={`flex min-h-11 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-semibold ${isActive(link.to) ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}><span>{link.label}</span>{link.comingSoon && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">Soon</span>}</Link>)}
-              <div className="mt-auto border-t pt-4">
+            <nav aria-label="Mobile navigation" className="flex flex-col gap-1 pt-3">
+              {links.map((link) => <Link key={link.to} to={link.to} onClick={() => setOpen(false)} aria-current={isActive(link.to) ? "page" : undefined} className={`flex min-h-10 items-center justify-between gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold ${isActive(link.to) ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}><span>{link.label}</span>{link.comingSoon && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">Soon</span>}</Link>)}
+              <div className="mt-6 border-t pt-4">
                 {user ? <><p className="truncate px-4 pb-2 text-xs text-muted-foreground">Signed in as {user.name}</p><button type="button" onClick={() => { setOpen(false); void handleLogout(); }} className="flex min-h-11 w-full items-center gap-2 rounded-xl px-4 text-left text-sm font-semibold text-destructive hover:bg-muted"><LogOut className="h-4 w-4" /> Log out</button></> : !isLoading ? <Button asChild className="w-full"><Link to="/login" onClick={() => setOpen(false)}>Log in</Link></Button> : null}
               </div>
             </nav>

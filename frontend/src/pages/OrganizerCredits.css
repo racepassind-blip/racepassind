@@ -64,7 +64,7 @@
 .credits-page select:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .credits-event-filter { width: 250px; max-width: 100%; flex-shrink: 0; }
 .credits-table-scroll { overflow-x: auto; }
-.credits-table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+.credits-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px; text-align: left; }
 .credits-table th { background: hsl(var(--muted) / 0.35); color: hsl(var(--muted-foreground)); font-weight: 500; font-size: 11px; padding: 11px 24px; border-top: 1px solid hsl(var(--border)); border-bottom: 1px solid hsl(var(--border)); white-space: nowrap; }
 .credits-table td { padding: 16px 24px; border-bottom: 1px solid hsl(var(--border)); vertical-align: top; line-height: 1.5; }
 .credits-table tbody tr:last-child td { border-bottom: 0; }
@@ -99,8 +99,10 @@
   .credits-content { margin-top: 24px; gap: 20px; }
   .credits-heading, .credits-panel-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
   .credits-heading h1 { font-size: 23px; }
-  .credits-overview { padding: 20px 0; }
+  .credits-overview { grid-template-columns: 1fr; padding: 0; }
   .credits-overview > div { padding: 0 16px; }
+  .credits-overview > div { padding-top: 18px; padding-bottom: 18px; }
+  .credits-overview > div + div { border-top: 1px solid hsl(var(--border)); border-left: 0; }
   .credits-balance-value { font-size: 26px; }
   .credits-balance-value > span { display: block; margin: 4px 0; }
   .credits-panel-heading { padding: 16px; }
@@ -110,11 +112,12 @@
   .credits-payment-details { order: 2; border-left: 0; border-top: 1px solid hsl(var(--border)); border-bottom: 1px solid hsl(var(--border)); }
   .credits-payment-form > .credits-field:nth-child(2) { order: 3; margin: 20px 16px; }
   .credits-submit { order: 4; margin: 0 16px 20px; }
-  .credits-filters { padding: 16px; }
-  .credits-filter { flex: 1 1 140px; }
+  .credits-filters { align-items: stretch; padding: 16px; }
+  .credits-filter { flex: 1 1 100%; width: 100%; }
   .credits-table th, .credits-table td { padding: 12px 16px; }
   .credits-pagination { padding: 12px 16px; }
   .credits-pagination > div { gap: 8px; }
   .credits-event-filter { width: 100%; }
   .credits-submit > button { width: 100%; }
+  .credits-table-scroll { margin: 0; overflow-x: auto; scrollbar-width: thin; }
 }

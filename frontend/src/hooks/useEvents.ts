@@ -349,6 +349,14 @@ export interface OrganizerEventDashboard {
     totalQuantity: number;
     totalRevenuePaise: number;
     byOption: Array<{ option: string; count: number }>;
+    entries: Array<{
+      registrationReference: string | null;
+      participantName: string;
+      quantity: number;
+      amountPaise: number;
+      selection: string | null;
+      checkedIn: boolean;
+    }>;
   }>;
 }
 

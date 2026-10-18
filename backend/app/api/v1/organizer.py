@@ -34,6 +34,7 @@ from app.services.registration_service import (
     CsvExportTooLargeError,
     decide_registration_payment,
     export_organizer_registrations_csv,
+    export_organizer_addons_csv,
     list_organizer_registrations,
     serialize_organizer_registration,
     create_manual_registration,
@@ -721,6 +722,17 @@ def export_registrations_csv(
             "Cache-Control": "no-store",
         },
     )
+
+
+@router.get("/events/{event_id}/addons.csv")
+def export_addons_csv(event_id: UUID, user: User = Depends(require_roles("organizer", "admin")), db: Session = Depends(get_db)) -> Response:
+    try:
+        content = export_organizer_addons_csv(db, user, event_id=event_id)
+    except CsvExportTooLargeError as exc:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(content=content, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="addons-{event_id}.csv"', "Cache-Control": "no-store"})
 
 
 def _decide_registration(

@@ -174,25 +174,25 @@ const EventDetail = () => {
 
   return (
     <Layout raisedSupportButton={!registrationClosed}>
-      <section className="relative h-[340px] overflow-hidden md:h-[460px]">
+      <section className="relative overflow-hidden md:h-[460px]">
         <img
           src={event.image}
           alt={event.title}
           className="absolute inset-0 h-full w-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/30" />
-        <div className="relative mx-auto flex h-full max-w-7xl flex-col justify-between px-4 pb-12 pt-6 sm:px-6 lg:px-8">
-          <Link to="/events" className="flex w-fit items-center gap-2 rounded-full border border-white/30 bg-black/25 px-3 py-2 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/45">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 to-black/35" />
+        <div className="relative mx-auto flex h-full max-w-7xl flex-col justify-between gap-8 px-3 pb-8 pt-4 sm:px-6 sm:pb-12 sm:pt-6 lg:px-8">
+          <Link to="/events" className="flex w-fit items-center gap-2 rounded-full border border-white/30 bg-black/30 px-3 py-2 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/45">
             <ArrowLeft className="h-4 w-4" /> Back to events
           </Link>
           <div className="max-w-4xl">
-            <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2 sm:mb-4">
               <Badge className="border-0 bg-white text-foreground hover:bg-white capitalize">{event.category}</Badge>
               <span className={`rounded-full px-3 py-1 text-xs font-bold ${registrationClosed ? "bg-amber-100 text-amber-950" : "bg-emerald-100 text-emerald-950"}`}>
                 {registrationClosed ? "Registration closed" : "Registration open"}
               </span>
             </div>
-            <h1 className="max-w-4xl text-3xl font-extrabold leading-tight tracking-tight text-white drop-shadow-sm sm:text-4xl md:text-5xl">{event.title}</h1>
+            <h1 className="max-w-3xl break-words text-2xl font-extrabold leading-tight tracking-tight text-white drop-shadow-sm sm:text-4xl md:text-5xl">{event.title}</h1>
             <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm font-medium text-white/90 sm:text-base">
               <span className="flex items-center gap-2"><Calendar className="h-4 w-4" />{formatEventDateRange(event.date, event.endDate)}</span>
               <span className="flex items-center gap-2"><MapPin className="h-4 w-4" />{event.location}</span>
@@ -201,12 +201,12 @@ const EventDetail = () => {
         </div>
       </section>
 
-      <div className="relative mx-auto -mt-6 max-w-7xl px-4 pb-32 sm:px-6 lg:px-8 lg:pb-14">
-        <div className="mb-8 grid gap-px overflow-hidden rounded-2xl border bg-border shadow-md sm:grid-cols-2 lg:grid-cols-4">
+      <div className="relative mx-auto -mt-5 max-w-7xl px-3 pb-32 sm:-mt-6 sm:px-6 lg:px-8 lg:pb-14">
+        <div className="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border shadow-sm sm:mb-8 sm:rounded-2xl lg:grid-cols-4">
           {details.slice(0, 4).map((item) => (
-            <div key={item.label} className="flex items-start gap-3 bg-card p-4 sm:p-5">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><item.icon className="h-4 w-4" /></span>
-              <div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">{item.label}</p><p className="mt-1 text-sm font-semibold capitalize leading-5">{item.value}</p></div>
+            <div key={item.label} className="flex items-start gap-2 bg-card p-3 sm:gap-3 sm:p-5">
+              <span className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary sm:flex"><item.icon className="h-4 w-4" /></span>
+              <div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">{item.label}</p><p className="mt-1 break-words text-sm font-semibold capitalize leading-5">{item.value}</p></div>
             </div>
           ))}
         </div>

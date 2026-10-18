@@ -1166,6 +1166,37 @@ def export_organizer_registrations_csv(
     return output.getvalue()
 
 
+def export_organizer_addons_csv(db: Session, user, *, event_id: UUID) -> str:
+    """Export one operational row per selected add-on on confirmed entries."""
+    event = _authorized_event_for_organizer(db, user, event_id)
+    if event is None:
+        raise ValueError("Event not found")
+    addon_definitions = [a for a in (event.addon_config or {}).get("addons", []) if isinstance(a, dict) and a.get("id")]
+    rows = db.execute(_organizer_registration_query(db, user, event_id=event_id, status_filter="confirmed", visibility_event_ids=[event_id]).order_by(Registration.created_at.desc(), Registration.id.desc()).limit(_MAX_CSV_EXPORT_ROWS + 1)).unique().all()
+    if len(rows) > _MAX_CSV_EXPORT_ROWS:
+        raise CsvExportTooLargeError(f"Export exceeds the {_MAX_CSV_EXPORT_ROWS}-row limit")
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\r\n")
+    writer.writerow(["Add-on", "Option", "Quantity", "Amount", "Registration reference", "Participant", "Email", "Phone", "Ticket", "Checked in", "Registered at"])
+    row_count = 0
+    for registration, _ in rows:
+        computed = {a.get("id"): a for a in (registration.computed_total or {}).get("addons", []) if isinstance(a, dict) and a.get("id")}
+        for addon in addon_definitions:
+            selection = (registration.selections or {}).get(addon["id"])
+            if not isinstance(selection, dict):
+                continue
+            option = selection.get("selected", "")
+            quantity = 1 if "selected" in selection else selection.get("qty", 0)
+            try: quantity = int(quantity)
+            except (TypeError, ValueError): quantity = 0
+            if quantity <= 0: continue
+            writer.writerow([_csv_cell(addon.get("name", addon["id"])), _csv_cell(option), _csv_cell(quantity), _csv_cell(_csv_amount(computed.get(addon["id"], {}).get("amount_paise", 0))), _csv_cell(registration.registration_reference), _csv_cell(registration.participant.name), _csv_cell(registration.participant.email), _csv_cell(registration.participant.phone), _csv_cell(registration.ticket.name), _csv_cell("checked_in" if registration.checked_in or registration.status == "checked_in" else "not_checked_in"), _csv_cell(registration.created_at)])
+            row_count += 1
+    record_audit(db, actor_user_id=user.id, action="organizer_addon_exported", resource_type="event", resource_id=event_id, metadata={"row_count": row_count})
+    db.commit()
+    return output.getvalue()
+
+
 def _reload_organizer_registration(db: Session, registration_id):
     registration = db.scalar(registration_query().where(Registration.id == registration_id))
     if registration is None:

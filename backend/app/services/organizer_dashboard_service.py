@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.services.registration_service import list_organizer_registrations
 from app.services.organizer_visibility_service import get_event_visibility, serialize_visibility
-from models import Event, Payment, Registration
+from models import Event, Payment, Participant, Registration
 
 
 def _number(value) -> int:
@@ -214,7 +214,14 @@ def build_organizer_event_dashboard(db: Session, user, event: Event, visibility:
     by_addon: list[dict] = []
     if addon_defs:
         confirmed_selections = db.execute(
-            select(Registration.selections, Registration.computed_total)
+            select(
+                Registration.selections,
+                Registration.computed_total,
+                Registration.registration_reference,
+                Participant.name,
+                Registration.checked_in,
+            )
+            .join(Participant, Participant.id == Registration.participant_id)
             .where(
                 Registration.event_id == event.id,
                 Registration.status.in_(confirmed_statuses),
@@ -226,7 +233,8 @@ def build_organizer_event_dashboard(db: Session, user, event: Event, visibility:
             addon_id: {"total_qty": 0, "revenue_paise": 0, "by_option": {}}
             for addon_id in addon_defs
         }
-        for selections_raw, computed_total_raw in confirmed_selections:
+        entries_by_addon: dict[str, list[dict]] = {addon_id: [] for addon_id in addon_defs}
+        for selections_raw, computed_total_raw, registration_reference, participant_name, checked_in in confirmed_selections:
             selections = selections_raw or {}
             # Use computed_total.addons for revenue (amounts already calculated)
             ct_addons = {}
@@ -244,19 +252,38 @@ def build_organizer_event_dashboard(db: Session, user, event: Event, visibility:
                     option = str(sel["selected"])
                     bucket["by_option"][option] = bucket["by_option"].get(option, 0) + 1
                     bucket["total_qty"] += 1
+                    entry_quantity = 1
+                    entry_selection = option
                 elif "qty" in sel:
                     try:
                         qty = int(sel["qty"])
                     except (TypeError, ValueError):
                         qty = 0
                     bucket["total_qty"] += qty
+                    entry_quantity = qty
+                    entry_selection = None
+                else:
+                    continue
                 # revenue from computed_total snapshot
                 ct_item = ct_addons.get(addon_id)
                 if ct_item:
                     try:
-                        bucket["revenue_paise"] += int(ct_item.get("amount_paise", 0))
+                        entry_amount = int(ct_item.get("amount_paise", 0))
+                        bucket["revenue_paise"] += entry_amount
                     except (TypeError, ValueError):
-                        pass
+                        entry_amount = 0
+                else:
+                    entry_amount = 0
+                entries_by_addon[addon_id].append(
+                    {
+                        "registrationReference": registration_reference,
+                        "participantName": participant_name,
+                        "quantity": entry_quantity,
+                        "amountPaise": entry_amount,
+                        "selection": entry_selection,
+                        "checkedIn": bool(checked_in),
+                    }
+                )
 
         for addon_id, addon_def in addon_defs.items():
             bucket = agg[addon_id]
@@ -274,6 +301,10 @@ def build_organizer_event_dashboard(db: Session, user, event: Event, visibility:
                     "totalQuantity": bucket["total_qty"],
                     "totalRevenuePaise": bucket["revenue_paise"],
                     "byOption": by_option,
+                    "entries": sorted(
+                        entries_by_addon[addon_id],
+                        key=lambda entry: (str(entry.get("participantName") or "").lower(), str(entry.get("registrationReference") or "")),
+                    ),
                 }
             )
 

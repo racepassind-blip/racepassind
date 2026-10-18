@@ -31,6 +31,7 @@ interface CheckinResult {
   checkedInAt: string;
   scannedAt: string;
   message: string;
+  addOnSelections?: Array<{ name: string; option: string | null; quantity: number }>;
 }
 type ScannerState = "idle" | "starting" | "active" | "error";
 
@@ -235,24 +236,24 @@ const OrganizerCheckin = () => {
         </div>
 
         <section className="sticky top-16 z-30 -mx-4 border-y bg-background/95 px-3 py-2 shadow-sm backdrop-blur sm:static sm:mx-0 sm:rounded-xl sm:border sm:p-4 sm:shadow-none">
-          <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
-            <div className="flex items-center gap-2 sm:block sm:space-y-1.5">
-              <Label htmlFor="checkin-event" className="w-16 shrink-0 text-xs font-semibold text-muted-foreground sm:w-auto">Event</Label>
-              <div id="checkin-event" aria-readonly="true" className="flex h-9 min-w-0 flex-1 items-center truncate rounded-md border border-input bg-muted/40 px-3 text-sm font-medium text-foreground sm:h-11" title="Event is fixed for this check-in session">
+          <div className="grid gap-3 sm:grid-cols-2 sm:gap-3">
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="checkin-event" className="text-xs font-semibold text-muted-foreground">Event</Label>
+              <div id="checkin-event" aria-readonly="true" className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-muted/40 px-3 py-2 text-sm font-medium leading-5 text-foreground sm:min-h-11" title="Event is fixed for this check-in session">
                 {selectedEvent?.name ?? "Loading event…"}
               </div>
             </div>
-            <div className="flex items-center gap-2 sm:block sm:space-y-1.5">
-              <Label htmlFor="checkin-checkpoint" className="flex w-16 shrink-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground sm:w-auto"><MapPin className="h-3.5 w-3.5" />Checkpoint</Label>
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="checkin-checkpoint" className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><MapPin className="h-3.5 w-3.5" />Checkpoint</Label>
               <Select value={checkpointId} onValueChange={chooseCheckpoint} disabled={checkpointsLoading || checkpoints.length === 0}>
-                <SelectTrigger id="checkin-checkpoint" className={`h-9 min-w-0 flex-1 bg-background sm:h-11 ${!checkpointId && checkpoints.length > 0 ? "border-primary ring-2 ring-primary/20" : ""}`} aria-label="Select checkpoint">
+                <SelectTrigger id="checkin-checkpoint" className={`h-10 w-full min-w-0 bg-background sm:h-11 ${!checkpointId && checkpoints.length > 0 ? "border-primary ring-2 ring-primary/20" : ""}`} aria-label="Select checkpoint">
                   <SelectValue placeholder={checkpointsLoading ? "Loading checkpoints…" : checkpoints.length === 0 ? "No checkpoints configured" : "Where are you checking in?"} />
                 </SelectTrigger>
                 <SelectContent>{checkpoints.map((checkpoint) => <SelectItem key={checkpoint.id} value={checkpoint.id}>{checkpoint.position}. {checkpoint.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
-          {readyToCheckIn && <div className="mt-2 flex items-center gap-2 border-t pt-2 text-[11px] sm:mt-3 sm:pt-3 sm:text-xs"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" /><span className="font-semibold text-foreground">Ready at {selectedCheckpoint?.name}</span><span className="truncate text-muted-foreground">· {selectedEvent?.name}</span></div>}
+          {readyToCheckIn && <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-3 text-[11px] sm:text-xs"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" /><span className="font-semibold text-foreground">Ready at {selectedCheckpoint?.name}</span><span className="hidden min-w-0 truncate text-muted-foreground sm:inline">· {selectedEvent?.name}</span></div>}
           {!checkpointsLoading && checkpoints.length === 0 && eventId && <p className="mt-3 text-xs text-muted-foreground">This event has no checkpoints. <Link className="font-semibold text-primary underline underline-offset-2" to={`/organizer/events/${eventId}/checkpoints`}>Create one to start check-in</Link>.</p>}
         </section>
 
@@ -267,17 +268,17 @@ const OrganizerCheckin = () => {
         ) : (
           <>
             <Card className="overflow-hidden border-primary/20 shadow-sm">
-              <CardContent className="p-4 sm:p-5">
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+              <CardContent className="p-3 sm:p-5">
+                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:gap-3">
                   <form onSubmit={searchAttendees} className="min-w-0">
                     <Label htmlFor="attendee-search" className="sr-only">Search by participant name or registration number</Label>
                     <div className="relative">
-                      <span className="pointer-events-none absolute inset-y-0 left-0 flex w-14 items-center justify-center"><Search className="h-5 w-5 text-muted-foreground" /></span>
-                      <Input id="attendee-search" value={attendeeSearch} onChange={(event) => { setAttendeeSearch(event.target.value); setAttendeeMatches([]); setAttendeeSearchError(null); }} className="h-14 rounded-xl text-base" style={{ paddingLeft: "3.5rem", paddingRight: "7rem" }} placeholder="Name or registration number" maxLength={120} autoComplete="off" autoCapitalize="words" />
-                      <Button type="submit" size="sm" className="absolute right-2 top-2 h-10 px-4" disabled={searchingAttendees || !attendeeSearch.trim()}>{searchingAttendees ? "Finding…" : "Search"}</Button>
+                      <span className="pointer-events-none absolute left-0 top-0 flex h-12 w-14 items-center justify-center sm:h-14"><Search className="h-5 w-5 text-muted-foreground" /></span>
+                      <Input id="attendee-search" value={attendeeSearch} onChange={(event) => { setAttendeeSearch(event.target.value); setAttendeeMatches([]); setAttendeeSearchError(null); }} className="h-12 rounded-xl pr-3 text-base sm:h-14 sm:pr-28" style={{ paddingLeft: "3.5rem" }} placeholder="Name or registration number" maxLength={120} autoComplete="off" autoCapitalize="words" />
+                      <Button type="submit" size="sm" className="mt-2 h-11 w-full px-4 sm:absolute sm:right-2 sm:top-2 sm:mt-0 sm:h-10 sm:w-auto" disabled={searchingAttendees || !attendeeSearch.trim()}>{searchingAttendees ? "Finding…" : "Search"}</Button>
                     </div>
                   </form>
-                  <Button type="button" className="h-14 rounded-xl px-6 text-base font-bold md:min-w-44" onClick={openScanner} disabled={submitting}><Camera className="h-5 w-5" />Scan QR code</Button>
+                  <Button type="button" className="h-12 rounded-xl px-6 text-base font-bold sm:h-14 md:min-w-44" onClick={openScanner} disabled={submitting}><Camera className="h-5 w-5" />Scan QR code</Button>
                 </div>
                 <p className="mt-2.5 text-xs text-muted-foreground">Search works with a participant name or a reference such as SPE-1234.</p>
               </CardContent>
@@ -311,6 +312,14 @@ const OrganizerCheckin = () => {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-bold uppercase tracking-[0.12em] opacity-70">{result.alreadyScanned ? "Already checked in here" : "Check-in complete"}</p><h2 className="mt-1 text-lg font-bold">{result.participantNames?.join(" · ") ?? result.participantName}</h2></div><Badge variant="outline" className="border-current/20 bg-white/60 dark:bg-black/20">{result.checkpoint.name}</Badge></div>
                     <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm opacity-75"><span>{result.registrationReference}</span><span>{result.ticketName}</span><span>{formatScanTime(result.scannedAt)}</span></div>
+                    {result.addOnSelections && result.addOnSelections.length > 0 && (
+                      <div className="mt-3 rounded-lg border border-current/15 bg-white/50 p-3 text-sm dark:bg-black/10">
+                        <p className="font-semibold">Registration add-ons</p>
+                        <div className="mt-1 space-y-1">
+                          {result.addOnSelections.map((addon) => <div key={`${addon.name}-${addon.option ?? "qty"}`} className="flex flex-wrap justify-between gap-2"><span>{addon.name}{addon.option ? ` · ${addon.option}` : ""}</span><span className="font-semibold">×{addon.quantity}</span></div>)}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

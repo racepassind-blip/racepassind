@@ -352,6 +352,44 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         details.setStyle(TableStyle([("SPAN", (0, len(detail_rows) - 1), (-1, len(detail_rows) - 1))]))
     story.extend([details, Spacer(1, 5 * mm)])
 
+    # Add-ons are part of the paid/confirmed ticket, so show them on the
+    # printable ticket while keeping the QR payload opaque.
+    addon_defs = {
+        addon.get("id"): addon
+        for addon in (getattr(event, "addon_config", {}) or {}).get("addons", [])
+        if isinstance(addon, dict) and addon.get("id")
+    }
+    selections = getattr(registration, "selections", {}) or {}
+    if addon_defs and isinstance(selections, dict):
+        addon_rows = []
+        for addon_id, addon in addon_defs.items():
+            selection = selections.get(addon_id)
+            if not isinstance(selection, dict):
+                continue
+            if "selected" in selection:
+                value = str(selection.get("selected") or "")
+            elif "qty" in selection:
+                value = f"Quantity: {selection.get('qty')}"
+            else:
+                continue
+            if value:
+                addon_rows.append([_paragraph(addon.get("name", addon_id), styles["field_value"]), _paragraph(value, styles["field_value_accent"])])
+        if addon_rows:
+            story.append(Paragraph("ADD-ONS", styles["section_title"]))
+            addon_table = Table(addon_rows, colWidths=[_CONTENT_WIDTH * 0.62, _CONTENT_WIDTH * 0.38], hAlign="LEFT")
+            addon_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), _PALE_GRAY),
+                ("BOX", (0, 0), (-1, -1), 0.8, _BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.45, _BORDER),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 9),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+            ]))
+            story.extend([addon_table, Spacer(1, 5 * mm)])
+
     organizer_content = [
         Paragraph("ORGANIZER", styles["section_title"]),
         _paragraph(organizer_name, styles["field_value_accent"]),

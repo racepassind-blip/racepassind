@@ -736,7 +736,7 @@ const Checkout = () => {
                   <p className="whitespace-nowrap text-lg font-bold text-primary">₹{firstTier?.price.toLocaleString("en-IN")}</p>
                 </div>
               </div>
-              <div className="space-y-6 p-5 sm:p-6">
+              <div className="space-y-5 p-3 sm:space-y-6 sm:p-6">
                 {/* Team information (collected once per entry) */}
                 {teamInfoFields.length > 0 && (
                   <section className="space-y-4 border-b pb-6">
@@ -867,20 +867,43 @@ const Checkout = () => {
   );
 
   return (
-    <Layout>
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-        <button onClick={() => (currentStep > 0 && !registration ? setCurrentStep(currentStep - 1) : navigate(-1))} className="mb-6 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /> {currentStep > 0 && !registration ? "Previous step" : "Back to event"}</button>
-        <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-primary">Step {Math.min(currentStep + 1, steps.length)} of {totalPaise === 0 ? 2 : steps.length}</p><h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">{stepHeading}</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground">{stepDescription}</p><p className="mt-1 text-xs text-muted-foreground">{event.title} · {event.date}</p></div><p className="text-sm font-semibold text-foreground">{totalTickets} {totalTickets === 1 ? "entry" : "entries"} · {formatPaise(registration ? chargedPaise : participantTotalPreviewPaise)}</p></div>
-        <nav aria-label="Checkout progress" className="mb-6 rounded-2xl border bg-card p-3 sm:p-4"><div className="flex items-center justify-between gap-2">{(totalPaise === 0 ? steps.slice(0, 2) : steps).map((label, index) => <div key={label} className="flex min-w-0 flex-1 items-center gap-2"><div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${index <= currentStep ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"}`}>{index < currentStep ? <CheckCircle2 className="h-4 w-4" /> : index + 1}</div><span className={`truncate text-xs sm:text-sm ${index === currentStep ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{label}</span>{index < (totalPaise === 0 ? 1 : steps.length - 1) && <div className="h-px min-w-4 flex-1 bg-border sm:min-w-8" />}</div>)}</div></nav>
+    <Layout hideSupportButton>
+      <div className="mx-auto max-w-6xl px-3 py-3 sm:px-6 sm:py-8 lg:px-8">
+        <button onClick={() => (currentStep === 1 && usesParticipantWizard && activeRiderIndex > 0 ? setActiveRiderIndex(activeRiderIndex - 1) : currentStep > 0 && !registration ? setCurrentStep(currentStep - 1) : navigate(`/event/${event.id}`))} className="mb-2 flex min-h-10 items-center gap-1 text-sm text-muted-foreground hover:text-foreground sm:mb-6"><ArrowLeft className="h-4 w-4" /> {currentStep > 0 && !registration ? "Previous step" : "Back to event"}</button>
+        <header className="mb-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold text-primary">Step {Math.min(currentStep + 1, steps.length)} of {totalPaise === 0 ? 2 : steps.length}</p>
+            <p className="text-sm font-semibold">{formatPaise(registration ? chargedPaise : participantTotalPreviewPaise)}</p>
+          </div>
+          <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">{stepHeading}</h1>
+          <p className="mt-2 hidden text-sm text-muted-foreground sm:block">{stepDescription}</p>
+          <details className="mt-2 text-sm">
+            <summary className="cursor-pointer py-2 text-muted-foreground">{totalTickets} {totalTickets === 1 ? "entry" : "entries"} · View booking</summary>
+            <div className="mt-1 rounded-lg border bg-card p-3">
+              <p className="break-words font-medium">{event.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{event.date}</p>
+            </div>
+          </details>
+        </header>
+        <nav aria-label="Checkout progress" className="mb-5">
+          <ol className="flex gap-2">
+            {(totalPaise === 0 ? ["Tickets", "Details"] : ["Tickets", "Details", "Payment"]).map((label, index) => (
+              <li key={label} aria-current={index === currentStep ? "step" : undefined} className="min-w-0 flex-1">
+                <div className={`h-1 rounded-full ${index <= currentStep ? "bg-primary" : "bg-secondary"}`} />
+                <span className={`mt-1.5 block text-xs ${index === currentStep ? "font-bold text-foreground" : "text-muted-foreground"}`}>{index < currentStep ? "✓ " : ""}{label}</span>
+              </li>
+            ))}
+          </ol>
+        </nav>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
           <main className="min-w-0">
-            {currentStep === 1 && usesParticipantWizard && <details className="mb-5 rounded-xl border bg-card p-4 lg:hidden">
+            {currentStep === 1 && usesParticipantWizard && totalParticipants > 1 && <details className="mb-5 rounded-xl border bg-card p-4 lg:hidden">
               <summary className="cursor-pointer text-sm font-semibold">Participant {activeRiderIndex + 1} of {totalParticipants} · Change</summary>
               <div className="mt-4">{participantNavigator()}</div>
             </details>}
 
-            {currentStep === 0 && <section className="space-y-5"><div><h2 className="text-xl font-bold">Your selection</h2><p className="mt-1 text-sm text-muted-foreground">Check your tickets before adding participant details.</p></div><div className="space-y-3">{selectedTiers.map((tier) => { const quantity = cart.find((line) => line.ticketId === tier.id)?.quantity ?? 0; return <div key={tier.id} className="flex items-start justify-between gap-4 rounded-2xl border bg-card p-4 shadow-sm sm:p-5"><div className="min-w-0"><p className="font-bold">{tier.name} <span className="font-normal text-muted-foreground">× {quantity}</span></p><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{tier.description}</p></div><p className="shrink-0 text-lg font-bold text-primary">₹{(tier.price * quantity).toLocaleString("en-IN")}</p></div>; })}</div><div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm"><p className="font-semibold text-foreground">Next: participant details</p><p className="mt-1 text-muted-foreground">We’ll ask only for the fields this event needs. Payment happens after the details are complete.</p></div><div className="rounded-2xl border bg-card p-4 text-sm"><p className="font-semibold text-foreground">Save your booking</p>{!isInitialized ? <p className="mt-1 text-muted-foreground">Checking your account session…</p> : isParticipant ? <p className="mt-1 text-muted-foreground">Signed in as <span className="font-semibold text-foreground">{user?.email}</span>. Your booking will appear in your dashboard automatically.</p> : <div className="mt-3 space-y-3"><p className="text-muted-foreground">Use an account to keep tickets together, or continue as a guest with a private claim code.</p><div className="grid gap-2 sm:grid-cols-3"><Button type="button" onClick={() => { setRegistrationMode("guest"); setCurrentStep(1); }}>Continue as guest</Button><Button type="button" variant="outline" onClick={() => navigate("/login", { state: { from: checkoutReturnPath } })}>Sign in</Button><Button type="button" variant="ghost" onClick={() => navigate("/signup?type=participant", { state: { from: checkoutReturnPath } })}>Create account</Button></div>{registrationMode === "guest" && <p className="rounded-lg bg-muted p-3 text-xs leading-5 text-muted-foreground">Save the claim code shown after registration. It lets you link this booking to an account later.</p>}</div>}</div><Button onClick={() => setCurrentStep(1)} disabled={!isInitialized || !effectiveRegistrationMode} size="lg" className="w-full">Continue to {participantLabel.toLowerCase()} details <ArrowRight className="ml-2 h-4 w-4" /></Button></section>}
+            {currentStep === 0 && <section className="space-y-4 sm:space-y-5"><h2 className="sr-only">Your selection</h2><div className="space-y-2 sm:space-y-3">{selectedTiers.map((tier) => { const quantity = cart.find((line) => line.ticketId === tier.id)?.quantity ?? 0; return <div key={tier.id} className="flex items-start justify-between gap-4 rounded-xl border bg-card p-3.5 shadow-sm sm:rounded-2xl sm:p-5"><div className="min-w-0"><p className="font-bold">{tier.name} <span className="font-normal text-muted-foreground">× {quantity}</span></p><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{tier.description}</p></div><p className="shrink-0 text-lg font-bold text-primary">₹{(tier.price * quantity).toLocaleString("en-IN")}</p></div>; })}</div><div className="hidden rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm sm:block"><p className="font-semibold text-foreground">Next: participant details</p><p className="mt-1 text-muted-foreground">We’ll ask only for the fields this event needs. Payment happens after the details are complete.</p></div><div className="rounded-xl border bg-card p-3.5 text-sm sm:rounded-2xl sm:p-4"><p className="font-semibold text-foreground">Save your booking</p>{!isInitialized ? <p className="mt-1 text-muted-foreground">Checking your account session…</p> : isParticipant ? <p className="mt-1 text-muted-foreground">Signed in as <span className="font-semibold text-foreground">{user?.email}</span>. Your booking will appear in your dashboard automatically.</p> : <div className="mt-3 space-y-3"><p className="text-muted-foreground">Use an account to keep tickets together, or continue as a guest with a private claim code.</p><div className="grid gap-2 sm:grid-cols-3"><Button type="button" onClick={() => { setRegistrationMode("guest"); setCurrentStep(1); }}>Continue as guest</Button><Button type="button" variant="outline" onClick={() => navigate("/login", { state: { from: checkoutReturnPath } })}>Sign in</Button><Button type="button" variant="ghost" onClick={() => navigate("/signup?type=participant", { state: { from: checkoutReturnPath } })}>Create account</Button></div>{registrationMode === "guest" && <p className="rounded-lg bg-muted p-3 text-xs leading-5 text-muted-foreground">Save the claim code shown after registration. It lets you link this booking to an account later.</p>}</div>}</div><Button onClick={() => setCurrentStep(1)} disabled={!isInitialized || !effectiveRegistrationMode} size="lg" className="w-full">Continue to {participantLabel.toLowerCase()} details <ArrowRight className="ml-2 h-4 w-4" /></Button></section>}
 
             {currentStep === 1 && activeRider && (() => {
               // For team events with team entryType, show simplified team view
@@ -903,8 +926,8 @@ const Checkout = () => {
                     </div>
                     {teamParticipantsView()}
                     {waiverEnabled && <div className="rounded-2xl border border-slate-200 bg-card p-5"><h3 className="font-bold">{event.waiver?.title || "Waiver & Declaration"}</h3><p className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{event.waiver?.text}</p><label className={`mt-4 flex cursor-pointer items-start gap-3 rounded-xl border p-4 ${waiverAccepted ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"}`}><input aria-label="I have read and agree to the Waiver & Declaration." type="checkbox" checked={waiverAccepted} onChange={(e) => setWaiverAccepted(e.target.checked)} className="mt-0.5 h-5 w-5 accent-emerald-600" /><span className="text-sm font-semibold">I have read and agree to the above Waiver &amp; Declaration.</span></label></div>}
-                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-                      <Button type="button" variant="outline" onClick={() => setCurrentStep(0)}>
+                    <div className="sticky bottom-0 z-20 -mx-3 flex flex-col-reverse gap-2 bg-background/95 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur sm:static sm:mx-0 sm:flex-row sm:justify-between sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+                      <Button type="button" className="hidden sm:inline-flex" variant="outline" onClick={() => setCurrentStep(0)}>
                         <ArrowLeft className="mr-2 h-4 w-4" /> Previous
                       </Button>
                       <Button type="button" onClick={createRegistration} disabled={!participantReady || loading || waiverBlocksContinue}>
@@ -922,28 +945,19 @@ const Checkout = () => {
               // Original step-by-step wizard for individual events
               return (
                 <section className="space-y-5">
-                  <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-                    <div>
-                      <h2 className="text-xl font-bold">{participantLabel} details</h2>
-                      <p className="mt-1 text-sm text-muted-foreground">Complete one {participantLabel.toLowerCase()} at a time. You can return to any {participantLabel.toLowerCase()} before submitting.</p>
-                    </div>
-                    <p className="text-sm font-medium text-muted-foreground">{completedRiders} of {totalParticipants} complete</p>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-secondary">
-                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${totalParticipants ? (completedRiders / totalParticipants) * 100 : 0}%` }} />
-                  </div>
-                  <div className="overflow-hidden rounded-2xl border-2 border-primary/30 bg-card shadow-sm">
-                    <div className="flex items-start justify-between gap-4 bg-primary/5 px-5 py-4 sm:px-6">
+                  {totalParticipants > 1 && <p className="text-xs text-muted-foreground">{completedRiders} of {totalParticipants} complete</p>}
+                  <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+                    <div className="flex items-start justify-between gap-3 border-b bg-primary/5 px-3 py-2 sm:px-6 sm:py-4">
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-primary">{participantLabel} {activeRiderIndex + 1} of {totalParticipants}</p>
-                        <h3 className="mt-1 text-xl font-bold">{activeTier?.name}</h3>
-                        <p className="mt-1 text-sm text-muted-foreground">{activeTier?.description}</p>
+                        {totalParticipants > 1 && <p className="text-xs font-semibold text-primary">{participantLabel} {activeRiderIndex + 1} of {totalParticipants}</p>}
+                        <h3 className="text-sm font-bold sm:text-xl">{activeTier?.name}</h3>
+                        <p className="mt-1 hidden text-sm text-muted-foreground sm:block">{activeTier?.description}</p>
                       </div>
                       <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
                         <p className="whitespace-nowrap text-lg font-bold text-primary">₹{activeTier?.price.toLocaleString("en-IN")}</p>
                       </div>
                     </div>
-                    <div className="space-y-6 p-5 sm:p-6">
+                    <div className="space-y-5 p-3 sm:space-y-6 sm:p-6">
                       {activeIsTeam && activeRider.participantIndex === 0 && teamInfoFields.length > 0 && (
                         <section className="space-y-4">
                           <div>
@@ -955,10 +969,7 @@ const Checkout = () => {
                       )}
                       <section className="space-y-4">
                         {activeIsTeam && <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Member {activeRider.participantIndex + 1}</div>}
-                        <div>
-                          <h4 className="font-bold">{activeIsTeam ? "Member details" : "Participant identity"}</h4>
-                          <p className="text-sm text-muted-foreground">Use the person who will participate in this event.</p>
-                        </div>
+                        <h4 className="sr-only">{activeIsTeam ? "Member details" : "Participant identity"}</h4>
                         {renderFieldGrid(activeRider, identityFields)}
                       </section>
                       {activeRider.participantIndex === 0 && contactFields.length > 0 && (
@@ -1082,8 +1093,8 @@ const Checkout = () => {
                     <div className="space-y-3 px-5 py-4 text-sm leading-6 text-slate-600"><p>This event is organized and conducted by <span className="font-semibold text-slate-950">{event.organizer}</span>. SportPass India provides the registration, ticketing and event-management platform.</p><p>The organizer is responsible for the event’s conduct, venue, permissions, safety, cancellations and refunds under the displayed refund policy.</p>{event.paymentSettings?.method === "DIRECT_UPI" && <p>The registration amount is paid directly to <span className="font-semibold text-slate-950">{event.paymentSettings.payeeName || event.organizer}</span> and is not held by SportPass India.</p>}</div>
                     <label className={`m-4 mt-0 flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${responsibilityAcknowledged ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white hover:border-orange-300 hover:bg-orange-50/40"}`}><input aria-label="I have reviewed the event, organizer and refund details." type="checkbox" checked={responsibilityAcknowledged} onChange={(e) => setResponsibilityAcknowledged(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 accent-emerald-600" /><span><span className="block text-sm font-semibold text-slate-950">I have reviewed the event, organizer and refund details.</span><span className="mt-1 block text-xs leading-5 text-slate-500">Required before continuing to payment.</span></span></label>
                   </div>}
-                  <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-                    <Button type="button" variant="outline" onClick={() => activeRiderIndex > 0 ? setActiveRiderIndex(activeRiderIndex - 1) : setCurrentStep(0)}><ArrowLeft className="mr-2 h-4 w-4" /> Previous</Button>
+                  <div className="sticky bottom-0 z-20 -mx-3 flex flex-col-reverse gap-2 bg-background/95 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur sm:static sm:mx-0 sm:flex-row sm:justify-between sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+                    <Button type="button" className="hidden sm:inline-flex" variant="outline" onClick={() => activeRiderIndex > 0 ? setActiveRiderIndex(activeRiderIndex - 1) : setCurrentStep(0)}><ArrowLeft className="mr-2 h-4 w-4" /> Previous</Button>
                     {activeRiderIndex < totalParticipants - 1 ? <Button type="button" onClick={() => { if (!riderReady(activeRider)) { toast.error(`Complete the required ${participantLabel.toLowerCase()} fields for this ${participantLabel.toLowerCase()}.`); return; } setActiveRiderIndex(activeRiderIndex + 1); }}>Save {participantLabel.toLowerCase()} & continue<ArrowRight className="ml-2 h-4 w-4" /></Button> : <Button type="button" className="sm:min-w-52" onClick={createRegistration} disabled={!participantReady || loading || (totalPaise > 0 && !responsibilityAcknowledged) || waiverBlocksContinue}>{loading ? "Creating registrations…" : totalPaise === 0 ? "Complete free registrations" : "Continue to payment"}<ArrowRight className="ml-2 h-4 w-4" /></Button>}
                   </div>
                   {!participantReady && activeRiderIndex === totalParticipants - 1 && (
@@ -1114,7 +1125,17 @@ const Checkout = () => {
                 </div>
               </section>
             )}
-            {currentStep === 2 && registration && registration.paymentCollectionMethod !== "CASHFREE_MANAGED" && <section className="space-y-5"><div><h2 className="text-xl font-bold">Pay for all {participantLabel.toLowerCase()}s</h2><p className="mt-1 text-sm text-muted-foreground">One payment covers all paid entries in this order.</p></div><div className="rounded-2xl border bg-card p-5"><p className="text-sm text-muted-foreground">{registration.registrations.length} {registration.registrations.length === 1 ? "entry" : "entries"}</p><p className="mt-2 text-sm font-bold tracking-wide">{registration.registrations.map((child) => child.registrationReference).join(" · ")}</p>{registration.platformFeeBearer === "PARTICIPANT" && (registration.platformFeePaise ?? 0) > 0 && <div className="mt-4 space-y-1 text-sm text-muted-foreground"><div className="flex items-center justify-between"><span>Registration Fee</span><span>{formatPaise(registration.baseAmountPaise ?? 0)}</span></div><div className="flex items-center justify-between"><span>SportPass Fee</span><span>{formatPaise(registration.platformFeePaise ?? 0)}</span></div></div>}<p className="mt-5 text-sm text-muted-foreground">Total amount to pay</p><p className="text-3xl font-extrabold text-primary">₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings && <div className="space-y-4 rounded-2xl border bg-primary/5 p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">UPI ID</p><p className="font-bold">{registration.paymentSettings.upiId}</p><p className="text-xs text-muted-foreground">Payee: {registration.paymentSettings.payeeName}</p></div><Button variant="outline" size="sm" onClick={copyUpi}><Copy className="mr-2 h-4 w-4" /> Copy</Button></div><p className="text-sm text-muted-foreground">{registration.paymentSettings.instructions}</p><div className="flex flex-col items-center gap-3 rounded-lg bg-white p-3"><img src={registration.paymentSettings.qrDataUrl} alt="Generated UPI payment QR" className="h-56 w-56" /><p className="text-xs text-muted-foreground">Scan to pay ₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings.qrImageUrl && <div><p className="mb-2 text-xs font-medium text-muted-foreground">Organizer-provided QR</p><img src={registration.paymentSettings.qrImageUrl} alt="Organizer UPI QR" className="mx-auto max-h-56 rounded-lg" /></div>}<div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm dark:border-blue-900/50 dark:bg-blue-950/20"><p className="font-semibold text-blue-900 dark:text-blue-100">Can't scan? Pay from your UPI app directly</p><p className="mt-1 text-blue-800/80 dark:text-blue-100/80">Download the QR image below, then open your UPI app (GPay, PhonePe, Paytm, etc.), choose <span className="font-semibold">Scan QR</span> or <span className="font-semibold">Upload QR</span>, and select the downloaded image to pay ₹{totalRupees.toLocaleString("en-IN")} automatically.</p><Button type="button" variant="outline" size="sm" className="mt-3 gap-2 border-blue-300 bg-white text-blue-900 hover:bg-blue-50 dark:border-blue-800 dark:bg-transparent dark:text-blue-100" onClick={() => void downloadQrAsPng(registration.paymentSettings!.qrDataUrl, `sportpass-payment-qr-${registration.registrations[0]?.registrationReference ?? "order"}.png`).then(() => setQrDownloaded(true)).catch(() => toast.error("Could not download QR image"))}><Download className="h-4 w-4" /> Download QR image</Button>{qrDownloaded && <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400"><CheckCircle2 className="h-4 w-4 shrink-0" /> QR saved — open your UPI app, tap Scan QR or Upload QR, and pick this image to pay.</p>}</div></div>}<div className="space-y-2"><Label>UTR / transaction reference (optional)</Label><Input value={utrReference} onChange={(e) => setUtrReference(e.target.value)} placeholder="Enter it after paying in your UPI app" /><p className="text-xs text-muted-foreground">One reference will be submitted for the complete {participantLabel.toLowerCase()} group.</p></div><Button onClick={submitUtr} disabled={loading} size="lg" className="w-full">{loading ? "Saving…" : "Submit reference / continue"}</Button><p className="flex items-center justify-center gap-1 text-xs text-muted-foreground"><Shield className="h-3 w-3" /> Do not enter card details on SportPass.</p></section>}
+            {currentStep === 2 && registration && registration.paymentCollectionMethod !== "CASHFREE_MANAGED" && <section className="space-y-4 sm:space-y-5"><p className="text-sm text-muted-foreground">One payment covers all entries. Confirmation follows organizer verification.</p><details className="rounded-xl border bg-card p-3">
+                <summary className="cursor-pointer text-sm font-semibold">Amount & references · {formatPaise(chargedPaise)}</summary>
+                <div className="mt-3 space-y-2 text-sm">
+                  <p className="break-words text-xs text-muted-foreground">{registration.registrations.map((child) => child.registrationReference).join(" · ")}</p>
+                  {registration.platformFeeBearer === "PARTICIPANT" && (registration.platformFeePaise ?? 0) > 0 && <>
+                    <div className="flex justify-between gap-3"><span>Registration fee</span><span>{formatPaise(registration.baseAmountPaise ?? 0)}</span></div>
+                    <div className="flex justify-between gap-3"><span>SportPass fee</span><span>{formatPaise(registration.platformFeePaise ?? 0)}</span></div>
+                  </>}
+                  <div className="flex justify-between gap-3 border-t pt-2 font-bold"><span>Total to pay</span><span>{formatPaise(chargedPaise)}</span></div>
+                </div>
+              </details>{registration.paymentSettings && <div className="space-y-3 rounded-xl border bg-primary/5 p-3.5 sm:space-y-4 sm:rounded-2xl sm:p-5"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="text-sm text-muted-foreground">UPI ID</p><p className="break-all font-bold">{registration.paymentSettings.upiId}</p><p className="text-xs text-muted-foreground">Payee: {registration.paymentSettings.payeeName}</p></div><Button variant="outline" size="sm" className="shrink-0" onClick={copyUpi}><Copy className="mr-2 h-4 w-4" /> Copy</Button></div><p className="text-sm text-muted-foreground">{registration.paymentSettings.instructions}</p><div className="flex flex-col items-center gap-2 rounded-lg bg-white p-2.5 sm:gap-3 sm:p-3"><img src={registration.paymentSettings.qrDataUrl} alt="Generated UPI payment QR" className="h-44 w-44 sm:h-56 sm:w-56" /><p className="text-xs text-muted-foreground">Scan to pay ₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings.qrImageUrl && <div><p className="mb-2 text-xs font-medium text-muted-foreground">Organizer-provided QR</p><img src={registration.paymentSettings.qrImageUrl} alt="Organizer UPI QR" className="mx-auto max-h-44 sm:max-h-56" /></div>}<div className="rounded-lg border bg-card p-3 text-sm"><details><summary className="cursor-pointer font-semibold">Paying on this phone?</summary><p className="mt-2 text-muted-foreground">Download this QR, then import it using Scan QR in your UPI app. Check the payee and amount before paying.</p></details><Button type="button" variant="outline" size="sm" className="mt-3 gap-2 border-blue-300 bg-white text-blue-900 hover:bg-blue-50 dark:border-blue-800 dark:bg-transparent dark:text-blue-100" onClick={() => void downloadQrAsPng(registration.paymentSettings!.qrDataUrl, `sportpass-payment-qr-${registration.registrations[0]?.registrationReference ?? "order"}.png`).then(() => setQrDownloaded(true)).catch(() => toast.error("Could not download QR image"))}><Download className="h-4 w-4" /> Download QR image</Button>{qrDownloaded && <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400"><CheckCircle2 className="h-4 w-4 shrink-0" /> QR saved — open your UPI app, tap Scan QR or Upload QR, and pick this image to pay.</p>}</div></div>}<div className="space-y-2"><Label>UTR / transaction reference (optional)</Label><Input value={utrReference} onChange={(e) => setUtrReference(e.target.value)} placeholder="Enter it after paying in your UPI app" /><p className="text-xs text-muted-foreground">One reference will be submitted for the complete {participantLabel.toLowerCase()} group.</p></div><Button onClick={submitUtr} disabled={loading} size="lg" className="w-full">{loading ? "Saving…" : "Submit reference / continue"}</Button><p className="flex items-center justify-center gap-1 text-xs text-muted-foreground"><Shield className="h-3 w-3" /> Do not enter card details on SportPass.</p></section>}
           </main>
 
           <aside className="min-w-0 lg:col-span-1">

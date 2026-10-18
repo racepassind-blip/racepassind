@@ -48,7 +48,7 @@ function Pullquote({ children, orange = false }: { children: React.ReactNode; or
 
 function Hero() {
   return (
-    <section className="relative isolate overflow-hidden bg-[#101b35] pb-28 pt-32 text-white">
+    <section className="relative isolate overflow-hidden bg-[#101b35] pb-16 pt-20 text-white sm:pb-28 sm:pt-32">
       <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" />
       <div className="pointer-events-none absolute -left-40 -top-20 h-[500px] w-[500px] rounded-full bg-[#ff9933]/8 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-20 -right-40 h-[500px] w-[500px] rounded-full bg-white/4 blur-3xl" />
@@ -69,7 +69,7 @@ function Hero() {
         </h1>
 
         {/* opening */}
-        <div className="mt-10 space-y-5 text-center text-lg leading-8 text-white/65 sm:text-xl">
+        <div className="mt-6 space-y-4 text-center text-base leading-7 text-white/65 sm:mt-10 sm:space-y-5 sm:text-xl sm:leading-8">
           <p>
             We didn't build SportPass India because we thought the registration
             market needed another platform. We built it because we were the
@@ -83,7 +83,7 @@ function Hero() {
           </p>
         </div>
 
-        <p className="mt-12 text-center text-2xl font-black text-[#ff9933] sm:text-3xl">
+        <p className="mt-8 text-center text-xl font-black text-[#ff9933] sm:mt-12 sm:text-3xl">
           Registration is only the beginning.
         </p>
 
@@ -112,7 +112,7 @@ function Hero() {
 
 function TheProblem() {
   return (
-    <section className="bg-slate-50 py-24 sm:py-32">
+    <section className="bg-slate-50 py-16 sm:py-32">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
 
         {/* THE NIGHT BEFORE */}
@@ -240,7 +240,7 @@ const WORKFLOW_STEPS = [
 
 function TheAnswer() {
   return (
-    <section className="bg-white py-24 sm:py-32">
+    <section className="bg-white py-16 sm:py-32">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
         <Label>The Answer</Label>
 
@@ -358,7 +358,7 @@ function ProductVisuals() {
   ];
 
   return (
-    <section className="bg-[#0b1428] py-24 sm:py-32">
+    <section className="bg-[#0b1428] py-16 sm:py-32">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
         <Label>See It in Action</Label>
         <h2 className="max-w-2xl text-3xl font-black tracking-tight text-white sm:text-4xl">
@@ -421,7 +421,7 @@ const SPORT_CARDS = [
 
 function BuiltForAnySport() {
   return (
-    <section className="bg-slate-50 py-24 sm:py-32">
+    <section className="bg-slate-50 py-16 sm:py-32">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
         <Label>Built for Any Sport</Label>
 
@@ -491,7 +491,7 @@ const COMPARISON = [
 
 function BeforeVsAfter() {
   return (
-    <section className="bg-white py-24 sm:py-32">
+    <section className="bg-white py-16 sm:py-32">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
         <Label>The Difference</Label>
         <h2 className="max-w-xl text-3xl font-black tracking-tight text-[#101b35] sm:text-4xl">

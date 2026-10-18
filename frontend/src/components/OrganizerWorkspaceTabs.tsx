@@ -18,19 +18,19 @@ export function OrganizerWorkspaceTabs({ organizationEmbedded = false, onOrganiz
 
   return (
     <>
-    <nav aria-label="Organizer workspace" className="flex items-center gap-1 overflow-x-auto border-b">
-      <Button asChild variant="ghost" className={`shrink-0 gap-2 rounded-b-none border-b-2 px-4 ${eventsActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+    <nav aria-label="Organizer workspace" className="scrollbar-none grid grid-cols-3 items-stretch gap-1 overflow-hidden border-b">
+      <Button asChild variant="ghost" className={`min-w-0 gap-1.5 rounded-b-none border-b-2 px-1 text-xs sm:gap-2 sm:px-4 sm:text-sm ${eventsActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
         <Link to="/organizer" onClick={onEventsSelect}><Calendar className="h-4 w-4" /> Events</Link>
       </Button>
-      <Button asChild variant="ghost" className={`shrink-0 gap-2 rounded-b-none border-b-2 px-4 ${transactionsActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+      <Button asChild variant="ghost" className={`min-w-0 gap-1.5 rounded-b-none border-b-2 px-1 text-xs sm:gap-2 sm:px-4 sm:text-sm ${transactionsActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
         <Link to="/organizer/payments" aria-current={transactionsActive ? "page" : undefined}><CreditCard className="h-4 w-4" /> Transactions</Link>
       </Button>
       {onOrganizationSelect ? (
-        <Button type="button" variant="ghost" className={`shrink-0 gap-2 rounded-b-none border-b-2 px-4 ${organizationActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`} onClick={onOrganizationSelect}>
+        <Button type="button" variant="ghost" className={`min-w-0 gap-1.5 rounded-b-none border-b-2 px-1 text-xs sm:gap-2 sm:px-4 sm:text-sm ${organizationActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`} onClick={onOrganizationSelect}>
           <Building2 className="h-4 w-4" /> Organization
         </Button>
       ) : (
-        <Button asChild variant="ghost" className={`shrink-0 gap-2 rounded-b-none border-b-2 px-4 ${organizationActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+        <Button asChild variant="ghost" className={`min-w-0 gap-1.5 rounded-b-none border-b-2 px-1 text-xs sm:gap-2 sm:px-4 sm:text-sm ${organizationActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
           <Link to="/organizer/setup"><Building2 className="h-4 w-4" /> Organization</Link>
         </Button>
       )}

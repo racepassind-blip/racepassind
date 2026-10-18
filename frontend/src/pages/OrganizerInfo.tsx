@@ -148,17 +148,17 @@ const OrganizerInfo = () => {
       <section className="relative isolate overflow-hidden bg-[#101b35] text-white">
         <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#ff9933] via-white to-[#138808]" />
         <div className="absolute -right-32 top-0 -z-10 h-96 w-96 rounded-full bg-primary/20 blur-3xl" />
-        <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1fr_0.9fr] lg:px-8 lg:py-24">
+        <div className="mx-auto grid max-w-7xl items-center gap-8 px-3 py-10 sm:gap-12 sm:px-6 sm:py-16 lg:grid-cols-[1fr_0.9fr] lg:px-8 lg:py-24">
           <div>
             <Badge className="border-white/20 bg-white/10 text-white hover:bg-white/10"><Zap className="mr-1.5 h-3.5 w-3.5 text-[#ff9933]" /> Built for Indian sports events</Badge>
-            <h1 className="mt-6 max-w-3xl text-4xl font-black leading-[1.04] tracking-tight sm:text-6xl">Run registrations, event day, and results from one place.</h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/75">SportPass gives organizers one working record for participants, payments, check-in, and sport-specific results. Your team sees what needs attention without reconciling forms, chats, and spreadsheets.</p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button asChild size="lg" className="font-bold"><Link to="/signup?type=organizer">Create organizer account <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
-              <Button asChild size="lg" variant="outline" className="border-white/25 bg-white/5 font-bold text-white hover:bg-white/10 hover:text-white"><Link to="/signup?type=organizer">Sell your merchandise <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
-              <Button asChild size="lg" variant="outline" className="border-white/25 bg-white/5 font-bold text-white hover:bg-white/10 hover:text-white"><a href={createWhatsAppUrl(WHATSAPP_MESSAGES.organizerInterest)} target="_blank" rel="noopener noreferrer">Talk to SportPass</a></Button>
+            <h1 className="mt-4 max-w-3xl text-3xl font-black leading-[1.04] tracking-tight sm:mt-6 sm:text-6xl">Run registrations, event day, and results from one place.</h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-white/75 sm:mt-6 sm:text-lg sm:leading-8">SportPass gives organizers one working record for participants, payments, check-in, and sport-specific results. Your team sees what needs attention without reconciling forms, chats, and spreadsheets.</p>
+            <div className="mt-6 grid gap-2 sm:mt-8 sm:flex sm:flex-wrap sm:gap-3">
+              <Button asChild size="lg" className="h-11 justify-center font-bold"><Link to="/signup?type=organizer">Create organizer account <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+              <Button asChild size="lg" variant="outline" className="h-11 justify-center border-white/25 bg-white/5 font-bold text-white hover:bg-white/10 hover:text-white"><Link to="/signup?type=organizer">Sell your merchandise <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+              <Button asChild size="lg" variant="outline" className="h-11 justify-center border-white/25 bg-white/5 font-bold text-white hover:bg-white/10 hover:text-white"><a href={createWhatsAppUrl(WHATSAPP_MESSAGES.organizerInterest)} target="_blank" rel="noopener noreferrer">Talk to SportPass</a></Button>
             </div>
-            <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/70"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Direct UPI or Cashfree</span><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Trekking-ready forms</span><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Event-wise audit trail</span></div>
+            <div className="mt-5 grid gap-2 text-sm text-white/70 sm:mt-7 sm:flex sm:flex-wrap sm:gap-x-6"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Direct UPI or Cashfree</span><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Trekking-ready forms</span><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Event-wise audit trail</span></div>
           </div>
 
           <div className="rounded-3xl border border-white/15 bg-white/10 p-4 shadow-2xl backdrop-blur-md sm:p-6">

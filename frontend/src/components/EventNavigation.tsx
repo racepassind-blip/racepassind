@@ -28,10 +28,10 @@ export function EventNavigation({ eventId, operationalFeatures }: { eventId: str
     : sport.result_type === "match_score" && Boolean(matchResults.data?.matches.some((match) => match.status === "completed"));
 
   return <section aria-label="Event hub" className="mb-8 overflow-hidden rounded-2xl border bg-card shadow-sm">
-    <div className="border-b px-5 py-5 sm:px-6">
-      <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Event hub</p>
-      <h2 className="mt-1 text-xl font-bold">Event updates and information</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Everything released by the organizer for this event lives here.</p>
+    <div className="border-b px-3 py-3 sm:px-6 sm:py-5">
+      <p className="hidden text-xs font-bold uppercase tracking-[0.14em] text-primary sm:block">Event hub</p>
+      <h2 className="text-base font-bold sm:mt-1 sm:text-xl">Event updates and information</h2>
+      <p className="mt-1 hidden text-sm text-muted-foreground sm:block">Everything released by the organizer for this event lives here.</p>
     </div>
     <div className={`grid gap-px bg-border ${supportsNumbers && supportsResults ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>
       <HubCard to={`${base}/announcements`} icon={Bell} eyebrow={announcementCount ? `${announcementCount} update${announcementCount === 1 ? "" : "s"}` : "Updates from organizer"} title={latest?.title ?? "Announcements"} description={latest?.body ?? "No announcements have been published yet. Check here for organizer updates."} />
@@ -43,11 +43,12 @@ export function EventNavigation({ eventId, operationalFeatures }: { eventId: str
 }
 
 function HubCard({ to, icon: Icon, eyebrow, title, description, muted = false }: { to: string; icon: typeof Bell; eyebrow: string; title: string; description: string; muted?: boolean }) {
-  return <Link to={to} className="group flex min-h-44 flex-col bg-card p-5 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-6">
-    <div className="flex items-start justify-between gap-3"><span className={`flex h-11 w-11 items-center justify-center rounded-xl ${muted ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary"}`}><Icon className="h-5 w-5" /></span><ChevronRight className="mt-2 h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" /></div>
-    <p className={`mt-5 text-xs font-bold uppercase tracking-[0.12em] ${muted ? "text-muted-foreground" : "text-primary"}`}>{eyebrow}</p>
+  return <Link to={to} className="group relative flex flex-col bg-card p-3 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:min-h-44 sm:p-6">
+    <div className="hidden items-start justify-between gap-3 sm:flex"><span className={`flex h-11 w-11 items-center justify-center rounded-xl ${muted ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary"}`}><Icon className="h-5 w-5" /></span><ChevronRight className="mt-2 h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" /></div>
+    <p className={`text-xs font-bold uppercase tracking-[0.12em] sm:mt-5 ${muted ? "text-muted-foreground" : "text-primary"}`}>{eyebrow}</p>
     <h3 className="mt-1 text-base font-bold leading-5">{title}</h3>
-    <p className="mt-2 text-sm leading-5 text-muted-foreground">{description}</p>
+    <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground sm:mt-2 sm:line-clamp-none">{description}</p>
+    <span className="mt-2 flex items-center gap-1 text-xs font-semibold text-primary sm:hidden">View details <ChevronRight className="h-3 w-3" /></span>
   </Link>;
 }
 
