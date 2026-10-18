@@ -593,6 +593,26 @@ class ApplicationChangesIn(BaseModel):
     reason: str = Field(min_length=5, max_length=2000)
 
 
+def notify_paid_verification_review(db: Session, organization: Organization) -> None:
+    from app.config import get_settings
+    import logging
+    organization_id = organization.id
+    verification_status = organization.paid_verification_status
+    try:
+        recipients = db.scalars(select(User.email).join(
+            OrganizationMember, OrganizationMember.user_id == User.id
+        ).where(OrganizationMember.organization_id == organization_id,
+                OrganizationMember.member_role == "organizer", User.is_active.is_(True))).all()
+        origin = get_settings().frontend_origins[0].rstrip("/")
+        for recipient in set(recipients):
+            send_email(db, recipient=recipient, subject="SportPass paid verification update",
+                body=f"Your organization's paid verification is {verification_status.lower().replace('_', ' ')}.\nReview the decision and next steps securely at {origin}/organizer/setup#paid-verification",
+                email_type="ORGANIZER_VERIFICATION")
+    except Exception:
+        db.rollback()
+        logging.getLogger(__name__).exception("Paid verification notification failed for %s", organization_id)
+
+
 def notify_application_review(db: Session, application: OrganizerApplication) -> None:
     from app.config import get_settings
     import logging
@@ -849,6 +869,10 @@ def review_paid_verification(
     submission.reviewed_at = organization.paid_verification_reviewed_at
     submission.reviewed_by = admin.id
     submission.rejection_reason = organization.paid_verification_rejection_reason
+    if payload.status == "VERIFIED":
+        organization.paid_verification_suspension_reason = None
+        organization.paid_verification_suspended_at = None
+        organization.paid_verification_suspended_by = None
     
     record_audit(
         db,
@@ -860,6 +884,7 @@ def review_paid_verification(
     )
     
     db.commit()
+    notify_paid_verification_review(db, organization)
     return {
         "organizationId": str(organization.id),
         "organizationName": organization.name,

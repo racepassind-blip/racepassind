@@ -62,6 +62,7 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", organizationType: "", city: "", state: "", description: "", website: "" });
   const [loading, setLoading] = useState(true);
+  const [verificationStatus, setVerificationStatus] = useState<string>("LOADING");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [application, setApplication] = useState<{paymentPreference: string; paymentDetails: {upiId?: string; payeeName?: string}; reviewedAt: string | null} | null>(null);
@@ -81,8 +82,6 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
         if (!firstOrganization) throw new Error("No organizer organization is available for this account.");
         const profile = await apiRequest<Organization>(`/organizer/organizations/${firstOrganization.id}`);
         setOrganization(profile);
-        const onboarding = await apiRequest<{application: typeof application}>("/auth/organizer-application/mine");
-        setApplication(onboarding.application);
         setForm({
           name: profile.name,
           organizationType: profile.organizationType ?? "",
@@ -91,6 +90,13 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
           description: profile.description ?? "",
           website: profile.website ?? "",
         });
+        // Application history is optional; it must not prevent profile editing.
+        try {
+          const onboarding = await apiRequest<{application: typeof application}>("/auth/organizer-application/mine");
+          setApplication(onboarding.application);
+        } catch {
+          setApplication(null);
+        }
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Could not load your organization profile.");
       } finally {
@@ -146,17 +152,22 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
   };
 
   const displayedLogo = logoPreviewUrl || organization?.logoUrl;
+  const paymentMethods = [organization?.allowDirectUpi && "Direct UPI", organization?.allowCashfree && "Gateway"].filter(Boolean).join(", ");
+  const verificationSummary = verificationStatus === "VERIFIED"
+    ? paymentMethods ? "Your verification and payment access are approved. Complete payment setup for each event; Direct UPI also requires an approved payment destination." : "Your paid-event verification is complete. Payment access is awaiting admin approval."
+    : verificationStatus === "UNDER_REVIEW" ? "Your paid-event verification is submitted and awaiting review."
+    : verificationStatus === "REJECTED" ? "Your paid-event verification was rejected. Review the reason and update your details."
+    : verificationStatus === "SUSPENDED" ? "Your paid-event verification is suspended. Review the details and contact SportPass."
+    : verificationStatus === "NOT_SUBMITTED" ? "Complete paid-event verification before collecting paid registrations."
+    : verificationStatus === "LOADING" ? "Loading your current verification status…"
+    : "Could not confirm your verification status. Open verification details to retry.";
 
   const content = (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-        {application && <Card className="border-primary/20"><CardHeader><CardTitle>Your onboarding progress</CardTitle><CardDescription>Your application was approved. Complete the remaining steps before collecting paid registrations.</CardDescription></CardHeader><CardContent className="space-y-3 text-sm">
-          <p>✓ Organizer account and organization profile approved</p>
-          <p>✓ Identity proof submitted and available for payment verification</p>
-          <p>Payment route: {application.paymentPreference === "DIRECT_UPI" ? "Direct UPI" : application.paymentPreference === "CASHFREE" ? "Payment gateway" : "Discuss with SportPass"}</p>
-          {application.paymentPreference === "DIRECT_UPI" && <p className="text-muted-foreground">Requested UPI: {application.paymentDetails.upiId} · {application.paymentDetails.payeeName}. After verification and payment access approval, confirm these details in your event payment settings.</p>}
-          {application.paymentPreference === "CASHFREE" && <p className="text-muted-foreground">Your legal name, PAN and billing address have been carried into verification. Confirm GST and terms below, then coordinate settlement details with SportPass.</p>}
-          <p>{organization?.allowDirectUpi || organization?.allowCashfree ? "✓ Payment access enabled: " + [organization.allowDirectUpi && "Direct UPI", organization.allowCashfree && "Gateway"].filter(Boolean).join(", ") : "Payment access: awaiting separate admin approval"}</p>
-          <Button variant="outline" onClick={() => setSection("verification")}>Continue paid-event verification</Button>
+        {application && <Card className="border-primary/20"><CardHeader><CardTitle>Your onboarding progress</CardTitle><CardDescription>{verificationSummary}</CardDescription></CardHeader><CardContent className="space-y-3 text-sm">
+          {verificationStatus === "VERIFIED" && <p>✓ Paid-event verification complete</p>}
+          <p>{paymentMethods ? `✓ Payment access enabled: ${paymentMethods}` : "Payment access: awaiting separate admin approval"}</p>
+          <Button variant="outline" onClick={() => setSection("verification")}>{["NOT_SUBMITTED", "REJECTED"].includes(verificationStatus) ? "Complete paid-event verification" : "View verification details"}</Button>
           <p className="text-muted-foreground">Free events do not require paid-event verification.</p>
         </CardContent></Card>}
         <div>
@@ -245,7 +256,7 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
 
         </div>
         <div id="organization-panel-verification" role="tabpanel" aria-labelledby="organization-tab-verification" hidden={section !== "verification"}>
-          {organization ? <PaidVerification organizationId={organization.id} /> : <p className="p-6 text-sm text-muted-foreground">{loading ? "Loading organization…" : "Organization details could not be loaded. Reload to try again."}</p>}
+          {organization ? <PaidVerification organizationId={organization.id} onStatusChange={setVerificationStatus} /> : <p className="p-6 text-sm text-muted-foreground">{loading ? "Loading organization…" : "Organization details could not be loaded. Reload to try again."}</p>}
         </div>
       </div>
   );

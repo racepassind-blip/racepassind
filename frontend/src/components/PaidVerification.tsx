@@ -35,6 +35,7 @@ type PaidVerification = {
 
 interface PaidVerificationProps {
   organizationId: string;
+  onStatusChange?: (status: string) => void;
 }
 
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
@@ -67,7 +68,7 @@ const emptyForm = {
   acceptTerms: false,
 };
 
-const PaidVerification = ({ organizationId }: PaidVerificationProps) => {
+const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationProps) => {
   const [verification, setVerification] = useState<PaidVerification | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -79,9 +80,11 @@ const PaidVerification = ({ organizationId }: PaidVerificationProps) => {
   };
 
   const load = async () => {
+    setError(null);
     try {
       const data = await apiRequest<PaidVerification>(`/organizer/organizations/${organizationId}/paid-verification`);
       setVerification(data);
+      onStatusChange?.(data.paidVerificationStatus);
       setForm({
         panNumber: data.panNumber ?? "",
         nameAsPerPan: data.nameAsPerPan ?? "",
@@ -95,6 +98,7 @@ const PaidVerification = ({ organizationId }: PaidVerificationProps) => {
         acceptTerms: false,
       });
     } catch (loadError) {
+      onStatusChange?.("UNAVAILABLE");
       setError(loadError instanceof Error ? loadError.message : "Could not load verification status.");
     } finally {
       setLoading(false);
@@ -177,10 +181,14 @@ const PaidVerification = ({ organizationId }: PaidVerificationProps) => {
     return <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading verification status…</CardContent></Card>;
   }
 
+  if (!verification) {
+    return <Card><CardContent className="space-y-3 p-6"><p role="alert" className="text-sm text-destructive">{error ?? "Could not load verification status."}</p><Button variant="outline" onClick={() => { setLoading(true); void load(); }}>Retry loading verification</Button></CardContent></Card>;
+  }
+
   const status = verification?.paidVerificationStatus ?? "NOT_SUBMITTED";
   const meta = STATUS_META[status];
   const StatusIcon = meta.icon;
-  const isEditable = status === "NOT_SUBMITTED" || status === "REJECTED";
+  const isEditable = status === "NOT_SUBMITTED" || status === "REJECTED" || status === "SUSPENDED";
 
   return (
     <Card id="paid-verification">
@@ -197,7 +205,7 @@ const PaidVerification = ({ organizationId }: PaidVerificationProps) => {
         {status === "VERIFIED" && (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100">
             <p className="font-semibold">Your organization is verified for paid events.</p>
-            <p className="mt-1">You can now publish events that charge a registration fee.{verification?.reviewedAt ? ` Verified on ${formatDate(verification.reviewedAt)}.` : ""}</p>
+            <p className="mt-1">Payment access and event payment setup must also be approved before collecting payments.{verification?.reviewedAt ? ` Verified on ${formatDate(verification.reviewedAt)}.` : ""}</p>
           </div>
         )}
 
@@ -220,7 +228,7 @@ const PaidVerification = ({ organizationId }: PaidVerificationProps) => {
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
             <p className="font-semibold">Paid registration access is suspended.</p>
             {verification?.suspensionReason && <p className="mt-1">Reason: {verification.suspensionReason}</p>}
-            <p className="mt-1">Your historical events and registrations remain available. Contact SportPass support for review.</p>
+            <p className="mt-1">Review the reason, update your details below and resubmit for admin review. Paid registrations remain blocked until approval. Contact SportPass support if you need help.</p>
           </div>
         )}
 
