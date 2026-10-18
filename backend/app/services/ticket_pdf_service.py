@@ -19,7 +19,7 @@ _PAGE_MARGIN = 17 * mm
 _CONTENT_WIDTH = A4[0] - (2 * _PAGE_MARGIN) - 12  # Default frame padding.
 _SPORTPASS_NAVY = colors.HexColor("#102A43")
 _SPORTPASS_TEAL = colors.HexColor("#0F7185")
-_SPORTPASS_ORANGE = colors.HexColor("#E9941A")
+_SPORTPASS_ORANGE = colors.HexColor("#F97316")
 _TEXT = colors.HexColor("#1F3445")
 _MUTED = colors.HexColor("#657786")
 _BORDER = colors.HexColor("#D9E3EA")
@@ -140,15 +140,15 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         name="brand",
         parent=styles["Normal"],
         fontName="Helvetica-Bold",
-        fontSize=20,
-        leading=22,
+        fontSize=12,
+        leading=15,
         textColor=_WHITE,
     ))
     styles.add(ParagraphStyle(
         name="brand_kicker",
         parent=styles["Normal"],
         fontName="Helvetica-Bold",
-        fontSize=7.5,
+        fontSize=7,
         leading=10,
         textColor=colors.HexColor("#BFE5EA"),
         tracking=1,
@@ -166,9 +166,9 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         name="event_title",
         parent=styles["Heading1"],
         fontName="Helvetica-Bold",
-        fontSize=20,
-        leading=24,
-        textColor=_SPORTPASS_NAVY,
+        fontSize=22,
+        leading=26,
+        textColor=_WHITE,
         spaceAfter=5,
     ))
     styles.add(ParagraphStyle(
@@ -176,7 +176,7 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         parent=styles["Normal"],
         fontSize=9.5,
         leading=13,
-        textColor=_MUTED,
+        textColor=colors.HexColor("#D6E5EF"),
     ))
     styles.add(ParagraphStyle(
         name="reference",
@@ -184,7 +184,7 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         fontName="Helvetica-Bold",
         fontSize=11,
         leading=14,
-        textColor=_SPORTPASS_NAVY,
+        textColor=_WHITE,
         alignment=TA_RIGHT,
     ))
     styles.add(ParagraphStyle(
@@ -193,7 +193,7 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         fontName="Helvetica-Bold",
         fontSize=7,
         leading=9,
-        textColor=_SPORTPASS_TEAL,
+        textColor=colors.HexColor("#BFE5EA"),
         alignment=TA_RIGHT,
     ))
     styles.add(ParagraphStyle(
@@ -270,7 +270,7 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
     story: list[object] = []
 
     header = Table([[
-        [Paragraph("ORGANIZED BY", styles["brand_kicker"]), _paragraph(organizer_name, styles["brand"])],
+        [Paragraph("SPORTPASS INDIA", styles["brand_kicker"]), Paragraph("Your event ticket", styles["brand"])],
         [Paragraph("EVENT TICKET", styles["brand_badge"]), Paragraph("Keep ready at check-in", styles["brand_badge"])],
     ]], colWidths=[_CONTENT_WIDTH - 48 * mm, 48 * mm], hAlign="LEFT")
     header.setStyle(TableStyle([
@@ -280,39 +280,53 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         ("ALIGN", (1, 0), (1, 0), "CENTER"),
         ("LEFTPADDING", (0, 0), (-1, -1), 12),
         ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 9),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
     story.extend([header, Spacer(1, 7 * mm)])
 
     event_left = [
-        Paragraph("EVENT", styles["section_title"]),
+        Paragraph("EVENT", styles["brand_kicker"]),
         _paragraph(event.name, styles["event_title"], "Race event"),
-        _paragraph(_event_schedule(event), styles["event_meta"]),
-        _paragraph(location, styles["event_meta"]),
+        Paragraph(f"{_text(_event_schedule(event))}<br/>{_text(location)}", styles["event_meta"]),
     ]
     if address and address != location:
         event_left.append(_paragraph(address, styles["event_meta"]))
     event_right = [
-        Paragraph("REGISTRATION REFERENCE", styles["reference_label"]),
-        _paragraph(registration.registration_reference, styles["reference"]),
-        Spacer(1, 2 * mm),
-        Paragraph("CHECKED IN" if registration.status == "checked_in" else "REGISTRATION CONFIRMED", styles["reference_label"]),
+        _qr_drawing(qr_payload, 42 * mm),
+        Spacer(1, 1.5 * mm),
+        Paragraph("SCAN AT CHECK-IN", styles["qr_caption"]),
     ]
-    event_card = Table([[event_left, event_right]], colWidths=[_CONTENT_WIDTH - 52 * mm, 52 * mm], hAlign="LEFT")
+    event_card = Table([[event_left, event_right]], colWidths=[_CONTENT_WIDTH - 59 * mm, 59 * mm], hAlign="LEFT")
     event_card.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _PALE_TEAL),
-        ("BACKGROUND", (1, 0), (1, 0), colors.HexColor("#E4F2F4")),
+        ("BACKGROUND", (0, 0), (0, 0), _SPORTPASS_NAVY),
+        ("BACKGROUND", (1, 0), (1, 0), _WHITE),
         ("BOX", (0, 0), (-1, -1), 0.8, _BORDER),
         ("LINEBEFORE", (1, 0), (1, 0), 0.8, _BORDER),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (1, 0), (1, 0), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 11),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 11),
+    ]))
+    story.extend([event_card, Spacer(1, 4 * mm)])
+
+    status_line = Table([[
+        Paragraph("REGISTRATION CONFIRMED" if registration.status != "checked_in" else "CHECKED IN", styles["brand_badge"]),
+        _paragraph(registration.registration_reference, styles["field_value_accent"]),
+    ]], colWidths=[_CONTENT_WIDTH * 0.52, _CONTENT_WIDTH * 0.48], hAlign="LEFT")
+    status_line.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FFF1E8")),
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#FDBA8C")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (1, 0), (1, 0), "RIGHT"),
         ("LEFTPADDING", (0, 0), (-1, -1), 10),
         ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 9),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
-    story.extend([event_card, Spacer(1, 5 * mm)])
+    story.extend([status_line, Spacer(1, 4 * mm)])
 
     story.append(Paragraph("REGISTRATION DETAILS", styles["section_title"]))
     participant_contact = " · ".join(value for value in [participant.email, participant.phone] if value)
@@ -325,16 +339,16 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         _field("Payment status", _status_label(registration.payment_status), styles),
     ]
     detail_rows = []
-    for index in range(0, len(detail_fields), 3):
-        row = detail_fields[index:index + 3]
-        while len(row) < 3:
+    for index in range(0, len(detail_fields), 2):
+        row = detail_fields[index:index + 2]
+        while len(row) < 2:
             row.append([Paragraph("", styles["field_label"])])
         detail_rows.append(row)
     if participant_contact:
-        detail_rows.append([_field("Registration contact", participant_contact, styles), "", ""])
+        detail_rows.append([_field("Registration contact", participant_contact, styles), ""])
     if len(member_names) > 1:
-        detail_rows.append([_field("Registered participants", " / ".join(member_names), styles), "", ""])
-    details = Table(detail_rows, colWidths=[_CONTENT_WIDTH / 3] * 3, hAlign="LEFT")
+        detail_rows.append([_field("Registered participants", " / ".join(member_names), styles), ""])
+    details = Table(detail_rows, colWidths=[_CONTENT_WIDTH / 2] * 2, hAlign="LEFT")
     details.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), _WHITE),
         ("BOX", (0, 0), (-1, -1), 0.8, _BORDER),
@@ -391,7 +405,7 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
             story.extend([addon_table, Spacer(1, 5 * mm)])
 
     organizer_content = [
-        Paragraph("ORGANIZER", styles["section_title"]),
+        Paragraph("EVENT SUPPORT", styles["section_title"]),
         _paragraph(organizer_name, styles["field_value_accent"]),
     ]
     if organizer_website:
@@ -401,33 +415,16 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         organizer_content.append(_paragraph(organizer_location, styles["body"]))
     organizer_content.extend([
         Spacer(1, 2 * mm),
-        Paragraph("For event arrangements, pickup instructions and refund queries, contact the organizer through the details on the event page.", styles["body"]),
-        Paragraph("SportPass India provides registration and ticketing. The organizer conducts the event.", styles["body"]),
-    ])
-    organizer_content.extend([
+        Paragraph("For event arrangements, meeting-point instructions and refund queries, contact the organizer through the event page.", styles["body"]),
         Spacer(1, 3 * mm),
-        Paragraph("CHECK-IN", styles["section_title"]),
-        _paragraph(
-            "Checked in" if registration.status == "checked_in" else "Ready for check-in",
-            styles["field_value_accent"],
-        ),
-        Spacer(1, 2 * mm),
-        Paragraph("Show this QR at each event checkpoint, or give the check-in team your name and registration number. This ticket covers the named registration and its listed participants.", styles["body"]),
+        Paragraph("AT CHECK-IN", styles["section_title"]),
+        Paragraph("Show the QR code above, or give the team your name and registration reference.", styles["body_dark"]),
     ])
-    qr_content = [
-        _qr_drawing(qr_payload),
-        Spacer(1, 1.5 * mm),
-        Paragraph("SCAN AT CHECK-IN", styles["qr_caption"]),
-        Paragraph("Keep the full QR visible", styles["qr_caption"]),
-    ]
-    access_card = Table([[organizer_content, qr_content]], colWidths=[_CONTENT_WIDTH - 58 * mm, 58 * mm], hAlign="LEFT")
+    access_card = Table([[organizer_content]], colWidths=[_CONTENT_WIDTH], hAlign="LEFT")
     access_card.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, 0), _PALE_GRAY),
-        ("BACKGROUND", (1, 0), (1, 0), _WHITE),
         ("BOX", (0, 0), (-1, -1), 0.8, _BORDER),
-        ("LINEBEFORE", (1, 0), (1, 0), 0.8, _BORDER),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (1, 0), (1, 0), "CENTER"),
         ("LEFTPADDING", (0, 0), (-1, -1), 10),
         ("RIGHTPADDING", (0, 0), (-1, -1), 10),
         ("TOPPADDING", (0, 0), (-1, -1), 9),
