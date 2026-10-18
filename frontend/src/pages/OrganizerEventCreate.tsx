@@ -812,7 +812,7 @@ const OrganizerEventCreate = () => {
     addons: addonEditors.filter((addon) => addon.name.trim()).map((addon, index) => ({
       id: addon.id,
       name: addon.name.trim(),
-      description: addon.description?.trim() ?? "",
+      description: addon.description?.replace(/\s+/g, " ").trim() ?? "",
       price_paise: Math.round(Number(addon.priceRupees || 0) * 100),
       type: addon.type,
       required: addon.required,

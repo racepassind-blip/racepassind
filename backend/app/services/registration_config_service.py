@@ -297,7 +297,10 @@ def normalize_addon_config(config: dict[str, Any] | None) -> dict[str, list[dict
         raw_description = raw.get("description")
         description = ""
         if raw_description not in (None, ""):
-            description = _clean_text(raw_description, f"Description for {name}", max_length=500)
+            # Descriptions are entered in a textarea. Normalize line breaks and
+            # repeated whitespace before applying the single-line text rules.
+            compact_description = " ".join(raw_description.split()) if isinstance(raw_description, str) else raw_description
+            description = _clean_text(compact_description, f"Description for {name}", max_length=500)
         try:
             price_paise = int(raw.get("price_paise", 0))
         except (TypeError, ValueError) as exc:
