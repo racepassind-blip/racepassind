@@ -24,6 +24,8 @@ class SportAdapter:
     result_type: Literal["none", "match_score", "race_time"] = "none"
     number_label: str = "Bib Number"
     number_scope: str = "individual"
+    number_enabled: bool = True  # Preserve existing sports' allocation behavior.
+    pickup_point_label: str = "Pickup point"
     tournament: GameTournamentPolicy = field(default_factory=GameTournamentPolicy)
 
     def normalize_event_config(self, config: dict[str, Any] | None) -> dict[str, Any]:

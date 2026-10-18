@@ -70,7 +70,8 @@ def _pickup_extra_fields(event: Event) -> list[dict] | None:
     point_ids = [point["id"] for point in pickup.get("points", []) if isinstance(point, dict) and point.get("id")]
     if not point_ids:
         return None
-    return [pickup_point_field(point_ids, bool(pickup.get("required", False)))]
+    label = get_adapter(event.category).pickup_point_label
+    return [pickup_point_field(point_ids, bool(pickup.get("required", False)), label=label)]
 
 
 def _snapshot_registration_terms(computed_total: dict, event: Event) -> None:
@@ -953,7 +954,13 @@ def _export_config_definitions(event: Event, rows: list[tuple[Registration, Even
     addon_definitions: dict[str, dict] = {}
     current_field_config = event.field_config or {}
     current_addon_config = event.addon_config or {}
-    for field in current_field_config.get("fields", []) if isinstance(current_field_config, dict) else []:
+    def configured_fields(config):
+        if not isinstance(config, dict):
+            return []
+        return [field for section in ("fields", "main_registrant_fields", "participant_fields")
+                for field in config.get(section, [])]
+
+    for field in configured_fields(current_field_config):
         if isinstance(field, dict) and field.get("id"):
             field_definitions[field["id"]] = field
     for addon in current_addon_config.get("addons", []) if isinstance(current_addon_config, dict) else []:
@@ -961,7 +968,7 @@ def _export_config_definitions(event: Event, rows: list[tuple[Registration, Even
             addon_definitions[addon["id"]] = addon
     for registration, _ in rows:
         snapshot = registration.computed_total or {}
-        for field in snapshot.get("fieldConfig", {}).get("fields", []) if isinstance(snapshot, dict) else []:
+        for field in configured_fields(snapshot.get("fieldConfig", {})):
             if isinstance(field, dict) and field.get("id"):
                 field_definitions.setdefault(field["id"], field)
         for addon in snapshot.get("addonConfig", {}).get("addons", []) if isinstance(snapshot, dict) else []:
@@ -970,7 +977,8 @@ def _export_config_definitions(event: Event, rows: list[tuple[Registration, Even
         if snapshot.get("eventWaiver"):
             field_definitions.setdefault("waiver_accepted", {"id": "waiver_accepted", "label": "Waiver accepted"})
         if snapshot.get("pickupPoints", {}).get("enabled"):
-            field_definitions.setdefault(PICKUP_POINT_FIELD_ID, {"id": PICKUP_POINT_FIELD_ID, "label": "Pickup point"})
+            label = get_adapter(event.category).pickup_point_label
+            field_definitions.setdefault(PICKUP_POINT_FIELD_ID, {"id": PICKUP_POINT_FIELD_ID, "label": label})
     return list(field_definitions.values()), list(addon_definitions.values())
 
 
@@ -994,6 +1002,14 @@ def _legacy_response_value(registration: Registration, field_id: str):
                 participant = members[index].participant.name if members else registration.participant.name
                 values.append(f"{participant}: {name}")
         return " / ".join(values)
+    # Preserve every rider's answer in one registration row for team entries.
+    # Single-participant and legacy exports keep their existing cell format.
+    members = registration.participant_memberships or []
+    if len(members) > 1 and field_id.startswith("custom_"):
+        values = [f"{member.participant.name}: {member.responses[field_id]}"
+                  for member in members if field_id in (member.responses or {})]
+        if values:
+            return " / ".join(values)
     if field_id in responses:
         return responses[field_id]
     participant = registration.participant

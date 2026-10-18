@@ -86,7 +86,7 @@ const OrganizerEventAnnouncements = () => {
   const shareSelected = async () => {
     if (!selected) return;
     const url = `${window.location.origin}/event/${eventId}/announcements/${selected.id}`;
-    const text = `${selected.title} · ${dashboard?.event.title ?? "Event"}\n${url}`;
+    const text = `${selected.title} · ${dashboard?.event.name ?? "Event"}\n${url}`;
     if (navigator.share) {
       await navigator.share({ title: selected.title, text, url }).catch(() => undefined);
       return;

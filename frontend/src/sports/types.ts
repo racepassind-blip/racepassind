@@ -24,6 +24,8 @@ export interface SportConfig {
    * backward compatibility; generic events support this unless disabled.
    */
   supports_pickup_points?: boolean;
+  pickup_point_label?: string;
+  registration_field_defaults?: ReadonlyArray<{ id: string; label: string }>;
   // Allocation / number configuration
   numberEnabled: boolean;
   numberLabel: string;

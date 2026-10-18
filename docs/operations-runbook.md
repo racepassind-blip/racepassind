@@ -172,6 +172,21 @@ Slack is the lightweight operations hub for SportPass. Keep these channels small
 
 Pin these links in `#event-ops`: the SportPass organizer dashboard, UptimeRobot, Render, Neon, GitHub Actions, Cloudflare R2, and this runbook.
 
+### Monitoring and CI configuration
+
+Slack is a notification surface only; GitHub, UptimeRobot, Render, Cloudflare, Neon, and R2 remain the systems of record.
+
+- `#sportpass-alerts` is private and receives GitHub workflow/deployment notifications and custom CI summaries.
+- The GitHub Slack app is subscribed to `sportpassindia/sportpassindia` for deployments and the `Production database backup` workflow.
+- UptimeRobot remains configured with email alerts for the website and API monitors. Slack/webhook alert contacts may require a paid UptimeRobot plan; do not depend on them for free-tier monitoring.
+- GitHub Actions workflow: `.github/workflows/ci.yml` runs backend tests, frontend lint/tests/build, and a final Slack summary on pushes to `main` and pull requests.
+- The CI Slack summary uses the GitHub repository secret `SLACK_CI_WEBHOOK_URL`. The value is the Slack Incoming Webhook URL for `#sportpass-alerts`; never store the URL in source control, this runbook, screenshots, or chat.
+- If CI runs but no Slack summary appears, check **GitHub → Settings → Secrets and variables → Actions** for the exact secret name, then inspect the `Notify Slack` job. The job intentionally skips when the secret is absent.
+- GitHub Actions backup secrets are documented above under **Automated database backups**. Keep backup and CI secrets separate.
+- Cloudflare Security Events are the source of truth for edge blocks and rate-limit activity. Review them under **Security → Analytics → Events**.
+
+To test the monitoring chain safely, make a small non-production or documentation change, push it to a branch, and confirm the CI run and Slack summary. Do not flood the login endpoint or intentionally break production services to test alerts.
+
 ### Alert handling
 
 Once the Slack webhook is configured, send these messages to `#sportpass-alerts`:

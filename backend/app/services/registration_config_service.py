@@ -470,7 +470,7 @@ def normalize_pickup_points_config(config: dict[str, Any] | None) -> dict[str, A
     }
 
 
-def pickup_point_field(point_ids: list[str], required: bool, order: int = 10_001) -> dict[str, Any]:
+def pickup_point_field(point_ids: list[str], required: bool, order: int = 10_001, *, label: str = "Pickup point") -> dict[str, Any]:
     """The synthetic field used to validate/store a per-participant pickup choice.
 
     Options are the configured point ids, so the response pipeline rejects an
@@ -478,7 +478,7 @@ def pickup_point_field(point_ids: list[str], required: bool, order: int = 10_001
     """
     return {
         "id": PICKUP_POINT_FIELD_ID,
-        "label": "Pickup point",
+        "label": label,
         "type": "select",
         "required": required,
         "predefined": True,

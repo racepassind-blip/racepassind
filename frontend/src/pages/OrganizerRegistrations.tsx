@@ -15,6 +15,7 @@ import { apiRequest } from "@/lib/api";
 import { scrollToTop } from "@/lib/scroll";
 import type { OrganizerVisibility } from "@/hooks/useEvents";
 import { useRegistrationRefund } from "@/hooks/useEvents";
+import { meetingPointLabel } from "@/data/sportConfig";
 
 interface OrganizerEventOption {
   id: string;
@@ -30,12 +31,14 @@ interface OrganizerEventOption {
 const PICKUP_POINT_FIELD_ID = "pickup_point_id";
 
 interface EventPickupConfig {
+  sport?: string;
   enabled?: boolean;
   required?: boolean;
   points?: Array<{ id: string; name: string; description?: string; address?: string }>;
 }
 
 interface OrganizerEventDetail {
+  sport?: string;
   pickupPoints?: EventPickupConfig;
 }
 
@@ -172,13 +175,14 @@ interface RegistrationDetailDrawerProps {
   eventTickets: Array<{ id: string; name: string; categoryId: string; categoryName: string; pricePaise?: number }>;
   addonDefs: Record<string, string>;
   pickupNameById: Map<string, string>;
+  meetingLabel: string;
   onClose: () => void;
   onTransferDone: (updated: OrganizerRegistration) => void;
   onResendEmail: (registration: OrganizerRegistration) => Promise<void>;
   resendingId: string | null;
 }
 
-function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, pickupNameById, onClose, onTransferDone, onResendEmail, resendingId }: RegistrationDetailDrawerProps) {
+function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, pickupNameById, meetingLabel, onClose, onTransferDone, onResendEmail, resendingId }: RegistrationDetailDrawerProps) {
   const [showTransfer, setShowTransfer] = useState(false);
   const [targetTicketId, setTargetTicketId] = useState("");
   const [transferReason, setTransferReason] = useState("");
@@ -269,7 +273,7 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
                   ? (registration.participants.find((member) => member.index === 0)?.responses ?? registration.participants[0].responses)
                   : registration.responses;
                 const name = pickupNameFor(primaryResponses);
-                return name ? <p className="text-sm"><span className="font-medium">Pickup point:</span> {name}</p> : null;
+                return name ? <p className="text-sm"><span className="font-medium">{meetingLabel}:</span> {name}</p> : null;
               })()}
               <div className="flex flex-wrap gap-2 pt-1">
                 {registration.isManualEntry && <Badge variant="outline">Manual entry</Badge>}
@@ -288,7 +292,10 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
                     <span className="font-medium">{m.participant.name}</span>
                     {m.participant.email && <span className="text-muted-foreground"> · {m.participant.email}</span>}
                     {m.participant.phone && <span className="text-muted-foreground"> · {m.participant.phone}</span>}
-                    {pickupNameFor(m.responses) && <div className="text-xs text-muted-foreground">Pickup point: {pickupNameFor(m.responses)}</div>}
+                    {pickupNameFor(m.responses) && <div className="text-xs text-muted-foreground">{meetingLabel}: {pickupNameFor(m.responses)}</div>}
+                    {Object.entries(m.responses ?? {}).filter(([key]) => key.startsWith("custom_")).map(([key, value]) => (
+                      <div key={key} className="text-xs text-muted-foreground">{key.replace(/^custom_/, "").replaceAll("_", " ")}: {String(value)}</div>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -640,7 +647,7 @@ const OrganizerRegistrations = () => {
     }
     const controller = new AbortController();
     void apiRequest<OrganizerEventDetail>(`/organizer/events/${filters.eventId}`, { signal: controller.signal })
-      .then((event) => setPickupConfig(event.pickupPoints ?? null))
+      .then((event) => setPickupConfig(event.pickupPoints ? { ...event.pickupPoints, sport: event.sport } : null))
       .catch(() => {
         if (!controller.signal.aborted) setPickupConfig(null);
       });
@@ -677,6 +684,7 @@ const OrganizerRegistrations = () => {
   );
   // --- Pickup points (client-side column/filter/summary) --------------------
   const pickupEnabled = Boolean(pickupConfig?.enabled) && Boolean(filters.eventId);
+  const meetingLabel = meetingPointLabel(pickupConfig?.sport);
   const pickupPoints = useMemo(() => pickupConfig?.points ?? [], [pickupConfig]);
   const pickupNameById = useMemo(
     () => new Map(pickupPoints.map((point) => [point.id, point.name] as const)),
@@ -945,7 +953,7 @@ const OrganizerRegistrations = () => {
               <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Registration status</label><Select value={filters.status} onValueChange={(value) => updateFilter("status", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Needs review</SelectItem><SelectItem value="all">All registrations</SelectItem><SelectItem value="awaiting_payment">Awaiting payment</SelectItem><SelectItem value="pending_verification">UTR submitted</SelectItem><SelectItem value="AWAITING_SPORTPASS_CREDITS">Awaiting Credits</SelectItem><SelectItem value="confirmed">Confirmed</SelectItem><SelectItem value="checked_in">Checked in</SelectItem><SelectItem value="rejected">Rejected</SelectItem><SelectItem value="expired">Expired</SelectItem></SelectContent></Select></div>
               <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Payment</label><Select value={filters.paymentStatus} onValueChange={(value) => updateFilter("paymentStatus", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All payment states</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="reference_submitted">Reference submitted</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="rejected">Rejected</SelectItem><SelectItem value="expired">Expired</SelectItem></SelectContent></Select></div>
               <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Check-in</label><Select value={filters.checkInStatus} onValueChange={(value) => updateFilter("checkInStatus", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All check-in states</SelectItem><SelectItem value="not_checked_in">Not checked in</SelectItem><SelectItem value="checked_in">Checked in</SelectItem></SelectContent></Select></div>
-              {pickupEnabled && pickupPoints.length > 0 && <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Pickup point</label><Select value={pickupFilter} onValueChange={(value) => { setPickupFilter(value); setCursor(null); setCursorHistory([]); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All pickup points</SelectItem>{pickupPoints.map((point) => <SelectItem key={point.id} value={point.id}>{point.name}</SelectItem>)}</SelectContent></Select></div>}
+              {pickupEnabled && pickupPoints.length > 0 && <div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">{meetingLabel}</label><Select value={pickupFilter} onValueChange={(value) => { setPickupFilter(value); setCursor(null); setCursorHistory([]); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All {meetingLabel.toLowerCase()}s</SelectItem>{pickupPoints.map((point) => <SelectItem key={point.id} value={point.id}>{point.name}</SelectItem>)}</SelectContent></Select></div>}
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Input value={filters.participant} onChange={(event) => updateFilter("participant", event.target.value)} placeholder="Participant name" /><Input value={filters.email} onChange={(event) => updateFilter("email", event.target.value)} placeholder="Email address" type="email" /><Input value={filters.phone} onChange={(event) => updateFilter("phone", event.target.value)} placeholder="Phone number" /><Input value={filters.registrationReference} onChange={(event) => updateFilter("registrationReference", event.target.value)} placeholder="Registration number" /></div>
           </div>}
@@ -1022,12 +1030,12 @@ const OrganizerRegistrations = () => {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="font-bold">Pickup points</h2>
+                  <h2 className="font-bold">{meetingLabel}s</h2>
                   <Badge variant="secondary">per participant</Badge>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">Choose a point to see the matching registration list. Click a registration to see each group member’s pickup choice.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Choose a point to see the matching registration list. Click a registration to see each group member’s {meetingLabel.toLowerCase()} choice.</p>
               </div>
-              <Button type="button" variant="outline" size="sm" disabled={pickupFilter === "all"} onClick={() => { setPickupFilter("all"); setCursor(null); setCursorHistory([]); }}>Clear pickup filter</Button>
+              <Button type="button" variant="outline" size="sm" disabled={pickupFilter === "all"} onClick={() => { setPickupFilter("all"); setCursor(null); setCursorHistory([]); }}>Clear {meetingLabel.toLowerCase()} filter</Button>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {pickupPoints.map((point) => (
@@ -1068,12 +1076,12 @@ const OrganizerRegistrations = () => {
                 <div className="flex flex-wrap gap-2">{registrationBadge(registration.status)}{registration.isManualEntry && <Badge variant="outline">Manual</Badge>}</div>
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/40 p-3"><div><p className="text-xs text-muted-foreground">Payment</p><p className="mt-1 font-semibold">{formatINR(registration.amountPaise)}</p></div>{paymentBadge(registration.paymentStatus)}</div>
                 {registration.utrReference && <p className="break-all text-xs text-muted-foreground">UTR / reference: <span className="font-mono text-foreground">{registration.utrReference}</span></p>}
-                {pickupEnabled && primaryPickupName(registration) && <p className="break-words text-xs text-muted-foreground">Pickup: {primaryPickupName(registration)}</p>}
+                {pickupEnabled && primaryPickupName(registration) && <p className="break-words text-xs text-muted-foreground">{meetingLabel}: {primaryPickupName(registration)}</p>}
                 <div className="flex flex-wrap items-center gap-2"><Button variant="outline" size="sm" className="min-h-11" onClick={() => setDetailRegistration(registration)}>View details</Button>{reviewActions(registration)}</div>
               </article>)}
             </div>
             <div className="hidden overflow-x-auto md:block"><Table>
-            <TableHeader><TableRow><TableHead className="min-w-60">Participant</TableHead>{!eventScoped && <TableHead>Event</TableHead>}<TableHead>Category / tier</TableHead>{pickupEnabled && <TableHead>Pickup point</TableHead>}<TableHead>Amount</TableHead><TableHead>Payment</TableHead><TableHead>Registration</TableHead><TableHead>UTR/reference</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead className="min-w-60">Participant</TableHead>{!eventScoped && <TableHead>Event</TableHead>}<TableHead>Category / tier</TableHead>{pickupEnabled && <TableHead>{meetingLabel}</TableHead>}<TableHead>Amount</TableHead><TableHead>Payment</TableHead><TableHead>Registration</TableHead><TableHead>UTR/reference</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
             <TableBody>{displayedRegistrations.map((registration) => {
               const isReviewable = registration.status === "awaiting_payment" || registration.status === "pending_verification" || registration.status === "AWAITING_SPORTPASS_CREDITS";
               return <TableRow
@@ -1107,6 +1115,7 @@ const OrganizerRegistrations = () => {
         registration={detailRegistration}
         eventTickets={eventTicketsForTransfer}
         pickupNameById={pickupNameById}
+        meetingLabel={meetingLabel}
         addonDefs={Object.fromEntries(
           (selectedEvent?.addonConfig?.addons ?? []).map((a) => [a.id, a.name])
         )}

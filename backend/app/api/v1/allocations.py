@@ -35,7 +35,7 @@ from app.schemas.allocations import (
 router = APIRouter(prefix="/events/{event_id}/allocations", tags=["allocation"])
 
 
-def _get_event_or_404(db: Session, event_id: UUID, user: User) -> Event:
+def _get_event_or_404(db: Session, event_id: UUID, user: User, *, require_numbering: bool = True) -> Event:
     """Get event or raise 404 if not found or user doesn't have access."""
     event = db.get(Event, event_id)
     if not event:
@@ -44,6 +44,8 @@ def _get_event_or_404(db: Session, event_id: UUID, user: User) -> Event:
             detail="Event not found",
         )
     get_authorized_organization(db, user, event.organization_id)
+    if require_numbering and not get_adapter(event.category).number_enabled:
+        raise HTTPException(status_code=422, detail="Number allocation is not available for this event type")
     return event
 
 
@@ -457,7 +459,7 @@ def get_sport_allocation_config(
     user: User = Depends(get_current_user),
 ) -> SportAllocationConfig:
     """Get allocation config for the event's sport."""
-    event = _get_event_or_404(db, event_id, user)
+    event = _get_event_or_404(db, event_id, user, require_numbering=False)
 
     # Determine if sport supports allocation
     sport = (event.category or "running").strip().lower()
@@ -468,7 +470,7 @@ def get_sport_allocation_config(
 
 def _get_sport_allocation_config(sport: str) -> SportAllocationConfig:
     adapter = get_adapter(sport)
-    return SportAllocationConfig(number_enabled=True, number_label=adapter.number_label, scope=adapter.number_scope)
+    return SportAllocationConfig(number_enabled=adapter.number_enabled, number_label=adapter.number_label, scope=adapter.number_scope)
 
 
 @router.get("/config", response_model=SportAllocationConfig)

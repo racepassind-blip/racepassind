@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useEvent } from "@/hooks/useEvents";
 import { useAuth } from "@/contexts/AuthContext";
 import type { AddonDefinition, ParticipantFieldConfig } from "@/data/mockEvents";
-import { getSportConfig } from "@/data/sportConfig";
+import { getSportConfig, meetingPointLabel } from "@/data/sportConfig";
 import { apiRequest } from "@/lib/api";
 import { scrollToTop } from "@/lib/scroll";
 import { computeSportPassFeePaise, formatPaise } from "@/lib/platform-fee";
@@ -191,9 +191,10 @@ const Checkout = () => {
   const pickupEnabled = Boolean(event?.pickupPoints?.enabled);
   const pickupRequired = pickupEnabled && Boolean(event?.pickupPoints?.required);
   const pickupPoints = (pickupEnabled ? event?.pickupPoints?.points ?? [] : []) as Array<{ id: string; name: string; description?: string; address?: string }>;
+  const meetingLabel = meetingPointLabel(event?.category);
   const pickupField: ParticipantFieldConfig = {
     id: PICKUP_POINT_FIELD_ID,
-    label: "Pickup point",
+    label: meetingLabel,
     type: "select",
     required: pickupRequired,
     predefined: true,
@@ -990,17 +991,17 @@ const Checkout = () => {
                       {pickupEnabled && pickupPoints.length > 0 && (
                         <section className="space-y-4 border-t pt-6">
                           <div>
-                            <h4 className="font-bold">Pickup point</h4>
-                            <p className="text-sm text-muted-foreground">Choose where this {participantLabel.toLowerCase()} will be picked up.</p>
+                            <h4 className="font-bold">{meetingLabel}</h4>
+                            <p className="text-sm text-muted-foreground">Choose the {meetingLabel.toLowerCase()} for this {participantLabel.toLowerCase()}.</p>
                           </div>
                           <div className="space-y-2">
-                            <Label>Pickup point{pickupRequired ? " *" : ""}</Label>
+                            <Label>{meetingLabel}{pickupRequired ? " *" : ""}</Label>
                             <Select
                               value={activeRider.responses[PICKUP_POINT_FIELD_ID] === undefined ? "" : String(activeRider.responses[PICKUP_POINT_FIELD_ID])}
                               onValueChange={(value) => updateResponse(activeRider.key, pickupField, value)}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="Select a pickup point" />
+                                <SelectValue placeholder={`Select a ${meetingLabel.toLowerCase()}`} />
                               </SelectTrigger>
                               <SelectContent>
                                 {pickupPoints.map((point) => (

@@ -7,9 +7,10 @@ import table_tennis from "@/sports/table_tennis";
 import tennis from "@/sports/tennis";
 import squash from "@/sports/squash";
 import trekking from "@/sports/trekking";
+import motorcycle from "@/sports/motorcycle";
 import cricket from "@/sports/cricket";
 
-export const sportConfig = { running, cycling, badminton, table_tennis, tennis, squash, trekking, cricket } as const satisfies Record<string, SportConfig>;
+export const sportConfig = { running, cycling, badminton, table_tennis, tennis, squash, trekking, motorcycle, cricket } as const satisfies Record<string, SportConfig>;
 
 
 export type ConfiguredSport = keyof typeof sportConfig;
@@ -44,6 +45,11 @@ export function normalizeSport(sport: string | null | undefined): string {
   return normalized === "hiking" ? "trekking" : normalized;
 }
 
+/** User-facing label for the existing event-level pickup-point feature. */
+export function meetingPointLabel(sport: string | null | undefined): string {
+  return getSportConfig(sport).pickup_point_label ?? "Pickup point";
+}
+
 export const sportOptions = [
   { value: "running", label: "Running" },
   { value: "cycling", label: "Cycling" },
@@ -52,6 +58,7 @@ export const sportOptions = [
   { value: "triathlon", label: "Triathlons/Duathlons" },
   { value: "swimming", label: "Swimming (open water/mass swims)" },
   { value: "trekking", label: "Trekking" },
+  { value: "motorcycle", label: "Motorcycle events" },
   { value: "obstacle_course", label: "Obstacle course races (Spartan-style, mud runs)" },
   { value: "walkathon", label: "Walkathons/charity walks" },
   { value: "cricket", label: "Cricket" },

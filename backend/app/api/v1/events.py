@@ -207,7 +207,7 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
 def _operational_features(event: Event) -> dict:
     stored = (event.field_config or {}).get("operational_features") or {}
     return {
-        "bibNumbersEnabled": bool(stored.get("bib_numbers_enabled", False)),
+        "bibNumbersEnabled": get_adapter(event.category).number_enabled and bool(stored.get("bib_numbers_enabled", False)),
         "resultsEnabled": bool(stored.get("results_enabled", False)),
     }
 
@@ -477,6 +477,8 @@ def update_operational_features(
 ) -> dict:
     event = get_authorized_event(db, user, event_id)
     adapter = get_adapter(event.category)
+    if payload.bib_numbers_enabled and not adapter.number_enabled:
+        raise HTTPException(status_code=422, detail="Number allocation is not available for this event type")
     if payload.results_enabled and adapter.result_type == "none":
         raise HTTPException(status_code=422, detail="Results are not available for this event type")
 

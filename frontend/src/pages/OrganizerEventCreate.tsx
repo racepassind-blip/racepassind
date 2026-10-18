@@ -18,7 +18,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, uploadFile } from "@/lib/api";
 import type { AddonDefinition, EventAddonConfig, EventFieldConfig, ParticipantFieldConfig, ParticipantFieldType } from "@/data/mockEvents";
 import { TeamFieldEditor, DEFAULT_MAIN_REGISTRANT_FIELDS, DEFAULT_PARTICIPANT_FIELDS, type TeamFieldEditorItem } from "@/components/TeamFieldEditor";
-import { getSportConfig, sportOptions, normalizeSport, eventSupportsWaiver, eventSupportsPickupPoints } from "@/data/sportConfig";
+import { getSportConfig, sportOptions, normalizeSport, eventSupportsWaiver, eventSupportsPickupPoints, meetingPointLabel } from "@/data/sportConfig";
+import { transitionSportFields } from "@/lib/sportRegistrationFields";
 import type { CommunicationEvent } from "@/lib/eventCommunication";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -323,6 +324,16 @@ const OrganizerEventCreate = () => {
 
   const handleSportChange = (value: string) => {
     const nextSport = normalizeSport(value);
+    try {
+      const nextFields = transitionSportFields(fieldEditors, sport, nextSport);
+      const remainingTeamCustomSlots = 10 - mainRegistrantFields.filter((field) => !field.predefined).length;
+      const nextTeamFields = transitionSportFields(teamParticipantFields, sport, nextSport, remainingTeamCustomSlots);
+      setFieldEditors(nextFields);
+      setTeamParticipantFields(nextTeamFields);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not change sport fields");
+      return;
+    }
     setSport(nextSport);
     if (nextSport === "trekking") {
       setCategories((current) => current.map((category) => ({
@@ -339,6 +350,7 @@ const OrganizerEventCreate = () => {
   };
   const waiverSupported = eventSupportsWaiver(sport);
   const pickupSupported = eventSupportsPickupPoints(sport);
+  const meetingLabel = meetingPointLabel(sport);
   // Build combined distance strings for the category_distance registration dropdown
   const categoryDistances = useMemo(
     () => categories
@@ -996,7 +1008,7 @@ const OrganizerEventCreate = () => {
       return;
     }
     if (pickupSupported && pickupEnabled && (pickupPoints.length === 0 || pickupPoints.some((point) => !point.name.trim()))) {
-      toast.error("Add a name for every pickup point, or disable pickup points.");
+      toast.error(`Add a name for every ${meetingLabel.toLowerCase()}, or disable ${meetingLabel.toLowerCase()}s.`);
       return;
     }
     if (waiverSupported && waiverEnabled && (!waiverTitle.trim() || !waiverText.trim())) {
@@ -1355,22 +1367,22 @@ const OrganizerEventCreate = () => {
           {currentStep === 3 && pickupSupported && <section className="space-y-4 rounded-xl border bg-card p-5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-bold">Pickup Points</h2>
-                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Optionally offer a set of pickup locations each participant can choose from during registration. Leave it off to skip this entirely.</p>
+                <h2 className="text-lg font-bold">{meetingLabel}s</h2>
+                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Optionally offer a set of {meetingLabel.toLowerCase()} locations each participant can choose from during registration. Leave it off to skip this entirely.</p>
               </div>
               <label className="flex cursor-pointer items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-sm font-medium">
-                <input type="checkbox" checked={pickupEnabled} onChange={(event) => setPickupEnabled(event.target.checked)} /> Enable pickup points
+                <input type="checkbox" checked={pickupEnabled} onChange={(event) => setPickupEnabled(event.target.checked)} /> Enable {meetingLabel.toLowerCase()}s
               </label>
             </div>
             {pickupEnabled && <div className="space-y-4">
               <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-                <input type="checkbox" checked={pickupRequired} onChange={(event) => setPickupRequired(event.target.checked)} /> Require every participant to choose a pickup point
+                <input type="checkbox" checked={pickupRequired} onChange={(event) => setPickupRequired(event.target.checked)} /> Require every participant to choose a {meetingLabel.toLowerCase()}
               </label>
               <div className="space-y-3">
                 {pickupPoints.map((point, index) => (
                   <div key={point.id} className="space-y-2 rounded-lg border bg-background p-3">
                     <div className="flex items-center justify-between gap-3">
-                      <Label>Pickup point {index + 1}</Label>
+                      <Label>{meetingLabel} {index + 1}</Label>
                       <Button type="button" variant="ghost" size="sm" onClick={() => setPickupPoints((points) => points.filter((_, i) => i !== index))}>Remove</Button>
                     </div>
                     <Input
@@ -1394,7 +1406,7 @@ const OrganizerEventCreate = () => {
                   </div>
                 ))}
               </div>
-              <Button type="button" variant="outline" size="sm" onClick={() => setPickupPoints((points) => [...points, { id: crypto.randomUUID(), name: "", description: "", address: "" }])}>+ Add pickup point</Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => setPickupPoints((points) => [...points, { id: crypto.randomUUID(), name: "", description: "", address: "" }])}>+ Add {meetingLabel.toLowerCase()}</Button>
             </div>}
           </section>}
 

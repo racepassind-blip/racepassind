@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useOrganizerEventDashboard } from "@/hooks/useEvents";
 import type { AddonDefinition, ParticipantFieldConfig } from "@/data/mockEvents";
 import { apiRequest } from "@/lib/api";
+import { meetingPointLabel } from "@/data/sportConfig";
 
 type ResponseValue = string | boolean;
 type Selection = { selected?: string; qty?: number };
@@ -45,8 +46,9 @@ const OrganizerManualParticipant = () => {
   const fields = useMemo(() => {
     const configured = event?.fieldConfig?.fields?.length ? [...event.fieldConfig.fields] : FALLBACK_FIELDS;
     const pickup = event?.pickupPoints;
+    const meetingLabel = meetingPointLabel(event?.sport);
     if (pickup?.enabled && pickup.points?.length) configured.push({
-      id: "pickup_point_id", label: "Pickup point", type: "select", required: Boolean(pickup.required),
+      id: "pickup_point_id", label: meetingLabel, type: "select", required: Boolean(pickup.required),
       predefined: true, order: 10001, options: pickup.points.map((point) => point.id),
     });
     return configured.sort((a, b) => a.order - b.order);
