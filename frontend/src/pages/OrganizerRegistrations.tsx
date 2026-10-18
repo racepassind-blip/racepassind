@@ -168,6 +168,17 @@ function formatDate(value: string) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
+function formatDateTime(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 // ─── Registration detail drawer ───────────────────────────────────────────────
 
 interface RegistrationDetailDrawerProps {
@@ -309,7 +320,7 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
               <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
                 <p className="text-xs text-muted-foreground">Registration</p>
                 {registrationBadge(registration.status)}
-                <p className="text-xs text-muted-foreground">Registered {formatDate(registration.createdAt)}</p>
+                <p className="text-xs text-muted-foreground">Registered {formatDateTime(registration.createdAt)}</p>
               </div>
               <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
                 <p className="text-xs text-muted-foreground">Payment</p>
@@ -1071,7 +1082,7 @@ const OrganizerRegistrations = () => {
                   <span className="mt-1 block break-all font-mono text-xs text-muted-foreground">{registration.registrationReference}</span>
                   <span className="mt-2 block break-words text-sm">{registration.ticket.category ?? registration.ticket.name}</span>
                   {!eventScoped && <span className="mt-1 block break-words text-xs text-muted-foreground">{registration.event.name}</span>}
-                  <span className="mt-1 block text-xs text-muted-foreground">{formatDate(registration.createdAt)}{(registration.participantCount ?? registration.participants?.length ?? 1) > 1 ? ` · ${registration.participantCount ?? registration.participants?.length} participants` : ""}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">Registered {formatDateTime(registration.createdAt)}{(registration.participantCount ?? registration.participants?.length ?? 1) > 1 ? ` · ${registration.participantCount ?? registration.participants?.length} participants` : ""}</span>
                 </button>
                 <div className="flex flex-wrap gap-2">{registrationBadge(registration.status)}{registration.isManualEntry && <Badge variant="outline">Manual</Badge>}</div>
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/40 p-3"><div><p className="text-xs text-muted-foreground">Payment</p><p className="mt-1 font-semibold">{formatINR(registration.amountPaise)}</p></div>{paymentBadge(registration.paymentStatus)}</div>
@@ -1099,7 +1110,7 @@ const OrganizerRegistrations = () => {
                 {pickupEnabled && <TableCell>{primaryPickupName(registration) ? <span className="text-sm">{primaryPickupName(registration)}</span> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>}
                 <TableCell className="font-semibold"><p>{formatINR(registration.amountPaise)}</p>{registration.receivedAmountPaise !== null && <p className="text-xs font-normal text-accent">Received {formatINR(registration.receivedAmountPaise)}</p>}</TableCell>
                 <TableCell>{paymentBadge(registration.paymentStatus)}</TableCell>
-                <TableCell><div className="space-y-1">{registrationBadge(registration.status)}<p className="text-xs text-muted-foreground">{formatDate(registration.createdAt)}</p></div></TableCell>
+                <TableCell><div className="space-y-1">{registrationBadge(registration.status)}<p className="text-xs text-muted-foreground">{formatDateTime(registration.createdAt)}</p></div></TableCell>
                 <TableCell>{registration.utrReference ? <span className="font-mono text-sm font-medium">{registration.utrReference}</span> : <span className="text-xs text-muted-foreground">{registration.paymentStatus === "not_required" ? "Not required" : "Not submitted"}</span>}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">{isReviewable ? reviewActions(registration) : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />No action</span>}</div>
