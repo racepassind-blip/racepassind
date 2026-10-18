@@ -23,6 +23,7 @@ import { transitionSportFields } from "@/lib/sportRegistrationFields";
 import type { CommunicationEvent } from "@/lib/eventCommunication";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { DISTRICTS_BY_STATE, getCitiesForDistrict, INDIA_STATES, CITIES_BY_DISTRICT } from "@/data/indiaLocations";
 
 interface TicketForm {
   id: string;
@@ -276,6 +277,8 @@ const OrganizerEventCreate = () => {
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
+  const [district, setDistrict] = useState("");
+  const [legacyDistrict, setLegacyDistrict] = useState("");
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
@@ -320,6 +323,8 @@ const OrganizerEventCreate = () => {
   const [addonEditors, setAddonEditors] = useState<AddonEditor[]>(defaultAddonEditors);
   const currentSportConfig = getSportConfig(sport);
   const supportsDistance = currentSportConfig.supports_distance;
+  const districts = useMemo(() => DISTRICTS_BY_STATE[state] ?? [], [state]);
+  const cities = useMemo(() => getCitiesForDistrict(district), [district]);
   const isTrekking = normalizeSport(sport) === "trekking";
 
   const handleSportChange = (value: string) => {
@@ -496,8 +501,16 @@ const OrganizerEventCreate = () => {
         })));
         setLocation(event.location.name ?? "");
         setAddress(event.location.address ?? "");
-        setCity(event.location.city ?? "");
-        setState(event.location.state ?? "");
+        const loadedCity = event.location.city ?? "";
+        const loadedState = event.location.state ?? "";
+        const matchingDistrict = loadedState
+          ? (DISTRICTS_BY_STATE[loadedState] ?? []).find((candidate) => (CITIES_BY_DISTRICT[candidate] ?? []).includes(loadedCity))
+            ?? (DISTRICTS_BY_STATE[loadedState] ?? []).find((candidate) => candidate === loadedCity)
+          : undefined;
+        setCity(loadedCity);
+        setState(loadedState);
+        setDistrict(matchingDistrict ?? (loadedCity ? loadedCity : ""));
+        setLegacyDistrict(matchingDistrict || !loadedCity ? "" : loadedCity);
         setLatitude(event.location.latitude ?? null);
         setLongitude(event.location.longitude ?? null);
         setBannerUrl(event.bannerUrl);
@@ -1237,8 +1250,9 @@ const OrganizerEventCreate = () => {
               <div className="sm:col-span-2 border-t pt-4"><h3 className="font-semibold">Location</h3><p className="mt-1 text-sm text-muted-foreground">Tell participants exactly where the event takes place.</p></div>
               <div className="space-y-2 sm:col-span-2"><Label>Venue or location *</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Event venue and city" /></div>
               <div className="space-y-2 sm:col-span-2"><Label>Address</Label><Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street address (optional)" /></div>
-              <div className="space-y-2"><Label>City</Label><Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Bengaluru" /></div>
-              <div className="space-y-2"><Label>State</Label><Input value={state} onChange={(e) => setState(e.target.value)} placeholder="Karnataka" /></div>
+              <div className="space-y-2"><Label>State</Label><Select value={state || undefined} onValueChange={(value) => { setState(value); setDistrict(""); setLegacyDistrict(""); setCity(""); }}><SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger><SelectContent>{INDIA_STATES.map((stateOption) => <SelectItem key={stateOption} value={stateOption}>{stateOption}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>District</Label><Select value={district || undefined} disabled={!state} onValueChange={(value) => { setDistrict(value); setLegacyDistrict(""); setCity(""); }}><SelectTrigger><SelectValue placeholder={state ? "Select district" : "Select state first"} /></SelectTrigger><SelectContent>{legacyDistrict && !districts.includes(legacyDistrict) && <SelectItem value={legacyDistrict}>Existing value: {legacyDistrict}</SelectItem>}{districts.map((districtOption) => <SelectItem key={districtOption} value={districtOption}>{districtOption}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>City / town</Label><Select value={city || undefined} disabled={!district} onValueChange={setCity}><SelectTrigger><SelectValue placeholder={district ? "Select city or town" : "Select district first"} /></SelectTrigger><SelectContent>{cities.map((cityOption) => <SelectItem key={cityOption} value={cityOption}>{cityOption}</SelectItem>)}</SelectContent></Select></div>
               {import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() && <div className="space-y-2 sm:col-span-2"><Label>Pin location on Google Maps</Label><LocationPicker latitude={latitude} longitude={longitude} onChange={(coordinates) => { setLatitude(coordinates?.latitude ?? null); setLongitude(coordinates?.longitude ?? null); }} /></div>}
               <div className="space-y-2 sm:col-span-2"><Label>WhatsApp community link (optional)</Label><Input type="url" value={whatsappGroupUrl} onChange={(e) => setWhatsappGroupUrl(e.target.value)} placeholder="https://chat.whatsapp.com/your-invite-link" /><p className="text-xs text-muted-foreground">Confirmed participants can join this event group after their ticket is generated.</p></div>
               <div className="space-y-2 sm:col-span-2"><Label htmlFor="event-banner">Event banner (optional)</Label><Input id="event-banner" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = validateImageFile(event.target.files?.[0], "Event banner"); setBannerFile(file); if (!file) event.currentTarget.value = ""; }} /><p className="text-xs text-muted-foreground">PNG, JPEG, or WebP. Maximum size: {formatFileSize(MAX_IMAGE_BYTES)}.</p>{bannerFile && <p className="text-xs text-muted-foreground">Selected: {bannerFile.name} ({formatFileSize(bannerFile.size)})</p>}{bannerUrl && <img src={bannerUrl} alt="Current event banner" className="h-32 w-full rounded-lg border object-cover" />}</div>

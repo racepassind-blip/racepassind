@@ -855,3 +855,10 @@ export const DISTRICTS_BY_STATE: Record<string, string[]> = {
 };
 export const INDIA_STATES = Object.keys(DISTRICTS_BY_STATE);
 export const CITIES_BY_DISTRICT: Record<string, string[]> = { Mysuru: ["Mysuru", "Nanjangud", "Hunsur", "Srirangapatna"], "Bengaluru Urban": ["Bengaluru"], "Dakshina Kannada": ["Mangaluru"], Pune: ["Pune", "Pimpri-Chinchwad"], "Mumbai City": ["Mumbai"], Chennai: ["Chennai"], Coimbatore: ["Coimbatore"], Hyderabad: ["Hyderabad"], "New Delhi": ["New Delhi"], Ernakulam: ["Kochi"] };
+
+// Some districts do not have a city list in the local dataset yet. Keeping the
+// district headquarters as the fallback still gives organisers a controlled
+// dropdown while preserving the existing city/state API fields.
+export function getCitiesForDistrict(district: string): string[] {
+  return CITIES_BY_DISTRICT[district] ?? (district ? [district] : []);
+}
