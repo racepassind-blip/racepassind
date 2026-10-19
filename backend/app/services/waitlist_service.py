@@ -39,6 +39,13 @@ def enabled(event):
     return bool(event.waitlist_enabled and waitlist_enabled(event))
 
 
+def offer_deadline(event):
+    if event.waitlist_offer_window == "until_close" and event.registration_close:
+        return aware(event.registration_close)
+    minutes = 60 if event.waitlist_offer_window == "60" else 30
+    return utc_now() + dt.timedelta(minutes=minutes)
+
+
 def is_full(db, event, ticket=None):
     from app.services.registration_service import _capacity_used
     return _capacity_used(db, event.id) >= event.max_participants or (
@@ -120,7 +127,7 @@ def offer_next(db, event, entry, *, waive_payment, actor_id):
     entry.status = "offered"
     entry.waive_payment = waive_payment
     entry.promoted_at = utc_now()
-    entry.payment_due_at = utc_now() + dt.timedelta(minutes=30)
+    entry.payment_due_at = offer_deadline(event)
     entry.offer_email_sent = False
     entry.email_retry_after = None
     ticket.quantity_reserved += 1
@@ -146,6 +153,30 @@ def promote(db, user, entry_id, *, waive_payment=False):
     if entry.status != "waiting":
         raise ValueError("This waiting list entry has already been processed")
     offer_next(db, event, entry, waive_payment=waive_payment, actor_id=user.id)
+    db.commit()
+    return entry
+
+
+def resend_offer(db, user, entry_id):
+    """Re-invite an expired offer, placing it at the end of the queue."""
+    from app.api.deps import get_authorized_event
+    entry = db.get(WaitlistEntry, entry_id)
+    if entry is None:
+        raise ValueError("Waiting list entry not found")
+    get_authorized_event(db, user, entry.event_id)
+    event = db.scalar(select(Event).where(Event.id == entry.event_id).with_for_update())
+    db.refresh(entry)
+    if entry.status == "offered" and aware(entry.payment_due_at) > utc_now():
+        entry.offer_email_sent = False
+        entry.email_retry_after = None
+        db.commit()
+        return entry
+    if entry.status != "expired":
+        raise ValueError("Only expired invitations can be sent again")
+    entry.status = "waiting"
+    entry.position = int(db.scalar(select(func.max(WaitlistEntry.position)).where(WaitlistEntry.event_id == event.id)) or 0) + 1
+    expire_offers(db, event)
+    offer_next(db, event, entry, waive_payment=entry.waive_payment, actor_id=user.id)
     db.commit()
     return entry
 

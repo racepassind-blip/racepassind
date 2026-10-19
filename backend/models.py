@@ -228,6 +228,7 @@ class Event(Base):
     registration_status: Mapped[str] = mapped_column(String, nullable=False, default="open", server_default="open")
     max_participants: Mapped[int] = mapped_column(Integer, nullable=False)
     waitlist_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)
+    waitlist_offer_window: Mapped[str] = mapped_column(String(20), nullable=False, server_default="30", default="30")
     status: Mapped[str] = mapped_column(String, nullable=False)
     distance: Mapped[str] = mapped_column(String, nullable=False)
     participants: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")

@@ -75,6 +75,7 @@ export interface SportEvent {
   locationDetails?: EventLocationDetails;
   category: string;
   waitlistEnabled?: boolean;
+  waitlistOfferWindow?: "30" | "60" | "until_close";
   waitlistOpen?: boolean;
   image: string;
   description: string;

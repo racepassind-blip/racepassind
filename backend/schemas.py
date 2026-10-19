@@ -37,6 +37,7 @@ class EventOut(BaseModel):
     participants: int
     maxParticipants: int
     waitlistEnabled: bool = False
+    waitlistOfferWindow: str = "30"
     waitlistOpen: bool = False
     organizer: str
     rules: list[str]

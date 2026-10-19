@@ -143,6 +143,7 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
         "visibility": serialize_visibility(visibility) if visibility is not None else None,
         "maxParticipants": event.max_participants,
         "waitlistEnabled": bool(event.waitlist_enabled),
+        "waitlistOfferWindow": event.waitlist_offer_window,
         "rules": event.rules,
         "schedule": event.schedule or [],
         "fieldConfig": field_config,
@@ -325,6 +326,7 @@ def create_event(
         registration_close=payload.registration_close,
         max_participants=payload.max_participants,
         waitlist_enabled=payload.waitlist_enabled,
+        waitlist_offer_window=payload.waitlist_offer_window,
         latitude=payload.latitude,
         longitude=payload.longitude,
         status="draft",
@@ -700,6 +702,8 @@ def update_event(
     event.max_participants = payload.max_participants
     if payload.waitlist_enabled is not None:
         event.waitlist_enabled = payload.waitlist_enabled
+    if payload.waitlist_offer_window is not None:
+        event.waitlist_offer_window = payload.waitlist_offer_window
     event.latitude = payload.latitude
     event.longitude = payload.longitude
     event.rules = payload.rules

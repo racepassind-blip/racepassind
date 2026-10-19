@@ -43,6 +43,7 @@ from app.services.registration_service import (
     list_waitlist,
     promote_waitlist_entry,
 )
+from app.services.waitlist_service import resend_offer
 from app.services.email_service import send_registration_confirmation
 from app.services.image_validation import ImageValidationError
 from app.services.media_service import resolve_media_url, upload_media
@@ -93,6 +94,16 @@ def organizer_cancel_waitlist(entry_id: UUID, user: User = Depends(require_roles
 def organizer_promote_waitlist(entry_id: UUID, payload: WaitlistPromotionIn, user: User = Depends(require_roles("organizer", "admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
     try:
         entry = promote_waitlist_entry(db, user, entry_id, waive_payment=payload.waive_payment)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return {"waitlistEntryId": str(entry.id), "status": entry.status, "expiresAt": entry.payment_due_at, "waivePayment": entry.waive_payment, "emailStatus": "queued"}
+
+
+@router.post("/waitlist/{entry_id}/resend")
+def organizer_resend_waitlist(entry_id: UUID, user: User = Depends(require_roles("organizer", "admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    try:
+        entry = resend_offer(db, user, entry_id)
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

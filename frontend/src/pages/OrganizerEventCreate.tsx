@@ -292,6 +292,7 @@ const OrganizerEventCreate = () => {
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [maxParticipants, setMaxParticipants] = useState("1000");
   const [waitlistEnabled, setWaitlistEnabled] = useState(false);
+  const [waitlistOfferWindow, setWaitlistOfferWindow] = useState<"30" | "60" | "until_close">("30");
   const [upiId, setUpiId] = useState("");
   const [payeeName, setPayeeName] = useState("");
   const [paymentInstructions, setPaymentInstructions] = useState("Pay the exact amount using UPI, then submit your UTR/reference.");
@@ -553,6 +554,7 @@ const OrganizerEventCreate = () => {
         })));
         setMaxParticipants(String(event.maxParticipants));
         setWaitlistEnabled(Boolean(event.waitlistEnabled));
+        setWaitlistOfferWindow((event.waitlistOfferWindow as "30" | "60" | "until_close") ?? "30");
         setUpiId(event.paymentSettings?.upiId ?? "");
         setPayeeName(event.paymentSettings?.payeeName ?? "");
         setPaymentInstructions(event.paymentSettings?.instructions ?? "Pay the exact amount using UPI, then submit your UTR/reference.");
@@ -1053,6 +1055,7 @@ const OrganizerEventCreate = () => {
         longitude,
         max_participants: participantLimit,
         waitlist_enabled: waitlistEnabled,
+        waitlist_offer_window: waitlistOfferWindow,
         rules: normalizedRules,
         schedule: normalizedSchedule,
         field_config: fieldConfig,
@@ -1250,7 +1253,7 @@ const OrganizerEventCreate = () => {
               <div className="space-y-2 sm:col-span-2"><Label>Event name *</Label><Input value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="e.g. Bengaluru Community Sports Day" /></div>
               <div className="space-y-2 sm:col-span-2"><Label>Event description *</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Tell participants what makes this event special." /></div>
               <div className="space-y-2"><Label>Sport *</Label><Select value={sport} onValueChange={handleSportChange}><SelectTrigger><SelectValue placeholder="Select sport" /></SelectTrigger><SelectContent>{sports.map((sportOption) => <SelectItem key={sportOption.value} value={sportOption.value}>{sportOption.label}</SelectItem>)}</SelectContent></Select></div>
-              <label className="flex items-start gap-3 rounded-lg border p-3 text-sm"><input aria-label="Enable waiting list" type="checkbox" className="mt-1" checked={waitlistEnabled} onChange={(event) => setWaitlistEnabled(event.target.checked)} /><span><strong>Enable waiting list</strong><span className="block text-xs leading-5 text-muted-foreground">When enabled, people can join a queue after this event or their selected ticket is full. You can change this per event.</span></span></label>
+              <div className="space-y-3 rounded-lg border p-3 text-sm"><label className="flex items-start gap-3"><input aria-label="Enable waiting list" type="checkbox" className="mt-1" checked={waitlistEnabled} onChange={(event) => setWaitlistEnabled(event.target.checked)} /><span><strong>Enable waiting list</strong><span className="block text-xs leading-5 text-muted-foreground">When enabled, people can join a queue after this event or their selected ticket is full.</span></span></label>{waitlistEnabled && <label className="block space-y-1.5 pl-7"><span className="text-xs font-semibold">Invitation hold time</span><select aria-label="Invitation hold time" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={waitlistOfferWindow} onChange={(event) => setWaitlistOfferWindow(event.target.value as typeof waitlistOfferWindow)}><option value="30">30 minutes</option><option value="60">1 hour</option><option value="until_close">Until registration closes</option></select><span className="block text-xs leading-5 text-muted-foreground">If an invitation expires, you can send a fresh invitation from the registrations page.</span></label>}</div>
               {currentSportConfig.event_setup === "cricket" && <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/[0.035] p-4 sm:col-span-2"><div><h3 className="font-semibold">Cricket Setup</h3><p className="mt-1 text-sm text-muted-foreground">Basic event defaults for this cricket event.</p></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Tournament format</Label><Select value={cricketConfig.tournament_format} onValueChange={(value) => setCricketConfig((current) => ({ ...current, tournament_format: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="league">League</SelectItem><SelectItem value="knockout">Knockout</SelectItem><SelectItem value="league_knockout">League + Knockout</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Ball type</Label><Select value={cricketConfig.ball_type} onValueChange={(value) => setCricketConfig((current) => ({ ...current, ball_type: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tennis">Tennis Ball</SelectItem><SelectItem value="leather">Leather Ball</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Overs per innings</Label><Input type="number" min={1} step={1} value={cricketConfig.overs_per_innings} onChange={(event) => setCricketConfig((current) => ({ ...current, overs_per_innings: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label>Default squad size</Label><div className="grid gap-4 sm:grid-cols-2"><Input aria-label="Minimum players" type="number" min={1} value={cricketConfig.minimum_players} onChange={(event) => setCricketConfig((current) => ({ ...current, minimum_players: event.target.value }))} placeholder="Minimum players" /><Input aria-label="Maximum players" type="number" min={1} value={cricketConfig.maximum_players} onChange={(event) => setCricketConfig((current) => ({ ...current, maximum_players: event.target.value }))} placeholder="Maximum players" /></div></div></div></div>}
               <div className="sm:col-span-2 border-t pt-4"><h3 className="font-semibold">Location</h3><p className="mt-1 text-sm text-muted-foreground">Tell participants exactly where the event takes place.</p></div>
               <div className="space-y-2 sm:col-span-2"><Label>Venue or location *</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Event venue and city" /></div>
