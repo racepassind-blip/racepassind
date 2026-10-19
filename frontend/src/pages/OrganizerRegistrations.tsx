@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiRequest } from "@/lib/api";
 import { scrollToTop } from "@/lib/scroll";
@@ -191,14 +192,18 @@ interface RegistrationDetailDrawerProps {
   onClose: () => void;
   onTransferDone: (updated: OrganizerRegistration) => void;
   onResendEmail: (registration: OrganizerRegistration) => Promise<void>;
+  onCancelled: (registrationId: string) => void;
   resendingId: string | null;
 }
 
-function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, pickupNameById, meetingLabel, onClose, onTransferDone, onResendEmail, resendingId }: RegistrationDetailDrawerProps) {
+function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, pickupNameById, meetingLabel, onClose, onTransferDone, onResendEmail, onCancelled, resendingId }: RegistrationDetailDrawerProps) {
   const [showTransfer, setShowTransfer] = useState(false);
   const [targetTicketId, setTargetTicketId] = useState("");
   const [transferReason, setTransferReason] = useState("");
   const [transferring, setTransferring] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [showCancellation, setShowCancellation] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState("Participant will not attend");
 
   // Fetch refund info if registration has a refund
   const { data: refundData } = useRegistrationRefund(registration?.id);
@@ -207,6 +212,8 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
     setShowTransfer(false);
     setTargetTicketId("");
     setTransferReason("");
+    setShowCancellation(false);
+    setCancellationReason("Participant will not attend");
   }, [registration?.id]);
 
   if (!registration) return null;
@@ -235,6 +242,20 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
     }
   };
 
+  const cancelRegistration = async () => {
+    const reason = cancellationReason.trim();
+    if (reason.length < 3) { toast.error("Add a brief cancellation reason."); return; }
+    setCancelling(true);
+    try {
+      const result = await apiRequest<{ refund: { status: string } | null }>(`/organizer/events/${registration.event.id}/registrations/${registration.id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) });
+      toast.success(result.refund ? `Registration cancelled. Refund ${result.refund.status.toLowerCase()}.` : "Registration cancelled and place released.");
+      setShowCancellation(false);
+      onCancelled(registration.id);
+      onClose();
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Cancellation failed."); }
+    finally { setCancelling(false); }
+  };
+
   const targetTicket = eventTickets.find((t) => t.id === targetTicketId);
   const currentPaise = registration.amountPaise ?? 0;
   const newPaise = targetTicket?.pricePaise ?? null;
@@ -256,6 +277,26 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
   };
 
   return (
+    <>
+    <Dialog open={showCancellation} onOpenChange={setShowCancellation}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Cancel this registration?</DialogTitle>
+          <DialogDescription>
+            This releases the place immediately. You can then manually invite someone from the waiting list.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <label htmlFor="cancellation-reason" className="text-sm font-medium">Reason for cancellation</label>
+          <Textarea id="cancellation-reason" value={cancellationReason} maxLength={120} onChange={(event) => setCancellationReason(event.target.value)} className="min-h-24" />
+          <p className="text-xs leading-5 text-muted-foreground">Any refund is created only when the event’s refund policy and deadline allow it. A cancellation email is queued for the participant.</p>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={cancelling} onClick={() => setShowCancellation(false)}>Keep registration</Button>
+          <Button type="button" variant="destructive" disabled={cancelling || cancellationReason.trim().length < 3} onClick={() => void cancelRegistration()}>{cancelling ? "Cancelling…" : "Cancel and release place"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
       <SheetContent side="right" aria-describedby={undefined} className="flex w-full max-w-full flex-col gap-0 overflow-y-auto bg-card p-0 sm:max-w-lg">
 
@@ -453,6 +494,8 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
             </section>
           )}
 
+          {["confirmed", "awaiting_payment", "pending_verification", "AWAITING_SPORTPASS_CREDITS"].includes(registration.status) && <section className="rounded-lg border border-destructive/30 bg-destructive/5 p-4"><p className="font-semibold text-destructive">Participant will not attend?</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Cancel the registration, release the place, and notify the participant. A refund is created only when the event’s policy allows it.</p><Button type="button" variant="destructive" className="mt-3 w-full" disabled={cancelling} onClick={() => setShowCancellation(true)}>Cancel registration</Button></section>}
+
           {/* ── Email ─────────────────────────────────────────── */}
           <section>
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Confirmation email</p>
@@ -555,6 +598,7 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
         </div>
       </SheetContent>
     </Sheet>
+    </>
   );
 }
 
@@ -909,6 +953,10 @@ const OrganizerRegistrations = () => {
     setDetailRegistration(updated);
   };
 
+  const handleRegistrationCancelled = (registrationId: string) => {
+    setRegistrations((current) => current.filter((item) => item.id !== registrationId));
+  };
+
   const reviewActions = (registration: OrganizerRegistration) => {
     const isReviewable = ["awaiting_payment", "pending_verification", "AWAITING_SPORTPASS_CREDITS"].includes(registration.status);
     if (!isReviewable) return null;
@@ -1136,6 +1184,7 @@ const OrganizerRegistrations = () => {
         onClose={() => setDetailRegistration(null)}
         onTransferDone={handleTransferDone}
         onResendEmail={resendEmail}
+        onCancelled={handleRegistrationCancelled}
         resendingId={resendId}
       />
 

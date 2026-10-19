@@ -313,6 +313,8 @@ def start_worker(session_factory, engine):
                 with engine.connect() as lock:
                     acquired = engine.dialect.name != "postgresql" or lock.scalar(text("SELECT pg_try_advisory_xact_lock(734019825)"))
                     if acquired:
+                        from app.services.cancellation_notifications import recover_notifications
+                        recover_notifications(session_factory)
                         recover_once(session_factory)
             except Exception as exc:
                 logger.warning("waitlist_worker_failed error=%s", type(exc).__name__)

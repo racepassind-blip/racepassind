@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+from html import escape
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -32,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.services.audit_service import record_audit
 from app.services.gmail_api_service import GmailDeliveryError, gmail_api_configured, send_gmail_message
-from models import CommunicationConfig, EmailLog, Registration
+from models import CommunicationConfig, EmailLog, Event, Registration, REFUND_STATUS_REFUNDED
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +177,7 @@ def send_email(
     attachments: list[tuple[str, bytes]] | None = None,
     is_resend: bool = False,
     dedupe: bool = False,
+    retry_unsent: bool = False,
 ) -> SendEmailResult:
     """Send an email using the configured Gmail account.
 
@@ -200,6 +202,7 @@ def send_email(
             EmailLog.recipient == recipient,
             EmailLog.reference_type == reference_type,
             EmailLog.reference_id == reference_id,
+            *([EmailLog.status == "sent"] if retry_unsent else []),
         ).order_by(EmailLog.created_at.desc()).limit(1))
         if existing is not None:
             return SendEmailResult(existing.status == "sent", existing.status.upper(),
@@ -775,13 +778,57 @@ def broadcast_event_update(
 
 EMAIL_TYPE_REFUND = "REFUND"
 REFERENCE_TYPE_REFUND = "REFUND"
+EMAIL_TYPE_REGISTRATION_CANCELLATION = "REGISTRATION_CANCELLATION"
+REFERENCE_TYPE_REGISTRATION_CANCELLATION = "REGISTRATION_CANCELLATION"
 
 
 def _fmt_paise(paise: int) -> str:
     return f"₹{paise / 100:,.2f}"
 
 
-def send_refund_requested_notification(db: Session, refund) -> SendEmailResult:
+def send_registration_cancellation_notification(db: Session, registration, refund=None) -> SendEmailResult:
+    """Send the participant one definitive, deduplicated cancellation notice."""
+    event = db.get(Event, registration.event_id)
+    recipient = (registration.responses or {}).get("email")
+    if not recipient and registration.participant is not None:
+        recipient = registration.participant.email
+    if not recipient:
+        return SendEmailResult(False, "FAILED", "No participant email found")
+    participant_name = (registration.responses or {}).get("full_name") or (
+        registration.participant.name if registration.participant else "Participant"
+    )
+    event_name = event.name if event else "the event"
+    if refund is not None and refund.status != REFUND_STATUS_REFUNDED:
+        refund_message = (
+            f"A refund request for {_fmt_paise(refund.requested_refund_amount)} has been created and will follow "
+            "the event's refund process. We will email you when its status changes."
+        )
+    elif refund is not None:
+        refund_message = "The refund for this registration has already been completed."
+    elif registration.payment_status == "approved":
+        refund_message = "No refund has been created because the event's refund policy does not currently allow one."
+    else:
+        refund_message = "No payment was collected for this registration."
+    body = (
+        f"Dear {participant_name},\n\n"
+        f"Your registration for {event_name} has been cancelled by the organizer. Your place is no longer confirmed.\n\n"
+        f"{refund_message}\n\n"
+        "If you have questions, please contact the event organizer.\n\nRegards,\nSportPass India\n"
+    )
+    html_body = (
+        f"<p>Dear {escape(participant_name)},</p><p>Your registration for <strong>{escape(event_name)}</strong> has been "
+        "cancelled by the organizer. Your place is no longer confirmed.</p>"
+        f"<p>{refund_message}</p><p>If you have questions, please contact the event organizer.</p><p>Regards,<br>SportPass India</p>"
+    )
+    return send_email(
+        db, recipient=recipient, subject=f"Registration cancelled — {event_name}", body=body, html_body=html_body,
+        email_type=EMAIL_TYPE_REGISTRATION_CANCELLATION,
+        reference_type=REFERENCE_TYPE_REGISTRATION_CANCELLATION, reference_id=str(registration.id),
+        event_id=registration.event_id, dedupe=True, retry_unsent=True,
+    )
+
+
+def send_refund_requested_notification(db: Session, refund, *, cancellation: bool = False) -> SendEmailResult:
     """Notify the organizer that a participant has submitted a refund request."""
     organizer_email = None
     from sqlalchemy import select as _select
@@ -827,9 +874,11 @@ def send_refund_requested_notification(db: Session, refund) -> SendEmailResult:
         body=body,
         html_body=html_body,
         email_type=EMAIL_TYPE_REFUND,
-        reference_type=REFERENCE_TYPE_REFUND,
+        reference_type="CANCELLATION_REFUND_REQUEST" if cancellation else REFERENCE_TYPE_REFUND,
         reference_id=str(refund.id),
         event_id=refund.event_id,
+        dedupe=cancellation,
+        retry_unsent=cancellation,
     )
 
 

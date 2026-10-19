@@ -186,6 +186,8 @@ def request_refund(
     actor_user_id: UUID | None,
     refund_reason: str,
     participant_comments: str | None,
+    commit: bool = True,
+    for_participant: bool = True,
 ) -> Refund:
     """Create a new REQUESTED refund for a confirmed paid registration."""
     # Match settlement/refund writers: event first, then registration.
@@ -194,7 +196,7 @@ def request_refund(
         db.scalar(select(Event).where(Event.id == event_id).with_for_update())
     db.scalar(select(Registration).where(Registration.id == registration_id)
               .with_for_update().execution_options(populate_existing=True))
-    eligibility = check_refund_eligibility(db, registration_id, for_participant=True)
+    eligibility = check_refund_eligibility(db, registration_id, for_participant=for_participant)
     if not eligibility["eligible"]:
         raise ValueError(eligibility["reason"])
 
@@ -251,8 +253,14 @@ def request_refund(
         resource_id=refund.id,
         metadata={"registrationId": str(registration.id), "provider": provider, "requestedAmountPaise": total_requested},
     )
-    db.commit()
-    return db.get(Refund, refund.id)
+    # Organizer cancellation changes capacity, the registration, and (when
+    # applicable) the refund request as one unit.  Callers can therefore opt
+    # into their surrounding transaction rather than leaving a refund behind
+    # when a later cancellation step fails.
+    if commit:
+        db.commit()
+        return db.get(Refund, refund.id)
+    return refund
 
 
 def _locked_refund(db: Session, refund_id: UUID) -> Refund:

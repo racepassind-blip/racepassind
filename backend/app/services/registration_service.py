@@ -28,7 +28,7 @@ from app.services.platform_fee_service import compute_participant_pricing
 from app.services.credit_service import CREDIT_CHARGEABLE_PAYMENT_GATEWAYS, CreditValidationError, debit_credits, CREDIT_REGISTRATION_DEBIT
 from app.services.ticket_service import serialize_ticket, ticket_token_for_registration
 from app.services.organizer_visibility_service import _authorized_event_ids, get_visibility_for_events, serialize_visibility, visibility_filter_for_events
-from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, RegistrationParticipant, Refund, Ticket, User, WaitlistEntry
+from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, RegistrationParticipant, Refund, Ticket, User, WaitlistEntry, REFUND_ACTIVE_STATUSES, REFUND_STATUS_REFUNDED
 
 def waitlist_enabled(event: Event) -> bool:
     # Waiting lists are an organizer-controlled event feature. The event-level
@@ -2054,6 +2054,90 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
     sync_event_payment(db, order)
     db.commit()
     return _reload_organizer_registration(db, registration.id)
+
+
+def cancel_organizer_registration(db: Session, user, event_id, registration_id, *, reason: str) -> tuple[Registration, Refund | None, WaitlistEntry | None]:
+    """Cancel a registration and atomically free its place.
+
+    A cancellation is always allowed before check-in.  A refund request is
+    added only when the event's own policy is currently eligible; a passed
+    cutoff controls the refund, never whether an organizer can release a
+    participant's place.
+    """
+    event = db.scalar(select(Event).where(Event.id == event_id).with_for_update())
+    registration = db.scalar(select(Registration).where(Registration.id == registration_id, Registration.event_id == event_id).with_for_update().execution_options(populate_existing=True))
+    if event is None or registration is None:
+        raise ValueError("Registration not found")
+    if registration.status == "cancelled":
+        existing_refund = db.scalar(select(Refund).where(
+            Refund.registration_id == registration.id,
+            Refund.status.in_((*REFUND_ACTIVE_STATUSES, REFUND_STATUS_REFUNDED)),
+        ).order_by(Refund.created_at.desc()))
+        return registration, existing_refund, None
+    if registration.status == "checked_in" or registration.checked_in:
+        raise ValueError("Checked-in registrations require admin review before cancellation")
+    if registration.status not in {"confirmed", "awaiting_payment", "pending_verification", "AWAITING_SPORTPASS_CREDITS"}:
+        raise ValueError("This registration cannot be cancelled in its current state")
+    refund = db.scalar(select(Refund).where(
+        Refund.registration_id == registration.id,
+        Refund.status.in_((*REFUND_ACTIVE_STATUSES, REFUND_STATUS_REFUNDED)),
+    ).order_by(Refund.created_at.desc()))
+    paid = (
+        registration.status == "confirmed"
+        and registration.payment_status == "approved"
+        and (registration.participant_total_paise or registration.total_amount_paise or 0) > 0
+    )
+    cutoff_open = True
+    if event.refund_cutoff_at is not None:
+        cutoff = event.refund_cutoff_at
+        cutoff = cutoff.replace(tzinfo=dt.timezone.utc) if cutoff.tzinfo is None else cutoff
+        cutoff_open = utc_now() <= cutoff
+    refund_percentage = event.refund_percentage if event.refund_percentage is not None else 100
+    refund_has_value = (
+        ((registration.total_amount_paise or 0) * max(0, min(100, refund_percentage))) // 100 > 0
+        or bool(event.platform_fee_refundable and registration.platform_fee_bearer == "PARTICIPANT" and registration.platform_fee_paise)
+    )
+    if (
+        refund is None
+        and paid
+        and event.refund_policy_enabled
+        and event.refund_policy_type != "no_refund"
+        and cutoff_open
+        and refund_has_value
+    ):
+        from app.services.refund_service import request_refund
+        refund = request_refund(
+            db,
+            registration_id=registration.id,
+            actor_user_id=user.id,
+            refund_reason=reason[:120],
+            participant_comments="Organizer cancelled registration",
+            commit=False,
+            for_participant=False,
+        )
+    ticket = db.scalar(select(Ticket).where(Ticket.id == registration.ticket_id).with_for_update())
+    if ticket is None:
+        raise ValueError("Ticket not found")
+    if registration.status == "confirmed":
+        ticket.quantity_sold = max(0, ticket.quantity_sold - registration.quantity)
+        event.participants = max(0, event.participants - registration.quantity)
+    else:
+        _release_reservation(ticket, registration.quantity)
+    registration.status = "cancelled"
+    registration.reserved_until = None
+    # Preserve settled payment history for paid registrations.  Pending and
+    # free holds can be marked cancelled because no money has been collected.
+    if registration.payment and not paid:
+        registration.payment.status = "cancelled"
+    # Invitations after cancellation are explicitly controlled by the organizer.
+    offered_entry = None
+    for entry in db.scalars(select(WaitlistEntry).where(WaitlistEntry.registration_id == registration.id)).all():
+        entry.status = "cancelled"
+    from app.services.cancellation_notifications import queue_notifications
+    queue_notifications(db, registration, refund)
+    record_audit(db, actor_user_id=user.id, action="registration_cancelled_by_organizer", resource_type="registration", resource_id=registration.id, metadata={"reason": reason, "refundId": str(refund.id) if refund else None, "waitlistEntryId": str(offered_entry.id) if offered_entry else None})
+    db.commit()
+    return db.get(Registration, registration.id), refund, offered_entry
 
 
 def load_registration_batch(db: Session, registration: Registration) -> list[Registration]:

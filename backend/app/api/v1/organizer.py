@@ -42,6 +42,7 @@ from app.services.registration_service import (
     transfer_registration_category,
     list_waitlist,
     promote_waitlist_entry,
+    cancel_organizer_registration,
 )
 from app.services.waitlist_service import resend_offer
 from app.services.email_service import send_registration_confirmation
@@ -50,7 +51,7 @@ from app.services.media_service import resolve_media_url, upload_media
 from app.services.storage_service import StorageError, StorageMetadata
 from app.services.audit_service import record_audit
 from db import get_db
-from models import CreditTopupRequest, CreditTransaction, EmailLog, Event, Organization, OrganizationMember, OrganizationVerificationDocument, OrganizationVerificationSubmission, Registration, User, WaitlistEntry
+from models import CreditTopupRequest, CreditTransaction, EmailLog, Event, Organization, OrganizationMember, OrganizationVerificationDocument, OrganizationVerificationSubmission, Refund, Registration, User, WaitlistEntry
 
 router = APIRouter()
 
@@ -66,6 +67,23 @@ def organizer_waitlist(event_id: UUID, user: User = Depends(require_roles("organ
 class WaitlistPromotionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     waive_payment: bool = False
+
+
+class RegistrationCancellationIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=120)
+
+
+@router.post("/events/{event_id}/registrations/{registration_id}/cancel")
+def cancel_organizer_registration_endpoint(event_id: UUID, registration_id: UUID, payload: RegistrationCancellationIn, background_tasks: BackgroundTasks, user: User = Depends(require_roles("organizer", "admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    get_authorized_event(db, user, event_id)
+    try:
+        registration, refund, offered_entry = cancel_organizer_registration(db, user, event_id, registration_id, reason=payload.reason)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    # Notifications were durably queued in the cancellation transaction.
+    # The recovery worker is the sole sender, including after API restarts.
+    return {"registrationId": str(registration.id), "status": registration.status, "refund": {"id": str(refund.id), "status": refund.status, "requestedAmountPaise": refund.requested_refund_amount} if refund else None, "capacityReleased": registration.quantity, "waitlistInvited": bool(offered_entry)}
 
 
 @router.post("/waitlist/{entry_id}/cancel")
