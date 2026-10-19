@@ -1,6 +1,6 @@
 # Event waiting lists
 
-Organizers enable the waiting list per supported event and configure its hard participant limit. Joining is free and only available when the chosen ticket or the event is full. The participant receives a queue number and an email. Pending registrations and outstanding invitations count toward capacity.
+Organizers enable the waiting list per event and configure its hard participant limit. Joining is free and only available when the chosen ticket or the event is full. The participant receives a queue number and an email. Pending registrations and outstanding invitations count toward capacity.
 
 The organizer dashboard invites the first waiting participant when capacity exists. Invitations charge the normal checkout price by default; the organizer can explicitly waive all payment, including extras. Each invitation reserves one single-participant ticket for 30 minutes. Its private email link opens the existing checkout, where required participant fields and waivers remain mandatory.
 

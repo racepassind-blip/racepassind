@@ -30,11 +30,10 @@ from app.services.ticket_service import serialize_ticket, ticket_token_for_regis
 from app.services.organizer_visibility_service import _authorized_event_ids, get_visibility_for_events, serialize_visibility, visibility_filter_for_events
 from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, RegistrationParticipant, Refund, Ticket, User, WaitlistEntry
 
-WAITLIST_SPORTS = frozenset({"trekking", "running", "cycling", "walkathon", "obstacle_course"})
-
-
 def waitlist_enabled(event: Event) -> bool:
-    return str(event.category or "").strip().lower() in WAITLIST_SPORTS
+    # Waiting lists are an organizer-controlled event feature. The event-level
+    # waitlist_enabled flag is the sole switch; sport type does not restrict it.
+    return True
 
 
 def _capacity_used(db: Session, event_id) -> int:
