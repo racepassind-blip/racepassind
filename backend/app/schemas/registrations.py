@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 from collections import Counter
 from typing import Any
 from uuid import UUID
@@ -36,6 +37,27 @@ class RegistrationCreateIn(BaseModel):
         if not (isinstance(email, str) and email.strip()) and not (isinstance(phone, str) and phone.strip()):
             raise ValueError("At least one of email or phone is required")
         return self
+
+
+class WaitlistCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_id: UUID
+    ticket_id: UUID | None = None
+    name: str = Field(min_length=2, max_length=160)
+    email: str = Field(min_length=3, max_length=320)
+    phone: str | None = Field(default=None, max_length=32)
+
+    @field_validator("name", "email", "phone", mode="before")
+    @classmethod
+    def trim_text(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("email")
+    @classmethod
+    def validate_waitlist_email(cls, value: str) -> str:
+        if not re.fullmatch(r"[^\s@<>]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}", value):
+            raise ValueError("Enter a valid email address")
+        return value
 
 
 def _contact_value(value: Any) -> str | None:
@@ -115,6 +137,7 @@ class BatchRegistrationCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_id: UUID
+    waitlist_token: str | None = Field(default=None, min_length=40, max_length=200)
     # Limit tickets per transaction; doubles participants share one ticket.
     entries: list[EntryRegistrationIn] | None = Field(default=None, min_length=1, max_length=15)
     riders: list[RiderRegistrationIn] | None = Field(default=None, min_length=1, max_length=15)

@@ -227,6 +227,7 @@ class Event(Base):
     registration_close: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     registration_status: Mapped[str] = mapped_column(String, nullable=False, default="open", server_default="open")
     max_participants: Mapped[int] = mapped_column(Integer, nullable=False)
+    waitlist_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     distance: Mapped[str] = mapped_column(String, nullable=False)
     participants: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
@@ -808,6 +809,36 @@ class Registration(Base):
     allocation_history: Mapped[list["AllocationHistory"]] = relationship(
         back_populates="registration", cascade="all, delete-orphan"
     )
+
+
+class WaitlistEntry(Base):
+    __tablename__ = "waitlist_entries"
+    __table_args__ = (
+        UniqueConstraint("event_id", "normalized_email", name="uq_waitlist_event_email"),
+        UniqueConstraint("event_id", "position", name="uq_waitlist_event_position"),
+        CheckConstraint("position > 0", name="ck_waitlist_position"),
+        CheckConstraint("status IN ('waiting', 'offered', 'redeeming', 'booked', 'confirmed', 'expired', 'cancelled')", name="ck_waitlist_status"),
+        Index("ix_waitlist_event_status_position", "event_id", "status", "position"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True)
+    ticket_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("tickets.id"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    normalized_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="waiting")
+    registration_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("registrations.id"), nullable=True, index=True)
+    promoted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payment_due_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    waive_payment: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    joined_email_sent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    offer_email_sent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    email_retry_after: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    event: Mapped[Event] = relationship()
+    ticket: Mapped[Ticket | None] = relationship()
 
 
 class Match(Base):

@@ -243,10 +243,16 @@ def on_startup() -> None:
     from app.services.announcement_service import start_announcement_worker
     app.state.cashfree_recovery = start_recovery_worker(SessionLocal, engine)
     app.state.announcement_worker = start_announcement_worker(SessionLocal, engine)
+    from app.services.waitlist_service import start_worker
+    app.state.waitlist_worker = start_worker(SessionLocal, engine)
 
 
 @app.on_event("shutdown")
 def stop_cashfree_recovery() -> None:
+    waitlist = getattr(app.state, "waitlist_worker", None)
+    if waitlist:
+        waitlist[0].set()
+        waitlist[1].join(timeout=2)
     recovery = getattr(app.state, "cashfree_recovery", None)
     if recovery:
         stop, worker = recovery

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy import select
@@ -25,6 +26,7 @@ from app.services.registration_service import (
     claim_registration,
     create_guest_batch_registration,
     create_guest_registration,
+    join_waitlist,
     list_my_registrations,
     load_confirmation_registration,
     load_registration_batch,
@@ -40,12 +42,61 @@ from app.schemas.registrations import (
     ConfirmationLookupIn,
     PaymentReferenceIn,
     RegistrationCreateIn,
+    WaitlistCreateIn,
 )
 from app.services.email_service import send_registration_confirmation
 from db import get_db
 from models import Event, User
 
 router = APIRouter()
+
+
+@router.post("/waitlist", status_code=status.HTTP_201_CREATED)
+def create_waitlist_entry(
+    payload: WaitlistCreateIn,
+    request: Request,
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        enforce_race_registration_limit(db, event_id=str(payload.event_id), ticket_id="waitlist", client_ip=get_client_ip(request))
+        db.commit()
+        entry = join_waitlist(db, payload)
+    except RateLimitExceeded as exc:
+        db.rollback()
+        raise HTTPException(429, str(exc), headers={"Retry-After": str(exc.retry_after_seconds)}) from exc
+    except (IntegrityError, OperationalError) as exc:
+        db.rollback()
+        raise HTTPException(409, "Waiting list changed; please retry") from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return {"id": str(entry.id), "eventId": str(entry.event_id), "position": entry.position, "status": entry.status}
+
+
+class WaitlistOfferIn(BaseModel):
+    token: str = Field(min_length=40, max_length=200)
+
+
+@router.post("/waitlist/offer")
+def get_waitlist_offer(payload: WaitlistOfferIn, response: Response, _: None = Depends(require_csrf), db: Session = Depends(get_db)):
+    from app.services.waitlist_service import resolve, aware
+    from app.services.auth_service import utc_now
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        entry = resolve(db, payload.token)
+        if entry.registration_id and entry.status in {"booked", "confirmed"}:
+            import hashlib
+            from models import Registration
+            registration = db.get(Registration, entry.registration_id)
+            credential = hashlib.sha256(f"waitlist-confirmation:{payload.token}".encode()).hexdigest()
+            return {"eventId": str(entry.event_id), "ticketId": str(entry.ticket_id), "registration": _batch_confirmation_response(db, [registration], confirmation_tokens=[credential])}
+        if entry.status != "offered" or aware(entry.payment_due_at) <= utc_now():
+            raise ValueError("This invitation has expired or has already been used")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"eventId": str(entry.event_id), "ticketId": str(entry.ticket_id), "email": entry.email, "name": entry.name,
+            "expiresAt": entry.payment_due_at, "waivePayment": entry.waive_payment}
 logger = logging.getLogger(__name__)
 
 

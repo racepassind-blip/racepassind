@@ -142,6 +142,7 @@ def _event_response(event: Event, storage: StorageService | None = None, signed_
         "lockedParticipants": visibility["lockedConfirmedQuantity"] if visibility is not None else 0,
         "visibility": serialize_visibility(visibility) if visibility is not None else None,
         "maxParticipants": event.max_participants,
+        "waitlistEnabled": bool(event.waitlist_enabled),
         "rules": event.rules,
         "schedule": event.schedule or [],
         "fieldConfig": field_config,
@@ -323,6 +324,7 @@ def create_event(
         registration_open=payload.registration_open,
         registration_close=payload.registration_close,
         max_participants=payload.max_participants,
+        waitlist_enabled=payload.waitlist_enabled,
         latitude=payload.latitude,
         longitude=payload.longitude,
         status="draft",
@@ -501,7 +503,9 @@ def update_operational_features(
 
 
 def _ticket_has_registrations(db: Session, ticket_id: UUID) -> bool:
-    return db.scalar(select(Registration.id).where(Registration.ticket_id == ticket_id).limit(1)) is not None
+    from models import WaitlistEntry
+    return (db.scalar(select(Registration.id).where(Registration.ticket_id == ticket_id).limit(1)) is not None
+            or db.scalar(select(WaitlistEntry.id).where(WaitlistEntry.ticket_id == ticket_id).limit(1)) is not None)
 
 
 def _category_has_registrations(db: Session, category: EventCategory) -> bool:
@@ -694,6 +698,8 @@ def update_event(
     if payload.banner_url and payload.banner_url.startswith(MEDIA_REFERENCE_PREFIX):
         event.banner_url = payload.banner_url
     event.max_participants = payload.max_participants
+    if payload.waitlist_enabled is not None:
+        event.waitlist_enabled = payload.waitlist_enabled
     event.latitude = payload.latitude
     event.longitude = payload.longitude
     event.rules = payload.rules

@@ -161,6 +161,7 @@ interface OrganizerEventResponse {
   bannerUrl: string | null;
   whatsappGroupUrl: string | null;
   maxParticipants: number;
+  waitlistEnabled: boolean;
   rules: string[];
   schedule: ScheduleItem[];
   fieldConfig: EventFieldConfig;
@@ -290,6 +291,7 @@ const OrganizerEventCreate = () => {
   const [rules, setRules] = useState<string[]>([]);
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [maxParticipants, setMaxParticipants] = useState("1000");
+  const [waitlistEnabled, setWaitlistEnabled] = useState(false);
   const [upiId, setUpiId] = useState("");
   const [payeeName, setPayeeName] = useState("");
   const [paymentInstructions, setPaymentInstructions] = useState("Pay the exact amount using UPI, then submit your UTR/reference.");
@@ -550,6 +552,7 @@ const OrganizerEventCreate = () => {
           optionsText: addon.options?.join(", ") ?? "",
         })));
         setMaxParticipants(String(event.maxParticipants));
+        setWaitlistEnabled(Boolean(event.waitlistEnabled));
         setUpiId(event.paymentSettings?.upiId ?? "");
         setPayeeName(event.paymentSettings?.payeeName ?? "");
         setPaymentInstructions(event.paymentSettings?.instructions ?? "Pay the exact amount using UPI, then submit your UTR/reference.");
@@ -1049,6 +1052,7 @@ const OrganizerEventCreate = () => {
         latitude,
         longitude,
         max_participants: participantLimit,
+        waitlist_enabled: waitlistEnabled,
         rules: normalizedRules,
         schedule: normalizedSchedule,
         field_config: fieldConfig,
@@ -1246,6 +1250,7 @@ const OrganizerEventCreate = () => {
               <div className="space-y-2 sm:col-span-2"><Label>Event name *</Label><Input value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="e.g. Bengaluru Community Sports Day" /></div>
               <div className="space-y-2 sm:col-span-2"><Label>Event description *</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Tell participants what makes this event special." /></div>
               <div className="space-y-2"><Label>Sport *</Label><Select value={sport} onValueChange={handleSportChange}><SelectTrigger><SelectValue placeholder="Select sport" /></SelectTrigger><SelectContent>{sports.map((sportOption) => <SelectItem key={sportOption.value} value={sportOption.value}>{sportOption.label}</SelectItem>)}</SelectContent></Select></div>
+              {(["trekking", "running", "cycling", "walkathon", "obstacle_course"] as string[]).includes(sport) && <label className="flex items-start gap-3 rounded-lg border p-3 text-sm"><input type="checkbox" className="mt-1" checked={waitlistEnabled} onChange={(event) => setWaitlistEnabled(event.target.checked)} /><span><strong>Enable waiting list</strong><span className="block text-xs leading-5 text-muted-foreground">Allow participants to queue after this event reaches its hard participant limit. You can change this per event.</span></span></label>}
               {currentSportConfig.event_setup === "cricket" && <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/[0.035] p-4 sm:col-span-2"><div><h3 className="font-semibold">Cricket Setup</h3><p className="mt-1 text-sm text-muted-foreground">Basic event defaults for this cricket event.</p></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Tournament format</Label><Select value={cricketConfig.tournament_format} onValueChange={(value) => setCricketConfig((current) => ({ ...current, tournament_format: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="league">League</SelectItem><SelectItem value="knockout">Knockout</SelectItem><SelectItem value="league_knockout">League + Knockout</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Ball type</Label><Select value={cricketConfig.ball_type} onValueChange={(value) => setCricketConfig((current) => ({ ...current, ball_type: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tennis">Tennis Ball</SelectItem><SelectItem value="leather">Leather Ball</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Overs per innings</Label><Input type="number" min={1} step={1} value={cricketConfig.overs_per_innings} onChange={(event) => setCricketConfig((current) => ({ ...current, overs_per_innings: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label>Default squad size</Label><div className="grid gap-4 sm:grid-cols-2"><Input aria-label="Minimum players" type="number" min={1} value={cricketConfig.minimum_players} onChange={(event) => setCricketConfig((current) => ({ ...current, minimum_players: event.target.value }))} placeholder="Minimum players" /><Input aria-label="Maximum players" type="number" min={1} value={cricketConfig.maximum_players} onChange={(event) => setCricketConfig((current) => ({ ...current, maximum_players: event.target.value }))} placeholder="Maximum players" /></div></div></div></div>}
               <div className="sm:col-span-2 border-t pt-4"><h3 className="font-semibold">Location</h3><p className="mt-1 text-sm text-muted-foreground">Tell participants exactly where the event takes place.</p></div>
               <div className="space-y-2 sm:col-span-2"><Label>Venue or location *</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Event venue and city" /></div>
@@ -1528,6 +1533,7 @@ const OrganizerEventCreate = () => {
           </section>}
 
           {currentStep === 2 && <section className="space-y-5 rounded-xl border bg-card p-6">
+            <div className="space-y-2"><Label htmlFor="event-capacity">Hard participant limit</Label><Input id="event-capacity" type="number" min="1" max="1000000" value={maxParticipants} onChange={(e) => setMaxParticipants(e.target.value)} /><p className="text-xs text-muted-foreground">Total people across all ticket tiers, including reserved places. Waiting lists open when this limit or ticket availability is reached.</p></div>
             <div className="flex items-center justify-between"><div><h2 className="text-lg font-bold">{isTrekking ? "Trek tickets" : "Categories and Tickets"}</h2><p className="text-sm text-muted-foreground">{isTrekking ? "This trek uses one shared route and one entry type. Add ticket tiers if needed." : "Add one or more categories and ticket options for this event."}</p></div>{!isTrekking && <Button variant="outline" size="sm" onClick={addCategory}><Plus className="mr-1 h-4 w-4" /> Category</Button>}</div>
             {categories.map((category, categoryIndex) => <div key={category.id} className="space-y-4 rounded-lg border p-4">
               {!isTrekking && <div className="flex items-center justify-between"><p className="font-semibold">Category #{categoryIndex + 1}</p>{categories.length > 1 && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4" /></Button>}</div>}

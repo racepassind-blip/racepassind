@@ -99,6 +99,7 @@ class OrganizerEventCreateV1(BaseModel):
     banner_url: str | None = Field(default=None, max_length=2000)
     whatsapp_group_url: str | None = Field(default=None, max_length=2000)
     max_participants: int = Field(gt=0, le=1000000)
+    waitlist_enabled: bool = False
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     rules: list[str] = Field(default_factory=list, max_length=50)
@@ -238,6 +239,7 @@ class OrganizerEventUpdateV1(BaseModel):
     banner_url: str | None = Field(default=None, max_length=2000)
     whatsapp_group_url: str | None = Field(default=None, max_length=2000)
     max_participants: int = Field(gt=0, le=1000000)
+    waitlist_enabled: bool | None = None
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     rules: list[str] = Field(default_factory=list, max_length=50)

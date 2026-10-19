@@ -74,6 +74,8 @@ export interface SportEvent {
   location: string;
   locationDetails?: EventLocationDetails;
   category: string;
+  waitlistEnabled?: boolean;
+  waitlistOpen?: boolean;
   image: string;
   description: string;
   distance: string;

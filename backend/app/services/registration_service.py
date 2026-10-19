@@ -6,13 +6,14 @@ import base64
 import csv
 import datetime as dt
 import hmac
+import hashlib
 import io
 import json
 import secrets
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.services.auth_service import hash_opaque_token, normalize_email, normalize_phone, utc_now
@@ -27,7 +28,38 @@ from app.services.platform_fee_service import compute_participant_pricing
 from app.services.credit_service import CREDIT_CHARGEABLE_PAYMENT_GATEWAYS, CreditValidationError, debit_credits, CREDIT_REGISTRATION_DEBIT
 from app.services.ticket_service import serialize_ticket, ticket_token_for_registration
 from app.services.organizer_visibility_service import _authorized_event_ids, get_visibility_for_events, serialize_visibility, visibility_filter_for_events
-from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, RegistrationParticipant, Refund, Ticket, User
+from models import Checkin, Event, EventCheckpoint, EventPaymentSettings, Order, OrderItem, Organization, OrganizationMember, Participant, Payment, Registration, RegistrationParticipant, Refund, Ticket, User, WaitlistEntry
+
+WAITLIST_SPORTS = frozenset({"trekking", "running", "cycling", "walkathon", "obstacle_course"})
+
+
+def waitlist_enabled(event: Event) -> bool:
+    return str(event.category or "").strip().lower() in WAITLIST_SPORTS
+
+
+def _capacity_used(db: Session, event_id) -> int:
+    registrations = int(db.scalar(select(func.coalesce(func.sum(Registration.participant_count), 0)).where(
+        Registration.event_id == event_id,
+        Registration.status.in_(("awaiting_payment", "pending_verification", "AWAITING_SPORTPASS_CREDITS", "confirmed", "checked_in")),
+    )) or 0)
+    offers = int(db.scalar(select(func.count()).select_from(WaitlistEntry).where(WaitlistEntry.event_id == event_id, WaitlistEntry.status == "offered")) or 0)
+    return registrations + offers
+
+
+def join_waitlist(db: Session, payload):
+    from app.services.waitlist_service import join
+    return join(db, payload)
+
+
+def list_waitlist(db: Session, user, event_id):
+    from app.api.deps import get_authorized_event
+    get_authorized_event(db, user, event_id)
+    return list(db.scalars(select(WaitlistEntry).where(WaitlistEntry.event_id == event_id).order_by(WaitlistEntry.position)).all())
+
+
+def promote_waitlist_entry(db: Session, user, entry_id, *, waive_payment=False):
+    from app.services.waitlist_service import promote
+    return promote(db, user, entry_id, waive_payment=waive_payment)
 
 
 def _event_waiver_config(event: Event) -> dict:
@@ -293,6 +325,8 @@ def create_guest_registration(db: Session, payload, *, idempotency_key: str | No
         raise ValueError("Event is not available for registration")
     if event.registration_status != "open":
         raise ValueError("Registration is closed")
+    if _capacity_used(db, event.id) >= event.max_participants:
+        raise ValueError("Event is full; join the waiting list")
     if not ticket.is_active:
         raise ValueError("Ticket is not available")
     now = utc_now()
@@ -1618,6 +1652,12 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
     existing = _load_idempotent_registration(db, idempotency_key)
     if existing is not None:
         order = _lock_order_for_registration(db, existing.id)
+        if payload.waitlist_token:
+            from app.services.waitlist_service import resolve
+            entry = resolve(db, payload.waitlist_token)
+            if entry.registration_id != existing.id or entry.event_id != payload.event_id:
+                raise ValueError("Invitation does not match this checkout")
+            return [existing], [hashlib.sha256(f"waitlist-confirmation:{payload.waitlist_token}".encode()).hexdigest()], []
         return _registrations_for_order(db, order.id) if order is not None else [existing], [], []
 
     event = db.scalar(
@@ -1637,6 +1677,11 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
         raise ValueError("Registration is closed")
 
     entries = payload.effective_entries
+    from app.services.waitlist_service import consume_offer
+    invitation = consume_offer(db, event, payload)
+    requested_participants = sum(len(entry.participants) for entry in entries)
+    if _capacity_used(db, event.id) + requested_participants > event.max_participants:
+        raise ValueError("Event is full; join the waiting list")
     ticket_ids = {entry.ticket_id for entry in entries}
     tickets = {
         ticket.id: ticket
@@ -1711,6 +1756,11 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
         computed_total["addonConfig"] = addon_config
         _snapshot_registration_terms(computed_total, event)
         amount_paise = computed_total["totalPaise"]
+        if invitation is not None and invitation.waive_payment:
+            computed_total["waivedOriginalTotalPaise"] = amount_paise
+            computed_total["totalPaise"] = 0
+            computed_total["waitlistPaymentWaived"] = True
+            amount_paise = 0
         if amount_paise > 0 and event.payment_collection_method == "DIRECT_UPI" and event.payment_settings is None:
             raise ValueError("Manual UPI payment settings are not configured")
         pricing = compute_participant_pricing(db, base_amount_paise=amount_paise, fee_bearer=event.platform_fee_bearer, organization=event.organization, participant_count=len(member_responses))
@@ -1748,7 +1798,7 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
         amount_paise = item["amount_paise"]
         pricing = item["pricing"]
         is_free = amount_paise == 0
-        confirmation_token = _confirmation_token()
+        confirmation_token = hashlib.sha256(f"waitlist-confirmation:{payload.waitlist_token}".encode()).hexdigest() if invitation is not None else _confirmation_token()
         claim_code = _claim_code() if user_id is None else None
         confirmation_tokens.append(confirmation_token)
         claim_codes.append(claim_code)
@@ -1826,6 +1876,12 @@ def create_guest_batch_registration(db: Session, payload, *, idempotency_key: st
             sum(reg.platform_fee_paise or 0 for reg in registrations)), event_order_id=order.id)
     else:
         sync_event_payment(db, order)
+    if invitation is not None:
+        invitation.registration_id = registrations[0].id
+        invitation.status = "confirmed" if registrations[0].status == "confirmed" else "booked"
+        invitation.payment_due_at = None
+        record_audit(db, actor_user_id=user_id, action="waitlist_redeemed", resource_type="waitlist_entry", resource_id=invitation.id,
+                     metadata={"registrationId": str(registrations[0].id), "waivePayment": invitation.waive_payment})
     db.commit()
     saved = _registrations_for_order(db, order.id)
     return saved, confirmation_tokens, claim_codes
@@ -1864,6 +1920,8 @@ def create_manual_registration(db: Session, user, payload, *, idempotency_key: s
     waiver_fields = _waiver_extra_fields(event)
     pickup_fields = _pickup_extra_fields(event)
     raw_member_responses = [member.responses for member in payload.participants] if payload.participants else [payload.responses]
+    if _capacity_used(db, event.id) + len(raw_member_responses) > event.max_participants:
+        raise ValueError("Event participant capacity is full")
     get_adapter(event.category).validate_registration(ticket.category, len(raw_member_responses))
     shared_email, shared_phone = _resolve_shared_contact(
         getattr(payload, "email", None),

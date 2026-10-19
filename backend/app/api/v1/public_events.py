@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, selectinload, object_session
 
 from db import get_db
 from models import Event, EventCategory, Ticket
@@ -18,6 +18,8 @@ from app.services.registration_config_service import normalize_event_configs
 from app.services.media_service import resolve_media_url
 from app.services.match_service import list_public_match_results
 from app.services.platform_fee_service import get_effective_pricing, get_or_create_config
+from app.services.waitlist_service import enabled, accepting, is_full
+from app.services.registration_service import _capacity_used
 
 router = APIRouter()
 
@@ -40,6 +42,8 @@ def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: in
         fee_maximum_paise = pricing["maximumFeePaise"]
         fee_fixed_paise = pricing["fixedFeePaise"] or 0
     tickets = list(event.tickets)
+    session = object_session(event)
+    remaining = max(0, event.max_participants - _capacity_used(session, event.id)) if session else event.max_participants
     if event.categories:
         ordered_tickets = []
         for category in event.categories:
@@ -54,7 +58,7 @@ def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: in
             "name": f"{category_name} · {ticket.name}" if category_name else ticket.name,
             "price": ticket.price // 100 if ticket.currency == "INR" else ticket.price,
             "description": ticket.description,
-            "available": ticket.available,
+            "available": min(ticket.available, remaining // max(1, category.participants_per_entry if category else 1)),
             "entryType": category.entry_type if category is not None else "singles",
             "participantsPerEntry": category.participants_per_entry if category is not None else 1,
             "teamSizeMin": category.team_size_min if category is not None else None,
@@ -75,6 +79,8 @@ def _public_event(event: Event, storage=None, *, fee_percentage_basis_points: in
         "location": event.location,
         "locationDetails": event.locationDetails,
         "category": event.category,
+        "waitlistEnabled": enabled(event),
+        "waitlistOpen": enabled(event) and accepting(event) and bool(object_session(event)) and is_full(object_session(event), event),
         "image": resolve_media_url(event.banner_url, storage, get_settings().storage_signed_url_ttl_seconds) or "/placeholder.svg",
         "description": event.description,
         "distance": event.distance,

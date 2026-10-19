@@ -24,6 +24,7 @@ from models import (
     Payment,
     RaceResult,
     Registration,
+    WaitlistEntry,
     RegistrationParticipant,
     Refund,
     TeamMatchScoring,
@@ -117,6 +118,7 @@ def delete_archived_event(db: Session, event: Event, actor_user_id: UUID) -> Non
     db.execute(delete(RaceResult).where(RaceResult.event_id == event.id))
 
     # --- Registrations ---
+    db.execute(delete(WaitlistEntry).where(WaitlistEntry.event_id == event.id))
     db.execute(delete(Registration).where(Registration.event_id == event.id))
 
     # --- Category/ticket layer (registrations already gone) ---

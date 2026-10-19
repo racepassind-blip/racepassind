@@ -10,7 +10,7 @@ from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -40,7 +40,10 @@ from app.services.registration_service import (
     create_manual_registration,
     pickup_point_summary,
     transfer_registration_category,
+    list_waitlist,
+    promote_waitlist_entry,
 )
+from app.services.email_service import send_registration_confirmation
 from app.services.image_validation import ImageValidationError
 from app.services.media_service import resolve_media_url, upload_media
 from app.services.storage_service import StorageError, StorageMetadata
@@ -49,6 +52,49 @@ from db import get_db
 from models import CreditTopupRequest, CreditTransaction, Event, Organization, OrganizationMember, OrganizationVerificationDocument, OrganizationVerificationSubmission, Registration, User
 
 router = APIRouter()
+
+
+@router.get("/events/{event_id}/waitlist")
+def organizer_waitlist(event_id: UUID, user: User = Depends(require_roles("organizer", "admin")), db: Session = Depends(get_db)) -> dict:
+    entries = list_waitlist(db, user, event_id)
+    return {"items": [{"id": str(item.id), "name": item.name, "email": item.email, "phone": item.phone, "position": item.position, "status": item.status, "registrationId": str(item.registration_id) if item.registration_id else None, "promotedAt": item.promoted_at, "paymentDueAt": item.payment_due_at, "waivePayment": item.waive_payment, "emailSent": item.offer_email_sent if item.status == "offered" else item.joined_email_sent} for item in entries]}
+
+
+class WaitlistPromotionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    waive_payment: bool = False
+
+
+@router.post("/waitlist/{entry_id}/cancel")
+def organizer_cancel_waitlist(entry_id: UUID, user: User = Depends(require_roles("organizer", "admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)):
+    from models import WaitlistEntry, Ticket
+    entry = db.get(WaitlistEntry, entry_id)
+    if entry is None:
+        raise HTTPException(404, "Waiting list entry not found")
+    get_authorized_event(db, user, entry.event_id)
+    db.scalar(select(Event).where(Event.id == entry.event_id).with_for_update())
+    db.refresh(entry)
+    if entry.status == "cancelled":
+        return {"status": entry.status}
+    if entry.status not in {"waiting", "offered"}:
+        raise HTTPException(409, "Manage completed checkouts from registrations")
+    if entry.status == "offered":
+        ticket = db.scalar(select(Ticket).where(Ticket.id == entry.ticket_id).with_for_update())
+        ticket.quantity_reserved = max(0, ticket.quantity_reserved - 1)
+    entry.status = "cancelled"
+    record_audit(db, actor_user_id=user.id, action="waitlist_cancelled", resource_type="waitlist_entry", resource_id=entry.id)
+    db.commit()
+    return {"status": entry.status}
+
+
+@router.post("/waitlist/{entry_id}/promote")
+def organizer_promote_waitlist(entry_id: UUID, payload: WaitlistPromotionIn, user: User = Depends(require_roles("organizer", "admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    try:
+        entry = promote_waitlist_entry(db, user, entry_id, waive_payment=payload.waive_payment)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return {"waitlistEntryId": str(entry.id), "status": entry.status, "expiresAt": entry.payment_due_at, "waivePayment": entry.waive_payment, "emailStatus": "queued"}
 
 VERIFICATION_DOCUMENT_TYPES = {
     "BUSINESS_REGISTRATION", "GST_CERTIFICATE", "UDYAM_CERTIFICATE",

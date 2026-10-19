@@ -9,6 +9,7 @@ import { computeSportPassFeePaise, formatPaise } from "@/lib/platform-fee";
 import { useEvent, usePublicEventAnnouncements, usePublicEventResults } from "@/hooks/useEvents";
 import { usePublicNumberList } from "@/hooks/useAllocations";
 import { usePublicRaceResults } from "@/hooks/useRaceTimeResults";
+import { apiRequest } from "@/lib/api";
 import { createWhatsAppUrl, WHATSAPP_MESSAGES } from "@/lib/whatsapp";
 import { EventNavigation } from "@/components/EventNavigation";
 import {
@@ -72,6 +73,11 @@ const EventDetail = () => {
   const navigate = useNavigate();
   const { data: event, isLoading, isError } = useEvent(id);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [waitlistName, setWaitlistName] = useState("");
+  const [waitlistEmail, setWaitlistEmail] = useState("");
+  const [waitlistTicket, setWaitlistTicket] = useState("");
+  const [waitlistMessage, setWaitlistMessage] = useState("");
+  const [joiningWaitlist, setJoiningWaitlist] = useState(false);
   const eventSportConfig = getSportConfig(event?.category);
   const publicNumbers = usePublicNumberList(id ?? "", Boolean(event) && eventSportConfig.numberEnabled && Boolean(event?.operationalFeatures?.bibNumbersEnabled));
   const publicMatchResults = usePublicEventResults(id, Boolean(event) && eventSportConfig.result_type === "match_score" && Boolean(event?.operationalFeatures?.resultsEnabled));
@@ -118,6 +124,22 @@ const EventDetail = () => {
     0
   );
   const totalTickets = Object.values(quantities).reduce((a, b) => a + b, 0);
+  const joinWaitlist = async () => {
+    if (!waitlistName.trim() || !waitlistEmail.trim()) return;
+    setJoiningWaitlist(true);
+    setWaitlistMessage("");
+    try {
+      const result = await apiRequest<{ position: number; status: string }>("/waitlist", {
+        method: "POST",
+        body: JSON.stringify({ event_id: event.id, ticket_id: waitlistTicket || event.tiers[0]?.id, name: waitlistName.trim(), email: waitlistEmail.trim() }),
+      });
+      setWaitlistMessage(`Your waiting list number is #${result.position}. Status: ${result.status}. No payment has been collected. ${result.status === "waiting" ? "Your confirmation email is queued." : "Check your email for any invitation."}`);
+    } catch (error) {
+      setWaitlistMessage(error instanceof Error ? error.message : "Unable to join the waiting list.");
+    } finally {
+      setJoiningWaitlist(false);
+    }
+  };
 
   // SportPass fee preview. When the participant bears the fee, it is added per
   // paid registration (one ticket unit = one registration). Free entries (₹0) never accrue a fee.
@@ -372,6 +394,15 @@ const EventDetail = () => {
                 <Button className="h-auto min-h-12 w-full whitespace-normal px-3 py-3 text-base" size="lg" disabled={registrationClosed || totalTickets === 0 || totalTickets > MAX_TICKETS_PER_TRANSACTION} onClick={continueToRegistration}>
                   {registrationClosed ? "Registration closed" : totalTickets === 0 ? "Select an entry to continue" : <>Continue to registration <ArrowRight className="h-4 w-4" /></>}
                 </Button>
+                {event.waitlistEnabled && event.waitlistOpen && !registrationClosed && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                  <p className="font-semibold">This event is full</p><p className="mt-1">Join the waiting list and we’ll contact you if a place opens.</p>
+                  <form className="mt-3 grid gap-2" onSubmit={(e) => { e.preventDefault(); void joinWaitlist(); }}>
+                    <label>Ticket<select className="block w-full rounded-md border px-3 py-2" value={waitlistTicket || event.tiers[0]?.id} onChange={(e) => setWaitlistTicket(e.target.value)}>{event.tiers.map((tier) => <option key={tier.id} value={tier.id}>{tier.name}</option>)}</select></label>
+                    <label>Full name<input required minLength={2} maxLength={160} className="block w-full rounded-md border px-3 py-2" value={waitlistName} onChange={(e) => setWaitlistName(e.target.value)} /></label>
+                    <label>Email address<input required maxLength={320} className="block w-full rounded-md border px-3 py-2" type="email" value={waitlistEmail} onChange={(e) => setWaitlistEmail(e.target.value)} /></label>
+                    <Button type="submit" variant="outline" disabled={joiningWaitlist}>{joiningWaitlist ? "Joining…" : "Join waiting list"}</Button>{waitlistMessage && <p role="status" className="text-xs">{waitlistMessage}</p>}
+                  </form>
+                </div>}
                 {!registrationClosed && <p className="text-center text-xs leading-5 text-muted-foreground">You can review participant details and the final amount before payment.</p>}
 
               </div>

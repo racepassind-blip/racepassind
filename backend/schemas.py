@@ -36,6 +36,8 @@ class EventOut(BaseModel):
     distance: str
     participants: int
     maxParticipants: int
+    waitlistEnabled: bool = False
+    waitlistOpen: bool = False
     organizer: str
     rules: list[str]
     schedule: list[dict[str, str]]

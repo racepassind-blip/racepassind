@@ -129,7 +129,11 @@ const Checkout = () => {
   const { data: event, isLoading, isError } = useEvent(eventId);
   const participantLabel = getSportConfig(event?.category).participant_label;
   const steps = ["Tickets", `${participantLabel} details`, event?.paymentCollectionMethod === "CASHFREE_MANAGED" ? "Online Payment" : "UPI Payment"];
-  const [cart] = useState<CartLine[]>(() => readCart(eventId, tierId));
+  const [waitlistToken] = useState(() => new URLSearchParams((location.hash ?? "").slice(1)).get("waitlist") || sessionStorage.getItem(`sportpass_waitlist_token_${eventId}`));
+  const [offer, setOffer] = useState<{ email: string; name: string; expiresAt: string; waivePayment: boolean } | null>(null);
+  const [offerError, setOfferError] = useState("");
+  const [offerLoading, setOfferLoading] = useState(Boolean(waitlistToken));
+  const [cart, setCart] = useState<CartLine[]>(() => waitlistToken ? [] : readCart(eventId, tierId));
   const [riders, setRiders] = useState<RiderDraft[]>([]);
   const [activeRiderIndex, setActiveRiderIndex] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
@@ -144,6 +148,36 @@ const Checkout = () => {
   // failure. A new key could create a second booking if the first request was
   // committed but its response did not reach the browser.
   const registrationRequestKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!waitlistToken || !eventId) return;
+    let cancelled = false;
+    if (sessionStorage.getItem(`sportpass_waitlist_token_${eventId}`) !== waitlistToken) {
+      sessionStorage.removeItem(`sportpass_waitlist_booking_${eventId}`);
+    }
+    sessionStorage.setItem(`sportpass_waitlist_token_${eventId}`, waitlistToken);
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    const saved = sessionStorage.getItem(`sportpass_waitlist_booking_${eventId}`);
+    if (saved) {
+      try { setRegistration(JSON.parse(saved)); setCurrentStep(2); setOfferLoading(false); return; } catch { /* Reload the invitation. */ }
+    }
+    void apiRequest<{ eventId: string; ticketId: string; email: string; name: string; expiresAt: string; waivePayment: boolean; registration?: BatchRegistrationResponse }>("/waitlist/offer", {
+      method: "POST", body: JSON.stringify({ token: waitlistToken }),
+    }).then((result) => {
+      if (cancelled) return;
+      if (result.eventId !== eventId) throw new Error("This invitation belongs to another event.");
+      if (result.registration) {
+        setRegistration(result.registration);
+        setCurrentStep(2);
+        if (result.registration.paymentCollectionMethod === "CASHFREE_MANAGED") sessionStorage.setItem(`sportpass_cashfree_checkout_${eventId}`, JSON.stringify(result.registration));
+        return;
+      }
+      setOffer(result);
+      setCart([{ ticketId: result.ticketId, quantity: 1 }]);
+    }).catch((error) => { if (!cancelled) setOfferError(error instanceof Error ? error.message : "Unable to load invitation"); })
+      .finally(() => { if (!cancelled) setOfferLoading(false); });
+    return () => { cancelled = true; };
+  }, [waitlistToken, eventId]);
 
   useEffect(() => {
     if (!eventId || !new URLSearchParams(location.search).has("cashfree_return")) return;
@@ -256,7 +290,7 @@ const Checkout = () => {
     }, 0);
     return (tier?.price ?? 0) * 100 + addonTotal;
   }), [addons, entryGroups, event]);
-  const totalPaise = useMemo(() => entryBasePaise.reduce((sum, value) => sum + value, 0), [entryBasePaise]);
+  const totalPaise = useMemo(() => offer?.waivePayment ? 0 : entryBasePaise.reduce((sum, value) => sum + value, 0), [entryBasePaise, offer?.waivePayment]);
 
   // SportPass fee preview (one entry = one paid registration).
   const feeConfig = {
@@ -266,8 +300,8 @@ const Checkout = () => {
   };
   const participantBearsFee = event?.platformFeeBearer === "PARTICIPANT";
   const sportPassFeePaise = useMemo(
-    () => entryBasePaise.reduce((sum, base) => sum + computeSportPassFeePaise(base, feeConfig), 0),
-    [entryBasePaise, feeConfig.percentageBasisPoints, feeConfig.minimumFeePaise, feeConfig.maximumFeePaise],
+    () => offer?.waivePayment ? 0 : entryBasePaise.reduce((sum, base) => sum + computeSportPassFeePaise(base, feeConfig), 0),
+    [entryBasePaise, feeConfig.percentageBasisPoints, feeConfig.minimumFeePaise, feeConfig.maximumFeePaise, offer?.waivePayment],
   );
   const participantTotalPreviewPaise = totalPaise + (participantBearsFee ? sportPassFeePaise : 0);
 
@@ -281,13 +315,13 @@ const Checkout = () => {
       for (let entryIndex = 0; entryIndex < line.quantity; entryIndex += 1) {
         const entryKey = `${lineIndex}-${line.ticketId}-entry-${entryIndex}`;
         for (let participantIndex = 0; participantIndex < initialMembers; participantIndex += 1) {
-          const responses: Record<string, ResponseValue> = {};
+          const responses: Record<string, ResponseValue> = offer ? { full_name: offer.name, email: offer.email } : {};
           nextRiders.push({ key: `${entryKey}-member-${participantIndex}`, entryKey, participantIndex, ticketId: line.ticketId, responses, selections: {} });
         }
       }
     });
     setRiders(nextRiders);
-  }, [cart, event, riders.length]);
+  }, [cart, event, riders.length, offer]);
 
   // Signed-in participants should not have to retype their account details.
   // Only prefill the first entry/member; teammates and additional entries
@@ -495,7 +529,8 @@ const Checkout = () => {
       <Button className="mt-5" onClick={() => navigate("/dashboard/registrations")}>View my registrations</Button>
     </div></main></Layout>
   );
-  if (isLoading) return <Layout><div className="py-20 text-center text-muted-foreground">Loading event…</div></Layout>;
+  if (offerError) return <Layout><div role="alert" className="mx-auto max-w-xl p-8">{offerError}</div></Layout>;
+  if (isLoading || offerLoading) return <Layout><div className="py-20 text-center text-muted-foreground">Loading event…</div></Layout>;
   if (isError || !event || (selectedTiers.length === 0 && !registration)) return <Layout><div className="py-20 text-center text-muted-foreground">Event or ticket selection not found.</div></Layout>;
   if (event.registrationStatus === "closed" && !registration) return <Layout><div className="mx-auto max-w-2xl px-4 py-20 text-center"><h1 className="text-2xl font-extrabold">Registration is closed</h1><p className="mt-3 text-muted-foreground">The organizer is not accepting new responses for {event.title}.</p><Button className="mt-6" onClick={() => navigate(`/event/${event.id}`)}>Back to event</Button></div></Layout>;
 
@@ -527,6 +562,7 @@ const Checkout = () => {
         headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({
           event_id: eventId,
+          waitlist_token: waitlistToken || undefined,
           attribution: (() => {
             try {
               const raw = sessionStorage.getItem("sportpass_utm");
@@ -567,6 +603,7 @@ const Checkout = () => {
       });
       registrationRequestKeyRef.current = null;
       setRegistration(result);
+      if (waitlistToken) sessionStorage.setItem(`sportpass_waitlist_booking_${eventId}`, JSON.stringify(result));
       if (result.paymentCollectionMethod === "CASHFREE_MANAGED" && eventId) {
         sessionStorage.setItem(`sportpass_cashfree_checkout_${eventId}`, JSON.stringify(result));
       }
@@ -873,6 +910,7 @@ const Checkout = () => {
         <header className="mb-4">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-semibold text-primary">Step {Math.min(currentStep + 1, steps.length)} of {totalPaise === 0 ? 2 : steps.length}</p>
+            {offer && !registration && <p role="status" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Your place is held until {new Date(offer.expiresAt).toLocaleString()}. Complete the required details before then. {offer.waivePayment ? "The organizer has waived all payment for this invitation." : "Payment follows after your details are submitted."}</p>}
             <p className="text-sm font-semibold">{formatPaise(registration ? chargedPaise : participantTotalPreviewPaise)}</p>
           </div>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">{stepHeading}</h1>
