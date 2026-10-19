@@ -189,13 +189,43 @@ def send_notifications(db, entry):
             setattr(entry, flag, True)
             db.commit()
             continue
-        subject = f"Waiting list #{entry.position} — {event.name}"
-        body = f"Hi {entry.name},\n\nAll tickets are currently full. Your waiting list number is #{entry.position}. No payment has been collected. A place is not guaranteed.\n"
+        subject = f"Waiting list confirmation — {event.name}"
+        event_date = event.start_date.strftime("%d %B %Y") if event.start_date else "To be announced"
+        location = ", ".join(value for value in (event.location_name, event.city, event.state) if value) or "To be announced"
+        body = (
+            f"Dear {entry.name},\n\n"
+            f"Thank you for your interest in {event.name}. We have added you to the waiting list.\n\n"
+            f"Event: {event.name}\n"
+            f"Date: {event_date}\n"
+            f"Location: {location}\n"
+            f"Waiting list number: #{entry.position}\n\n"
+            "All places are currently filled. No payment has been collected, and joining the waiting list does not guarantee a place. "
+            "If a place becomes available, we will send you a separate email with instructions and a limited time to complete registration.\n\n"
+            "Please do not make any payment unless you receive an official invitation from SportPass India.\n\n"
+            "Regards,\nSportPass India\n"
+        )
         if kind == "offer":
             url = f"{get_settings().frontend_origins[0].rstrip('/')}/checkout/{event.id}#waitlist={token_for(entry)}"
-            subject = f"Your reserved place — {event.name}"
-            payment = "The organizer has waived payment, including add-ons." if entry.waive_payment else "Complete the required details, then pay the normal ticket price and any selected extras. Free tickets need no payment."
-            body = f"Hi {entry.name},\n\nA place is reserved until {aware(entry.payment_due_at).isoformat()}. Open this private invitation before it expires:\n{url}\n\n{payment}\nYour place is confirmed only after checkout and any required payment. Do not forward this link."
+            subject = f"Your place is available — {event.name}"
+            event_date = event.start_date.strftime("%d %B %Y") if event.start_date else "To be announced"
+            location = ", ".join(value for value in (event.location_name, event.city, event.state) if value) or "To be announced"
+            expiry = aware(entry.payment_due_at).strftime("%d %B %Y at %H:%M UTC")
+            payment = "Payment has been waived by the organizer, including add-ons." if entry.waive_payment else "Complete the required details, then pay the normal ticket price and any selected extras. Free tickets do not require payment."
+            body = (
+                f"Dear {entry.name},\n\n"
+                f"Good news — a place has become available for you at {event.name}.\n\n"
+                f"Event: {event.name}\n"
+                f"Date: {event_date}\n"
+                f"Location: {location}\n"
+                f"Invitation expires: {expiry}\n\n"
+                "Complete your registration using the secure link below:\n"
+                f"{url}\n\n"
+                f"{payment}\n"
+                "Your place will be confirmed only after checkout is completed and any required payment is verified.\n\n"
+                "IMPORTANT: This invitation link is private and can be used only for your registration. Do not forward, share, or publish it. "
+                "If someone else uses the link first, your reserved place may be lost.\n\n"
+                "Regards,\nSportPass India\n"
+            )
         result = send_email(db, recipient=entry.email, subject=subject, body=body, email_type=f"WAITLIST_{kind.upper()}",
                             reference_type=reference, reference_id=str(entry.id), event_id=event.id)
         if result.success:

@@ -1,7 +1,7 @@
 import { MAX_TICKETS_PER_TRANSACTION } from "@/lib/registration-limits";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Download, Plus, RefreshCw, Shield, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, Copy, Download, Plus, RefreshCw, Shield, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Layout } from "@/components/Layout";
@@ -910,11 +910,20 @@ const Checkout = () => {
         <header className="mb-4">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-semibold text-primary">Step {Math.min(currentStep + 1, steps.length)} of {totalPaise === 0 ? 2 : steps.length}</p>
-            {offer && !registration && <p role="status" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Your place is held until {new Date(offer.expiresAt).toLocaleString()}. Complete the required details before then. {offer.waivePayment ? "The organizer has waived all payment for this invitation." : "Payment follows after your details are submitted."}</p>}
-            <p className="text-sm font-semibold">{formatPaise(registration ? chargedPaise : participantTotalPreviewPaise)}</p>
+            <p className="shrink-0 text-sm font-bold tabular-nums text-foreground">{formatPaise(registration ? chargedPaise : participantTotalPreviewPaise)}</p>
           </div>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">{stepHeading}</h1>
           <p className="mt-2 hidden text-sm text-muted-foreground sm:block">{stepDescription}</p>
+          {offer && !registration && <div role="status" className="mt-4 overflow-hidden rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 shadow-sm sm:mt-5">
+            <div className="flex items-start gap-3 border-b border-orange-200/70 px-4 py-4 sm:px-5">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-500 text-white sm:h-9 sm:w-9"><Clock3 className="h-4 w-4 sm:h-5 sm:w-5" /></span>
+              <div className="min-w-0"><p className="font-bold text-orange-950">Your place is reserved</p><p className="mt-1 text-sm leading-5 text-orange-900/80">Complete the participant details before the reservation expires.</p></div>
+            </div>
+            <div className="grid gap-3 px-4 py-3.5 text-sm sm:grid-cols-2 sm:px-5 sm:py-4">
+              <div><p className="text-xs font-semibold uppercase tracking-wide text-orange-900/60">Reservation expires</p><p className="mt-1 font-bold text-orange-950">{new Date(offer.expiresAt).toLocaleString()}</p></div>
+              <div><p className="text-xs font-semibold uppercase tracking-wide text-orange-900/60">Payment</p><p className="mt-1 font-bold text-orange-950">{offer.waivePayment ? "Waived by the organizer" : "Pay after details are submitted"}</p></div>
+            </div>
+          </div>}
           <details className="mt-2 text-sm">
             <summary className="cursor-pointer py-2 text-muted-foreground">{totalTickets} {totalTickets === 1 ? "entry" : "entries"} · View booking</summary>
             <div className="mt-1 rounded-lg border bg-card p-3">

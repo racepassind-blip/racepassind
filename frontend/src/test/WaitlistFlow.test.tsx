@@ -22,7 +22,7 @@ afterEach(cleanup);
 it("loads a reserved sold-out ticket and explains a waived invitation", async () => {
   vi.mocked(apiRequest).mockResolvedValue({ eventId: "event", ticketId: "ticket", name: "Walker", email: "walker@example.test", expiresAt: "2026-10-19T14:00:00Z", waivePayment: true });
   render(<Checkout />);
-  expect(await screen.findByText(/organizer has waived all payment/i)).toBeInTheDocument();
+  expect(await screen.findByText(/waived by the organizer/i)).toBeInTheDocument();
   expect(apiRequest).toHaveBeenCalledWith("/waitlist/offer", expect.objectContaining({ method: "POST", body: JSON.stringify({ token: "private-invitation-token" }) }));
   expect(screen.queryByText("Event or ticket selection not found.")).not.toBeInTheDocument();
 });
