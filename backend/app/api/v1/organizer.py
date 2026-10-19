@@ -49,7 +49,7 @@ from app.services.media_service import resolve_media_url, upload_media
 from app.services.storage_service import StorageError, StorageMetadata
 from app.services.audit_service import record_audit
 from db import get_db
-from models import CreditTopupRequest, CreditTransaction, Event, Organization, OrganizationMember, OrganizationVerificationDocument, OrganizationVerificationSubmission, Registration, User
+from models import CreditTopupRequest, CreditTransaction, EmailLog, Event, Organization, OrganizationMember, OrganizationVerificationDocument, OrganizationVerificationSubmission, Registration, User, WaitlistEntry
 
 router = APIRouter()
 
@@ -57,7 +57,9 @@ router = APIRouter()
 @router.get("/events/{event_id}/waitlist")
 def organizer_waitlist(event_id: UUID, user: User = Depends(require_roles("organizer", "admin")), db: Session = Depends(get_db)) -> dict:
     entries = list_waitlist(db, user, event_id)
-    return {"items": [{"id": str(item.id), "name": item.name, "email": item.email, "phone": item.phone, "position": item.position, "status": item.status, "registrationId": str(item.registration_id) if item.registration_id else None, "promotedAt": item.promoted_at, "paymentDueAt": item.payment_due_at, "waivePayment": item.waive_payment, "emailSent": item.offer_email_sent if item.status == "offered" else item.joined_email_sent} for item in entries]}
+    ids = [str(item.id) for item in entries]
+    sent_refs = set(db.scalars(select(EmailLog.reference_id).where(EmailLog.reference_type.in_(("waitlist_joined", "waitlist_offer")), EmailLog.reference_id.in_(ids), EmailLog.status == "sent")).all()) if ids else set()
+    return {"items": [{"id": str(item.id), "name": item.name, "email": item.email, "phone": item.phone, "position": item.position, "status": item.status, "registrationId": str(item.registration_id) if item.registration_id else None, "promotedAt": item.promoted_at, "paymentDueAt": item.payment_due_at, "waivePayment": item.waive_payment, "emailSent": str(item.id) in sent_refs or (item.offer_email_sent if item.status == "offered" else item.joined_email_sent)} for item in entries]}
 
 
 class WaitlistPromotionIn(BaseModel):
