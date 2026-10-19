@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
+import { OrganizerWaitlist } from "@/components/OrganizerWaitlist";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -932,6 +933,8 @@ const OrganizerRegistrations = () => {
             </div>
           </div>
         </section>
+
+        {eventScoped && <OrganizerWaitlist eventId={filters.eventId} />}
 
         {eventsError && <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{eventsError}</div>}
         <div className="space-y-3 rounded-xl border bg-card p-3 shadow-sm sm:space-y-4 sm:rounded-2xl sm:p-5">

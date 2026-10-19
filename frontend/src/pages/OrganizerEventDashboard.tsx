@@ -17,7 +17,6 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useOrganizerEventDashboard, useOrganizerEventOptions } from "@/hooks/useEvents";
 import { apiRequest } from "@/lib/api";
-import { OrganizerWaitlist } from "@/components/OrganizerWaitlist";
 import { eventSupportsTournament, getSportConfig } from "@/data/sportConfig";
 import { buildResultsUrl } from "@/lib/eventCommunication";
 
@@ -229,7 +228,6 @@ const OrganizerEventDashboard = () => {
           <Card><CardContent className="p-3 sm:p-5"><div className="flex items-start justify-between gap-1"><p className="text-xs font-medium leading-4 text-muted-foreground sm:text-sm">Check-in</p><ScanLine className="h-4 w-4 shrink-0 text-violet-600 sm:h-5 sm:w-5" /></div><p className="mt-2 text-2xl font-black sm:mt-3 sm:text-3xl">{overview.checkInRate}%</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground sm:text-xs">{registrations.checkedIn} of {registrations.confirmed} scanned</p></CardContent></Card>
         </div>
 
-        <OrganizerWaitlist eventId={event.id} />
         <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
           <Card>
             <CardHeader className="flex-row items-start justify-between space-y-0"><div><CardTitle>Registrations by category</CardTitle><CardDescription>Confirmed participant quantity against each category capacity.</CardDescription></div><Users className="h-5 w-5 text-muted-foreground" /></CardHeader>
