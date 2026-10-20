@@ -648,7 +648,12 @@ def send_registration_confirmation(
             and registration.status not in {"confirmed", "checked_in"}):
         return SendEmailResult(False, "SKIPPED", "Cashfree payment is not confirmed")
 
-    content = build_registration_confirmation_content(db, registration)
+    try:
+        content = build_registration_confirmation_content(db, registration)
+    except (RuntimeError, ValueError) as exc:
+        registration.email_status = "FAILED"
+        db.commit()
+        return SendEmailResult(False, "FAILED", str(exc))
 
     if content["recipient"] is None:
         # No email to send to - mark as failed with invalid recipient

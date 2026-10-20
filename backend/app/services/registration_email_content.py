@@ -15,9 +15,11 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.services.auth_service import hash_opaque_token
 from app.services.ticket_bundle_pdf_service import build_ticket_bundle_pdf
 from app.services.ticket_pdf_service import build_ticket_pdf
 from app.services.ticket_service import verified_ticket_qr_payload
+from app.services.ticket_service import ticket_token_for_registration
 from models import Event, Registration
 
 
@@ -151,6 +153,19 @@ def build_registration_confirmation_content(
     # Build the ticket PDF attachment (best-effort; skip if not available yet)
     attachments: list[tuple[str, bytes]] = []
     if event is not None:
+        # Older confirmed registrations may predate ticket_token_hash. The
+        # ticket credential is deterministic from the confirmation credential,
+        # so repair the stored hash before building a resend PDF.
+        if is_confirmed:
+            try:
+                expected_ticket_hash = hash_opaque_token(ticket_token_for_registration(registration))
+                if registration.ticket_token_hash != expected_ticket_hash:
+                    registration.ticket_token_hash = expected_ticket_hash
+                    db.flush()
+            except (RuntimeError, ValueError):
+                # The guarded PDF path below will produce the safe, explicit
+                # failure if the signing configuration or credential is absent.
+                pass
         try:
             qr_payload = verified_ticket_qr_payload(registration)
             if qr_payload is not None:
