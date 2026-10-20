@@ -735,6 +735,10 @@ const Checkout = () => {
     ?? registration?.amountPaise
     ?? participantTotalPreviewPaise;
   const totalRupees = chargedPaise / 100;
+  const savedEntries = registration?.registrations?.length ? registration.registrations : registration ? [registration] : [];
+  const entryCount = registration ? savedEntries.length : totalTickets;
+  const paymentRequired = (registration ? chargedPaise : totalPaise) > 0;
+  const progressLabels = paymentRequired ? ["Tickets", "Details", "Payment"] : ["Tickets", "Details"];
   const stepHeading = registration
     ? registration.paymentCollectionMethod === "CASHFREE_MANAGED" ? "Complete secure payment" : "Pay by UPI"
     : currentStep === 0 ? "Review your booking" : `${participantLabel} details`;
@@ -934,7 +938,7 @@ const Checkout = () => {
         <button onClick={() => (currentStep === 1 && usesParticipantWizard && activeRiderIndex > 0 ? setActiveRiderIndex(activeRiderIndex - 1) : currentStep > 0 && !registration ? setCurrentStep(currentStep - 1) : navigate(`/event/${event.id}`))} className="mb-2 flex min-h-10 items-center gap-1 text-sm text-muted-foreground hover:text-foreground sm:mb-6"><ArrowLeft className="h-4 w-4" /> {currentStep > 0 && !registration ? "Previous step" : "Back to event"}</button>
         <header className="mb-4">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold text-primary">Step {Math.min(currentStep + 1, steps.length)} of {totalPaise === 0 ? 2 : steps.length}</p>
+            <p className="text-xs font-semibold text-primary">Step {Math.min(currentStep + 1, progressLabels.length)} of {progressLabels.length}</p>
             <p className="shrink-0 text-sm font-bold tabular-nums text-foreground">{formatPaise(registration ? chargedPaise : participantTotalPreviewPaise)}</p>
           </div>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">{stepHeading}</h1>
@@ -950,16 +954,16 @@ const Checkout = () => {
             </div>
           </div>}
           <details className="mt-2 text-sm">
-            <summary className="cursor-pointer py-2 text-muted-foreground">{totalTickets} {totalTickets === 1 ? "entry" : "entries"} · View booking</summary>
+            <summary className="cursor-pointer py-2 text-muted-foreground">{entryCount} {entryCount === 1 ? "entry" : "entries"} · View booking</summary>
             <div className="mt-1 rounded-lg border bg-card p-3">
               <p className="break-words font-medium">{event.title}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{event.date}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{event.date}{registration ? ` · ${entryCount} ${entryCount === 1 ? "ticket" : "tickets"}` : ""}</p>
             </div>
           </details>
         </header>
         <nav aria-label="Checkout progress" className="mb-5">
           <ol className="flex gap-2">
-            {(totalPaise === 0 ? ["Tickets", "Details"] : ["Tickets", "Details", "Payment"]).map((label, index) => (
+            {progressLabels.map((label, index) => (
               <li key={label} aria-current={index === currentStep ? "step" : undefined} className="min-w-0 flex-1">
                 <div className={`h-1 rounded-full ${index <= currentStep ? "bg-primary" : "bg-secondary"}`} />
                 <span className={`mt-1.5 block text-xs ${index === currentStep ? "font-bold text-foreground" : "text-muted-foreground"}`}>{index < currentStep ? "✓ " : ""}{label}</span>
@@ -1215,12 +1219,12 @@ const Checkout = () => {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Order summary</p>
                 <p className="mt-1 text-lg font-bold">{event.title}</p>
-                <div className="mt-3 flex items-center justify-between"><span className="text-sm text-muted-foreground">{totalTickets} {totalTickets === 1 ? "entry" : "entries"} · Total</span><span className="text-xl font-extrabold text-primary">{formatPaise(registration ? chargedPaise : participantTotalPreviewPaise)}</span></div>
+                <div className="mt-3 flex items-center justify-between"><span className="text-sm text-muted-foreground">{entryCount} {entryCount === 1 ? "entry" : "entries"} · Total</span><span className="text-xl font-extrabold text-primary">{formatPaise(registration ? chargedPaise : participantTotalPreviewPaise)}</span></div>
               </div>
               <details className="border-t pt-3">
                 <summary className="cursor-pointer text-sm font-medium">Ticket and pricing details</summary>
                 <div className="mt-3 space-y-3">
-                  {selectedTiers.map((tier) => {
+                  {registration ? savedEntries.map((saved) => <div key={saved.registrationReference} className="flex items-start justify-between gap-3 text-sm"><span>{saved.ticket?.name ?? "Registration"}{saved.ticket?.category ? ` · ${saved.ticket.category}` : ""}</span><span className="shrink-0 font-semibold">{formatPaise(saved.amountPaise ?? 0)}</span></div>) : selectedTiers.map((tier) => {
                     const quantity = cart.find((line) => line.ticketId === tier.id)?.quantity ?? 0;
                     return <div key={tier.id} className="flex items-start justify-between gap-3 text-sm"><span>{tier.name} × {quantity}</span><span className="shrink-0 font-semibold">{formatPaise(tier.price * quantity * 100)}</span></div>;
                   })}
