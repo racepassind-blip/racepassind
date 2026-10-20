@@ -9,6 +9,7 @@ from .cycling import adapter as cycling
 from .cricket import adapter as cricket
 from .trekking import adapter as trekking
 from .motorcycle import adapter as motorcycle
+from .other import adapter as other
 from .tournament import GameTournamentPolicy
 
 
@@ -45,6 +46,7 @@ for adapter in (badminton, table_tennis, running, cycling, cricket):
 # the canonical "trekking" key.
 registry.register(trekking, "hiking")
 registry.register(motorcycle)
+registry.register(other)
 # Existing generic game-scoring behavior is retained for tennis/squash.
 registry.register(SportAdapter(key="tennis", distance_required=False, supports_distance=False,
     supports_tournament=True, result_type="match_score", number_label="Player ID",

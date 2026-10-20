@@ -40,5 +40,6 @@ describe("sport policy isolation", () => {
   it("offers Table Tennis and Cricket", () => {
     expect(sportOptions.some(({ value }) => value === "table_tennis")).toBe(true);
     expect(sportOptions.some(({ value }) => value === "cricket")).toBe(true);
+  expect(sportOptions.some(({ value, label }) => value === "other" && label === "Others")).toBe(true);
   });
 });
