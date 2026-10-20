@@ -20,6 +20,20 @@ interface CommunicationSettings {
   gmail_api_configured: boolean;
 }
 
+interface AiLoadTestResult {
+  status: "idle" | "queued" | "running" | "cooldown" | "completed" | "failed";
+  stage: number;
+  stageTotal: number;
+  completed: number;
+  total: number;
+  successes: number;
+  failures: number;
+  stages?: Array<{ stage: number; concurrency: number; requests: number; successes: number; failures: number; average: number | null; maximum: number | null; p95: number | null; tokensPerSecond: number | null }>;
+  totalDuration?: number | null;
+  recommendation?: string | null;
+  error?: string | null;
+}
+
 const AdminCommunication = () => {
   const [settings, setSettings] = useState<CommunicationSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,6 +45,8 @@ const AdminCommunication = () => {
   const [testMessage, setTestMessage] = useState("");
   const [testingAi, setTestingAi] = useState(false);
   const [aiResult, setAiResult] = useState<{ success: boolean; response?: string; modelAvailable?: boolean; totalDuration?: number; modelLoadDuration?: number | null; detail?: string } | null>(null);
+  const [aiLoadTest, setAiLoadTest] = useState<AiLoadTestResult | null>(null);
+  const [startingLoadTest, setStartingLoadTest] = useState(false);
 
   const loadSettings = async () => {
     setLoading(true);
@@ -128,6 +144,32 @@ const AdminCommunication = () => {
       setAiResult({ success: false, detail: aiError instanceof Error ? aiError.message : "AI connectivity test failed." });
     } finally {
       setTestingAi(false);
+    }
+  };
+
+  const pollAiLoadTest = async () => {
+    try {
+      const result = await apiRequest<AiLoadTestResult>("/admin/communication/load-test-ai");
+      setAiLoadTest(result);
+      if (result.status === "queued" || result.status === "running" || result.status === "cooldown") {
+        window.setTimeout(() => void pollAiLoadTest(), 1500);
+      }
+    } catch (loadError) {
+      setAiLoadTest((previous) => previous ? { ...previous, status: "failed", error: loadError instanceof Error ? loadError.message : "Could not read load-test progress." } : null);
+    }
+  };
+
+  const handleStartAiLoadTest = async () => {
+    if (!window.confirm("This will temporarily put controlled load on the home AI server: up to 3 concurrent requests and 17 total requests, with 30-second pauses between stages. Start the load test?")) return;
+    setStartingLoadTest(true);
+    try {
+      const result = await apiRequest<AiLoadTestResult>("/admin/communication/load-test-ai", { method: "POST", timeoutMs: 15_000 });
+      setAiLoadTest(result);
+      window.setTimeout(() => void pollAiLoadTest(), 500);
+    } catch (loadError) {
+      setAiLoadTest({ status: "failed", stage: 0, stageTotal: 3, completed: 0, total: 17, successes: 0, failures: 0, error: loadError instanceof Error ? loadError.message : "Could not start load test." });
+    } finally {
+      setStartingLoadTest(false);
     }
   };
 
@@ -313,9 +355,14 @@ const AdminCommunication = () => {
                 <CardDescription className="mt-1">Run a safe connectivity proof-of-concept against the configured Ollama server. This does not use event or participant data.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Button onClick={() => void handleTestAi()} disabled={testingAi} className="gap-2">
-                  {testingAi ? <><RefreshCw className="h-4 w-4 animate-spin" /> Testing AI…</> : <><Bot className="h-4 w-4" /> Test AI</>}
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => void handleTestAi()} disabled={testingAi} className="gap-2">
+                    {testingAi ? <><RefreshCw className="h-4 w-4 animate-spin" /> Testing AI…</> : <><Bot className="h-4 w-4" /> Test AI</>}
+                  </Button>
+                  <Button variant="outline" onClick={() => void handleStartAiLoadTest()} disabled={startingLoadTest || ["queued", "running", "cooldown"].includes(aiLoadTest?.status ?? "idle")} className="gap-2">
+                    {startingLoadTest ? <><RefreshCw className="h-4 w-4 animate-spin" /> Starting…</> : <><Bot className="h-4 w-4" /> Load Test AI</>}
+                  </Button>
+                </div>
                 {aiResult && (
                   <div className={`rounded-lg p-4 text-sm ${aiResult.success ? "bg-emerald-500/10 text-emerald-700" : "bg-destructive/10 text-destructive"}`}>
                     {aiResult.success ? (
@@ -325,6 +372,19 @@ const AdminCommunication = () => {
                         <p className="mt-2 text-xs">Total response time: {aiResult.totalDuration?.toFixed(2)}s{aiResult.modelLoadDuration != null ? ` · Model load: ${aiResult.modelLoadDuration.toFixed(2)}s` : ""}</p>
                       </>
                     ) : <><p className="font-semibold">AI connection failed</p><p className="mt-1">{aiResult.detail}</p></>}
+                  </div>
+                )}
+                {aiLoadTest && aiLoadTest.status !== "idle" && (
+                  <div className="space-y-3 rounded-lg border p-4 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold">Load test: {aiLoadTest.status} · Stage {aiLoadTest.stage}/{aiLoadTest.stageTotal}</p>
+                      <span className="text-muted-foreground">{aiLoadTest.completed}/{aiLoadTest.total} requests · {aiLoadTest.successes} passed · {aiLoadTest.failures} failed</span>
+                    </div>
+                    {(aiLoadTest.status === "queued" || aiLoadTest.status === "running" || aiLoadTest.status === "cooldown") && <p className="text-muted-foreground">Controlled test in progress. Cooldown stages are intentional.</p>}
+                    {aiLoadTest.error && <p className="text-destructive">{aiLoadTest.error}</p>}
+                    {aiLoadTest.stages && aiLoadTest.stages.length > 0 && <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-xs"><thead className="border-b text-muted-foreground"><tr><th className="py-2">Stage</th><th>Concurrency</th><th>Success / Fail</th><th>Avg</th><th>Max</th><th>P95 exploratory</th><th>Tokens/s</th></tr></thead><tbody>{aiLoadTest.stages.map((stage) => <tr key={stage.stage} className="border-b last:border-0"><td className="py-2">{stage.stage}</td><td>{stage.concurrency}</td><td>{stage.successes} / {stage.failures}</td><td>{stage.average == null ? "—" : `${stage.average.toFixed(2)}s`}</td><td>{stage.maximum == null ? "—" : `${stage.maximum.toFixed(2)}s`}</td><td>{stage.p95 == null ? "—" : `${stage.p95.toFixed(2)}s`}</td><td>{stage.tokensPerSecond == null ? "—" : stage.tokensPerSecond.toFixed(1)}</td></tr>)}</tbody></table></div>}
+                    {aiLoadTest.status === "completed" && <p className="font-medium text-emerald-700">Estimated recommendation: maximum concurrency {aiLoadTest.recommendation}. Based on this small measurement; not a capacity guarantee.</p>}
+                    {aiLoadTest.totalDuration != null && <p className="text-xs text-muted-foreground">Total test duration: {aiLoadTest.totalDuration.toFixed(1)}s</p>}
                   </div>
                 )}
               </CardContent>

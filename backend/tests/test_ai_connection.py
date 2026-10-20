@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import requests
+from app.services.ai_load_test import recommendation
 
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "test_ai_connection.py"
@@ -78,3 +79,9 @@ def test_timeout_is_reported():
 
     with pytest.raises(module.DiagnosticError, match="timeout"):
         module.run_diagnostic(config(), TimeoutSession())
+
+
+def test_load_test_recommendation_uses_only_fully_successful_stages():
+    assert recommendation([{"concurrency": 1, "failures": 0, "p95": 1.0}, {"concurrency": 2, "failures": 1, "p95": 2.0}]) == "1 request"
+    assert recommendation([{"concurrency": 1, "failures": 0, "p95": 1.0}, {"concurrency": 2, "failures": 0, "p95": 2.0}]) == "1–2 concurrent requests"
+    assert recommendation([{"concurrency": 1, "failures": 1, "p95": None}]) == "No safe concurrency measured"

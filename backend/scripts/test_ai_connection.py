@@ -137,6 +137,34 @@ def run_diagnostic(config: Config, session: requests.Session | Any = requests) -
     }
 
 
+def generate_prompt(config: Config, prompt: str, session: requests.Session | Any = requests) -> dict[str, Any]:
+    """Generate one synthetic prompt and return only safe timing/count metrics."""
+    started = time.perf_counter()
+    try:
+        response = session.post(
+            urljoin(config.url, "api/generate"),
+            headers={**config.headers, "Content-Type": "application/json"},
+            json={"model": config.model, "prompt": prompt, "stream": False,
+                  "options": {"temperature": 0.2, "num_ctx": 512, "num_predict": 60}},
+            timeout=TIMEOUT,
+        )
+    except requests.exceptions.Timeout as exc:
+        raise DiagnosticError("/api/generate: request timeout") from exc
+    except requests.exceptions.RequestException as exc:
+        raise DiagnosticError(f"/api/generate: network failure ({exc.__class__.__name__})") from exc
+    if response.status_code != 200:
+        raise _request_error(response, "/api/generate")
+    result = _json(response, "/api/generate")
+    if not isinstance(result.get("response"), str):
+        raise DiagnosticError("/api/generate: missing or invalid response text")
+    duration = time.perf_counter() - started
+    eval_count = result.get("eval_count")
+    eval_duration = result.get("eval_duration")
+    return {"duration": duration, "tokens": eval_count if isinstance(eval_count, int) else 0,
+            "tokens_per_second": eval_count / (eval_duration / 1_000_000_000)
+            if isinstance(eval_count, int) and isinstance(eval_duration, (int, float)) and eval_duration > 0 else None}
+
+
 def main() -> int:
     try:
         result = run_diagnostic(load_config())

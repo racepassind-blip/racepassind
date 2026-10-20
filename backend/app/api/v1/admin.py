@@ -21,6 +21,7 @@ from app.services.communication_service import (
     send_test_email,
     update_email_settings,
 )
+from app.services.ai_load_test import snapshot as ai_load_test_snapshot, start as start_ai_load_test
 from scripts.test_ai_connection import DiagnosticError, load_config, run_diagnostic
 from app.services.email_service import get_email_limit_status, retry_pending_emails, send_email, EMAIL_HARD_LIMIT, EMAIL_WARNING_LIMIT, EMAIL_RETRY_ENABLED
 from app.services.organization_fee_service import (
@@ -1507,6 +1508,23 @@ def test_ai_endpoint(
         "modelLoadDuration": result["model_load_duration"],
         "ollamaGenerationDuration": result["ollama_generation_duration"],
     }
+
+
+@router.post("/communication/load-test-ai")
+def start_ai_load_test_endpoint(
+    _: User = Depends(require_roles("admin")),
+    __: None = Depends(require_csrf),
+) -> dict:
+    """Queue the explicitly confirmed, bounded AI load test."""
+    try:
+        return start_ai_load_test()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.get("/communication/load-test-ai")
+def get_ai_load_test_endpoint(_: User = Depends(require_roles("admin"))) -> dict:
+    return ai_load_test_snapshot()
 
 
 @router.get("/email-usage")
