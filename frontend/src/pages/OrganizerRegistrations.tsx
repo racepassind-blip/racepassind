@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Clock3, Download, Mail, RefreshCw, ScanLine, Search, SlidersHorizontal, UserPlus, X } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Clock3, Copy, Download, Mail, RefreshCw, ScanLine, Search, SlidersHorizontal, UserPlus, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -41,6 +41,7 @@ interface EventPickupConfig {
 
 interface OrganizerEventDetail {
   sport?: string;
+  waitlistEnabled?: boolean;
   pickupPoints?: EventPickupConfig;
 }
 
@@ -192,11 +193,13 @@ interface RegistrationDetailDrawerProps {
   onClose: () => void;
   onTransferDone: (updated: OrganizerRegistration) => void;
   onResendEmail: (registration: OrganizerRegistration) => Promise<void>;
+  onSendPaymentLink: (registration: OrganizerRegistration, sendEmail: boolean) => Promise<void>;
   onCancelled: (registrationId: string) => void;
   resendingId: string | null;
+  paymentLinkId: string | null;
 }
 
-function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, pickupNameById, meetingLabel, onClose, onTransferDone, onResendEmail, onCancelled, resendingId }: RegistrationDetailDrawerProps) {
+function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, pickupNameById, meetingLabel, onClose, onTransferDone, onResendEmail, onSendPaymentLink, onCancelled, resendingId, paymentLinkId }: RegistrationDetailDrawerProps) {
   const [showTransfer, setShowTransfer] = useState(false);
   const [targetTicketId, setTargetTicketId] = useState("");
   const [transferReason, setTransferReason] = useState("");
@@ -375,6 +378,7 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
                 )}
               </div>
             </div>
+            {registration.paymentStatus === "pending" && registration.status === "awaiting_payment" && <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50/70 p-4"><div className="flex items-start gap-3"><div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-orange-100 text-orange-700"><Mail className="h-4 w-4" /></div><div className="min-w-0"><p className="text-sm font-semibold text-orange-950">Payment still pending</p><p className="mt-0.5 text-xs leading-5 text-orange-900/75">Share a secure payment link so the participant can complete this registration.</p></div></div><div className="mt-3 grid gap-2 sm:grid-cols-2"><Button size="sm" className="w-full gap-2" disabled={!registration.participant.email || paymentLinkId === registration.id} onClick={() => void onSendPaymentLink(registration, true)}><Mail className="h-4 w-4" />{paymentLinkId === registration.id ? "Sending…" : "Email link"}</Button><Button size="sm" variant="outline" className="w-full gap-2 border-orange-300 bg-white" disabled={paymentLinkId === registration.id} onClick={() => void onSendPaymentLink(registration, false)}><Copy className="h-4 w-4" />{paymentLinkId === registration.id ? "Preparing…" : "Copy message"}</Button></div>{!registration.participant.email && <p className="mt-2 text-[11px] leading-4 text-orange-900/70">No participant email is saved. Copy the message and share it manually.</p>}</div>}
             {registration.decisionReason && (
               <div className="mt-2 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive">
                 <span className="font-semibold">Decision note:</span> {registration.decisionReason}
@@ -636,6 +640,7 @@ const OrganizerRegistrations = () => {
   const [reason, setReason] = useState("");
   const [actionId, setActionId] = useState<string | null>(null);
   const [resendId, setResendId] = useState<string | null>(null);
+  const [paymentLinkId, setPaymentLinkId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [detailRegistration, setDetailRegistration] = useState<OrganizerRegistration | null>(null);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(() => ["category_id", "ticket_id", "payment_status", "check_in_status", "participant", "email", "phone", "registration_reference"].some((key) => searchParams.has(key)));
@@ -643,6 +648,7 @@ const OrganizerRegistrations = () => {
   // options, so fetch the selected event's config (which now exposes pickupPoints)
   // to resolve id -> name and drive the client-side column/filter/summary.
   const [pickupConfig, setPickupConfig] = useState<EventPickupConfig | null>(null);
+  const [eventWaitlistEnabled, setEventWaitlistEnabled] = useState(false);
   const [pickupSummaryData, setPickupSummaryData] = useState<PickupSummaryResponse | null>(null);
   const [pickupFilter, setPickupFilter] = useState("all");
 
@@ -698,12 +704,17 @@ const OrganizerRegistrations = () => {
   useEffect(() => {
     if (!filters.eventId) {
       setPickupConfig(null);
+      setEventWaitlistEnabled(false);
       setPickupFilter("all");
       return;
     }
     const controller = new AbortController();
+    setEventWaitlistEnabled(false);
     void apiRequest<OrganizerEventDetail>(`/organizer/events/${filters.eventId}`, { signal: controller.signal })
-      .then((event) => setPickupConfig(event.pickupPoints ? { ...event.pickupPoints, sport: event.sport } : null))
+      .then((event) => {
+        setEventWaitlistEnabled(Boolean(event.waitlistEnabled));
+        setPickupConfig(event.pickupPoints ? { ...event.pickupPoints, sport: event.sport } : null);
+      })
       .catch(() => {
         if (!controller.signal.aborted) setPickupConfig(null);
       });
@@ -948,6 +959,22 @@ const OrganizerRegistrations = () => {
     }
   };
 
+  const sendPaymentLink = async (registration: OrganizerRegistration, sendEmail: boolean) => {
+    setPaymentLinkId(registration.id);
+    try {
+      const result = await apiRequest<{ emailStatus: string; paymentUrl: string; paymentMessage: string; message: string }>(`/organizer/events/${registration.event.id}/registrations/${registration.id}/send-payment-link`, { method: "POST", body: JSON.stringify({ send_email: sendEmail }) });
+      if (!sendEmail) {
+        await navigator.clipboard?.writeText(result.paymentMessage);
+        toast.success("Payment message copied. Paste it into WhatsApp or SMS.");
+      } else if (result.emailStatus === "SENT") toast.success("Payment link emailed to the participant.");
+      else {
+        await navigator.clipboard?.writeText(result.paymentMessage);
+        toast.warning("Email could not be sent, so the payment message was copied to your clipboard.");
+      }
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not send payment link"); }
+    finally { setPaymentLinkId(null); }
+  };
+
   const handleTransferDone = (updated: OrganizerRegistration) => {
     setRegistrations((prev) => prev.map((r) => r.id === updated.id ? updated : r));
     setDetailRegistration(updated);
@@ -982,7 +1009,7 @@ const OrganizerRegistrations = () => {
           </div>
         </section>
 
-        {eventScoped && <OrganizerWaitlist eventId={filters.eventId} />}
+        {eventScoped && eventWaitlistEnabled && <OrganizerWaitlist eventId={filters.eventId} />}
 
         {eventsError && <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{eventsError}</div>}
         <div className="space-y-3 rounded-xl border bg-card p-3 shadow-sm sm:space-y-4 sm:rounded-2xl sm:p-5">
@@ -1006,6 +1033,23 @@ const OrganizerRegistrations = () => {
               { value: "confirmed", label: "Confirmed" },
               { value: "checked_in", label: "Checked in" },
             ].map((status) => <button key={status.value} type="button" role="tab" aria-selected={filters.status === status.value} onClick={() => updateFilter("status", status.value)} className={`whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition-colors ${filters.status === status.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{status.label}</button>)}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2" aria-label="Quick registration filters">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payment</span>
+            {[
+              { value: "all", label: "All" },
+              { value: "pending", label: "Pending" },
+              { value: "reference_submitted", label: "UTR submitted" },
+              { value: "approved", label: "Approved" },
+              { value: "rejected", label: "Rejected" },
+            ].map((filter) => <button key={`payment-${filter.value}`} type="button" onClick={() => updateFilter("paymentStatus", filter.value)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${filters.paymentStatus === filter.value ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"}`}>{filter.label}</button>)}
+            <span className="ml-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Check-in</span>
+            {[
+              { value: "all", label: "All" },
+              { value: "not_checked_in", label: "Not checked in" },
+              { value: "checked_in", label: "Checked in" },
+            ].map((filter) => <button key={`checkin-${filter.value}`} type="button" onClick={() => updateFilter("checkInStatus", filter.value)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${filters.checkInStatus === filter.value ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"}`}>{filter.label}</button>)}
           </div>
 
           {moreFiltersOpen && <div className="space-y-4 border-t pt-4">
@@ -1184,8 +1228,10 @@ const OrganizerRegistrations = () => {
         onClose={() => setDetailRegistration(null)}
         onTransferDone={handleTransferDone}
         onResendEmail={resendEmail}
+        onSendPaymentLink={sendPaymentLink}
         onCancelled={handleRegistrationCancelled}
         resendingId={resendId}
+        paymentLinkId={paymentLinkId}
       />
 
     </OrganizerDashboardLayout>

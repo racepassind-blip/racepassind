@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/api";
 import { csvCell } from "@/lib/csv";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 
 const money = (paise: number) => `₹${(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -53,14 +54,18 @@ interface LedgerResponse {
   eventOptions: Array<{ id: string; name: string }>;
 }
 
-export default function AdminCredits() {
+export default function AdminCredits({ view = "all" }: { view?: "all" | "topups" | "ledger" | "settings" }) {
+  const [params] = useSearchParams();
   const [rows, setRows] = useState<TopupRow[]>([]);
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [settings, setSettings] = useState<PaymentSettings>({ method: "UPI", upiId: "", payeeName: "SportPass India" });
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
-  const [organizerFilter, setOrganizerFilter] = useState("ALL");
-  const [eventFilter, setEventFilter] = useState("ALL");
+  const [organizerFilter, setOrganizerFilter] = useState(params.get("organization_id") || "ALL");
+  const [eventFilter, setEventFilter] = useState(params.get("event_id") || "ALL");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { setOrganizerFilter(params.get("organization_id") || "ALL"); setEventFilter(params.get("event_id") || "ALL"); setLedgerPage(1); }, [params]);
   const [ledgerPage, setLedgerPage] = useState(1);
   const [pendingPage, setPendingPage] = useState(1);
   const [pendingTotal, setPendingTotal] = useState(0);
@@ -87,7 +92,7 @@ export default function AdminCredits() {
     setOrganizerOptions(ledgerRows.organizerOptions);
     setEventOptions(ledgerRows.eventOptions);
   }, [eventFilter, ledgerPage, organizerFilter, pendingPage]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { setLoading(true); setError(""); void load().catch(e => setError(e.message || "Could not load Credits")).finally(() => setLoading(false)); }, [load]);
 
   const save = async () => {
     setSaving(true);
@@ -99,10 +104,15 @@ export default function AdminCredits() {
     finally { setSaving(false); }
   };
   const act = async (id: string, action: string) => {
+    if (saving) return;
     const rejectionReason = action === "reject" ? window.prompt("Reason for rejecting this top-up:", "")?.trim() : null;
     if (action === "reject" && !rejectionReason) return;
-    await apiRequest(`/admin/credits/topups/${id}/${action}`, { method: "POST", body: action === "reject" ? JSON.stringify({ rejection_reason: rejectionReason }) : undefined });
-    await load();
+    setSaving(true); setError("");
+    try {
+      await apiRequest(`/admin/credits/topups/${id}/${action}`, { method: "POST", body: action === "reject" ? JSON.stringify({ rejection_reason: rejectionReason }) : undefined });
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not update top-up"); }
+    finally { setSaving(false); }
   };
   const pending = rows;
   const organizers = useMemo(() => organizerOptions.map((option) => [option.id, option.name] as const), [organizerOptions]);
@@ -138,20 +148,22 @@ export default function AdminCredits() {
 
   return <AdminDashboardLayout>
     <div className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
-      <div><p className="text-sm font-medium text-primary">Finance workspace</p><h1 className="text-3xl font-bold tracking-tight">SportPass Credits</h1><p className="mt-1 text-muted-foreground">Manage UPI top-ups and review Credits deducted when registrations are approved.</p></div>
-      <div className="grid gap-4 sm:grid-cols-3"><Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Total top-up requests</p><p className="text-3xl font-bold">{topupSummary.total.toLocaleString("en-IN")}</p></CardContent></Card><Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Approved Credits</p><p className="text-3xl font-bold">{money(topupSummary.approvedCreditsPaise)}</p></CardContent></Card><Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Ledger movements</p><p className="text-3xl font-bold">{ledgerTotal.toLocaleString("en-IN")}</p></CardContent></Card></div>
-      <Card><CardHeader><CardTitle>Pending top-ups</CardTitle><CardDescription>Confirm the UTR in your bank account before approving.</CardDescription></CardHeader><CardContent>{pending.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No pending top-ups right now.</div> : <div className="space-y-3">{pending.map((row) => <div key={row.id} className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2"><p className="text-lg font-semibold">{money(row.amountPaise)}</p><Badge variant="outline">UPI</Badge></div><p className="mt-1 font-medium">{row.organizationName}</p><p className="text-sm text-muted-foreground">UTR: <span className="font-mono text-foreground">{row.utrReference}</span></p><p className="text-xs text-muted-foreground">Requested {new Date(row.requestedAt).toLocaleString("en-IN")}</p></div><div className="flex gap-2"><Button onClick={() => void act(row.id, "approve")}>Approve</Button><Button variant="outline" onClick={() => void act(row.id, "reject")}>Reject</Button></div></div>)}</div>}{pendingTotal > 25 && <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4"><p className="text-sm text-muted-foreground">Page {pendingPage} of {Math.ceil(pendingTotal / 25)}</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={pendingPage <= 1} onClick={() => setPendingPage((page) => Math.max(1, page - 1))}>Previous</Button><Button variant="outline" size="sm" disabled={pendingPage >= Math.ceil(pendingTotal / 25)} onClick={() => setPendingPage((page) => page + 1)}>Next</Button></div></div>}</CardContent></Card>
-      <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+      <div><h2 className="text-2xl font-bold tracking-tight">{view === "topups" ? "Verify credit top-ups" : view === "settings" ? "Credit payment settings" : "SportPass Credits"}</h2><p className="mt-1 text-sm text-muted-foreground">Organizer prepaid balances cover SportPass fees. These are separate from participant collections.</p></div>
+      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {loading && <p role="status">Loading Credits…</p>}
+      {(view === "all" || view === "ledger") && <div className="grid gap-4 sm:grid-cols-3"><Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Total top-up requests</p><p className="text-3xl font-bold">{topupSummary.total.toLocaleString("en-IN")}</p></CardContent></Card><Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Approved Credits</p><p className="text-3xl font-bold">{money(topupSummary.approvedCreditsPaise)}</p></CardContent></Card><Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Ledger movements</p><p className="text-3xl font-bold">{ledgerTotal.toLocaleString("en-IN")}</p></CardContent></Card></div>}
+      {(view === "all" || view === "topups") && <Card><CardHeader><CardTitle>Pending top-ups</CardTitle><CardDescription>Confirm the UTR in your bank account before approving.</CardDescription></CardHeader><CardContent>{pending.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No pending top-ups right now.</div> : <div className="space-y-3">{pending.map((row) => <div key={row.id} className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2"><p className="text-lg font-semibold">{money(row.amountPaise)}</p><Badge variant="outline">UPI</Badge></div><p className="mt-1 font-medium">{row.organizationName}</p><p className="text-sm text-muted-foreground">UTR: <span className="font-mono text-foreground">{row.utrReference}</span></p><p className="text-xs text-muted-foreground">Requested {new Date(row.requestedAt).toLocaleString("en-IN")}</p></div><div className="flex gap-2"><Button disabled={saving} onClick={() => void act(row.id, "approve")}>Approve</Button><Button disabled={saving} variant="outline" onClick={() => void act(row.id, "reject")}>Reject</Button></div></div>)}</div>}{pendingTotal > 25 && <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4"><p className="text-sm text-muted-foreground">Page {pendingPage} of {Math.ceil(pendingTotal / 25)}</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={pendingPage <= 1} onClick={() => setPendingPage((page) => Math.max(1, page - 1))}>Previous</Button><Button variant="outline" size="sm" disabled={pendingPage >= Math.ceil(pendingTotal / 25)} onClick={() => setPendingPage((page) => page + 1)}>Next</Button></div></div>}</CardContent></Card>}
+      {(view === "all" || view === "settings") && <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <Card><CardHeader><CardTitle>UPI payment destination</CardTitle><CardDescription>Organizers use these details to purchase prepaid Credits. QR codes include their selected amount.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><label className="text-sm font-medium">UPI ID</label><Input value={settings.upiId || ""} onChange={(e) => setSettings({ ...settings, upiId: e.target.value })} placeholder="sportpassind@gmail.com" /></div><div className="space-y-2"><label className="text-sm font-medium">Payee name</label><Input value={settings.payeeName || ""} onChange={(e) => setSettings({ ...settings, payeeName: e.target.value })} placeholder="SportPass India" /></div></div><div className="flex flex-wrap items-center gap-3"><Button disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : "Save UPI details"}</Button><Badge variant="secondary">UPI active</Badge>{message && <span className="text-sm text-muted-foreground">{message}</span>}</div>{settings.qrDataUrl && <div className="flex items-center gap-4 rounded-lg border bg-muted/20 p-4"><img className="h-36 w-36 rounded-md border bg-white p-2" src={settings.qrDataUrl} alt="SportPass UPI QR code" /><div><p className="font-medium">Preview QR</p><p className="text-sm text-muted-foreground">The organizer QR includes the amount and organizer name at checkout.</p></div></div>}</CardContent></Card>
         <Card><CardHeader><CardTitle>Top-up overview</CardTitle><CardDescription>Requests waiting for payment verification.</CardDescription></CardHeader><CardContent><p className="text-4xl font-bold">{topupSummary.pending}</p><p className="text-sm text-muted-foreground">pending requests</p><div className="mt-5 grid grid-cols-2 gap-3 text-sm"><div className="rounded-lg bg-muted/40 p-3"><p className="text-muted-foreground">All requests</p><p className="text-xl font-semibold">{topupSummary.total}</p></div><div className="rounded-lg bg-muted/40 p-3"><p className="text-muted-foreground">Method</p><p className="text-xl font-semibold">UPI</p></div></div></CardContent></Card>
-      </div>
-      <Card>
+      </div>}
+      {(view === "all" || view === "ledger") && <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div><CardTitle>Credit ledger</CardTitle><CardDescription>Filter Credit purchases and deductions by organizer and event.</CardDescription></div>
           <Button variant="outline" disabled={filteredLedger.length === 0} onClick={exportLedgerCsv}>Export CSV</Button>
         </CardHeader>
         <CardContent><div className="mb-5 grid gap-3 sm:grid-cols-2"><div><label className="mb-1.5 block text-sm font-medium">Organizer</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={organizerFilter} onChange={e => { setOrganizerFilter(e.target.value); setLedgerPage(1); }}><option value="ALL">All organizers</option>{organizers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></div><div><label className="mb-1.5 block text-sm font-medium">Event</label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={eventFilter} onChange={e => { setEventFilter(e.target.value); setLedgerPage(1); }}><option value="ALL">All events</option>{events.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></div></div>{filteredLedger.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No Credit entries match these filters.</div> : <div className="space-y-3">{filteredLedger.map((row) => <div key={row.id} className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{row.organizationName}</p><Badge variant="outline">{row.type.replaceAll("_", " ")}</Badge></div><p className="text-sm text-muted-foreground">{row.description}</p><p className="text-xs text-muted-foreground">{row.eventName ? `Event: ${row.eventName} · ` : ""}{new Date(row.createdAt).toLocaleString("en-IN")}</p></div><div className="text-left sm:text-right"><p className={`font-bold ${row.amountPaise >= 0 ? "text-emerald-600" : "text-destructive"}`}>{row.amountPaise >= 0 ? "+" : ""}{money(row.amountPaise)}</p><p className="text-xs text-muted-foreground">Balance {money(row.balanceAfterPaise)}</p></div></div>)}</div>}{ledgerTotal > ledgerPageSize && <div className="mt-5 flex items-center justify-between gap-3 border-t pt-4"><p className="text-sm text-muted-foreground">Page {ledgerPage} of {Math.ceil(ledgerTotal / ledgerPageSize)} · {ledgerTotal.toLocaleString("en-IN")} entries</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={ledgerPage <= 1} onClick={() => setLedgerPage((page) => Math.max(1, page - 1))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button><Button variant="outline" size="sm" disabled={ledgerPage >= Math.ceil(ledgerTotal / ledgerPageSize)} onClick={() => setLedgerPage((page) => page + 1)}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button></div></div>}</CardContent>
-      </Card>
+      </Card>}
     </div>
   </AdminDashboardLayout>;
 }

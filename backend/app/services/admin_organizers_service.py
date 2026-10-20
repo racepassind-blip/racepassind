@@ -4,6 +4,7 @@ Uses standard PostgreSQL/SQLAlchemy aggregation only. No provider-specific APIs.
 """
 
 from __future__ import annotations
+from uuid import UUID
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -21,11 +22,13 @@ def _num(value) -> int:
     return int(value or 0)
 
 
-def get_admin_organizers_overview(db: Session, *, page: int = 1, page_size: int = 24, search: str | None = None, verification_status: str | None = None) -> dict:
+def get_admin_organizers_overview(db: Session, *, page: int = 1, page_size: int = 24, search: str | None = None, verification_status: str | None = None, organization_id: UUID | None = None) -> dict:
     """Return one row per organization with events, participants, revenue,
     verification status, and billing rollups."""
 
     organization_filters = []
+    if organization_id:
+        organization_filters.append(Organization.id == organization_id)
     if verification_status:
         organization_filters.append(Organization.paid_verification_status == verification_status)
     creator_alias = User

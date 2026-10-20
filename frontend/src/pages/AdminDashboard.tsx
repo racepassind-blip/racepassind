@@ -78,6 +78,7 @@ const AdminDashboard = () => {
   const [data, setData] = useState<AdminDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionCounts, setActionCounts] = useState({ paidVerification: 0, creditTopups: 0 });
 
   const load = async () => {
     setLoading(true);
@@ -88,6 +89,12 @@ const AdminDashboard = () => {
   };
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void Promise.all([
+      apiRequest<Array<{ organizationId: string }>>("/admin/paid-verifications?status=UNDER_REVIEW"),
+      apiRequest<{ total?: number; summary?: { pending?: number } }>("/admin/credits/topups?status=PENDING&page_size=1"),
+    ]).then(([verification, topups]) => setActionCounts({ paidVerification: verification.length, creditTopups: topups.summary?.pending ?? topups.total ?? 0 })).catch(() => undefined);
+  }, []);
   const maxRegistrations = useMemo(() => Math.max(...(data?.monthlyTrend.map((item) => item.registrations) ?? [0]), 1), [data]);
   const maxAttribution = useMemo(() => Math.max(...(data?.marketingAttribution.daily.map((item) => item.count) ?? [0]), 1), [data]);
 
@@ -102,6 +109,11 @@ const AdminDashboard = () => {
             <MetricCard title="Entries sold this month" value={data.metrics.registrationsThisMonth.toLocaleString("en-IN")} description="Confirmed participant entries" icon={UsersRound} tone="green" href="/organizer/registrations" />
             <MetricCard title="Races published this month" value={data.metrics.racesPublishedThisMonth.toLocaleString("en-IN")} description={`${data.metrics.activeRaces.toLocaleString("en-IN")} active races overall`} icon={CalendarDays} tone="blue" href="/organizer" />
             <MetricCard title="Participant sales" value={formatINR(data.metrics.participantSalesThisMonthPaise)} description={`${data.period.label} approved registration value`} icon={CircleDollarSign} />
+          </section>
+
+          <section className="grid gap-4 sm:grid-cols-2">
+            <Link to="/admin/organizer-applications?stage=payments" className="block"><Card className="h-full border-orange-200 transition-shadow hover:shadow-md"><CardContent className="flex items-center gap-4 p-5"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-100 text-orange-700"><Clock3 className="h-5 w-5" /></span><div className="min-w-0 flex-1"><p className="font-semibold">Paid verification reviews</p><p className="mt-1 text-sm text-muted-foreground">{actionCounts.paidVerification ? `${actionCounts.paidVerification} waiting for approval` : "No pending reviews"}</p></div><ArrowUpRight className="h-4 w-4 text-muted-foreground" /></CardContent></Card></Link>
+            <Link to="/admin/credits" className="block"><Card className="h-full border-blue-200 transition-shadow hover:shadow-md"><CardContent className="flex items-center gap-4 p-5"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-100 text-blue-700"><CircleDollarSign className="h-5 w-5" /></span><div className="min-w-0 flex-1"><p className="font-semibold">Credit top-ups</p><p className="mt-1 text-sm text-muted-foreground">{actionCounts.creditTopups ? `${actionCounts.creditTopups} waiting for verification` : "No pending top-ups"}</p></div><ArrowUpRight className="h-4 w-4 text-muted-foreground" /></CardContent></Card></Link>
           </section>
 
           {data.emailUsage && (

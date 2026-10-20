@@ -200,12 +200,12 @@ function DetailDrawer({ refund, onClose, onUpdated }: { refund: RefundRecord; on
   );
 }
 
-const AdminRefunds = () => {
+const AdminRefunds = ({ initialStatus = "all" }: { initialStatus?: string }) => {
   const [refunds, setRefunds] = useState<RefundRecord[]>([]);
   const [refundDates, setRefundDates] = useState(emptyRefundDates);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [eventFilter, setEventFilter] = useState("all");
   const [organizerFilter, setOrganizerFilter] = useState("all");
   const [filterSearch, setFilterSearch] = useState("");

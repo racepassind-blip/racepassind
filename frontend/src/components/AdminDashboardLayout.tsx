@@ -1,5 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
-import { ArchiveRestore, Banknote, Building2, CalendarDays, ChevronRight, CreditCard, ExternalLink, LayoutDashboard, LockOpen, LogOut, ReceiptText, RefreshCcw, ShieldCheck, UserPlus } from "lucide-react";
+import { useContext } from "react";
+import { EmbeddedAdminPage } from "@/components/AdminPaymentContext";
+import { ArchiveRestore, Building2, CalendarDays, ChevronRight, CreditCard, ExternalLink, LayoutDashboard, LockOpen, LogOut, ShieldCheck, UserPlus } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -25,7 +27,6 @@ const navGroups: NavGroup[] = [
     label: "Organizer management",
     items: [
       { label: "Organizers", to: "/admin/organizers", icon: Building2 },
-      { label: "Onboarding requests", to: "/admin/organizer-applications", icon: UserPlus },
     ],
   },
   {
@@ -34,16 +35,13 @@ const navGroups: NavGroup[] = [
       { label: "Events & registrations", to: "/organizer", icon: CalendarDays },
       { label: "Event feature access", to: "/admin/event-features", icon: LockOpen },
       { label: "Event recovery", to: "/admin/events", icon: ArchiveRestore },
-      { label: "Refunds", to: "/admin/refunds", icon: RefreshCcw },
-      { label: "SportPass Credits", to: "/admin/credits", icon: CreditCard },
-      { label: "Organizer pricing", to: "/admin/organizer-pricing", icon: CreditCard },
-      { label: "Organizer settlements", to: "/admin/settlements", icon: Banknote },
-      { label: "Cashfree ledger", to: "/admin/cashfree", icon: ReceiptText },
+      { label: "Payments", to: "/admin/payments", icon: CreditCard },
     ],
   },
 ];
 
 function isActivePath(pathname: string, to: string) {
+  if (to === "/admin/payments" && ["/admin/credits", "/admin/cashfree", "/admin/refunds", "/admin/settlements", "/admin/organizer-pricing"].includes(pathname)) return true;
   return to === "/admin" ? pathname === to : pathname === to || pathname.startsWith(`${to}/`);
 }
 
@@ -88,10 +86,12 @@ function AdminSidebarContent() {
 }
 
 export function AdminDashboardLayout({ children }: AdminDashboardLayoutProps) {
+  const embedded = useContext(EmbeddedAdminPage);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const initials = user?.name?.split(" ").map((part) => part[0]).join("").toUpperCase() ?? "AD";
+  if (embedded) return <>{children}</>;
 
   const handleLogout = async () => {
     await logout().catch(() => undefined);

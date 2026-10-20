@@ -41,8 +41,11 @@ from app.services.registration_service import (
     pickup_point_summary,
     transfer_registration_category,
     list_waitlist,
+    load_registration_batch,
     promote_waitlist_entry,
     cancel_organizer_registration,
+    _confirmation_token,
+    hash_opaque_token,
 )
 from app.services.waitlist_service import resend_offer
 from app.services.email_service import send_registration_confirmation
@@ -71,6 +74,39 @@ class WaitlistPromotionIn(BaseModel):
 
 class RegistrationCancellationIn(BaseModel):
     reason: str = Field(min_length=3, max_length=120)
+
+
+class PaymentLinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    send_email: bool = True
+
+
+@router.post("/events/{event_id}/registrations/{registration_id}/send-payment-link")
+def send_registration_payment_link(event_id: UUID, registration_id: UUID, payload: PaymentLinkRequest, user: User = Depends(require_roles("organizer", "admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    from app.services.email_service import send_email
+    event = get_authorized_event(db, user, event_id)
+    registration = db.get(Registration, registration_id)
+    if registration is None or registration.event_id != event_id:
+        raise HTTPException(404, "Registration not found")
+    if registration.payment_status in {"approved", "not_required"} or registration.status not in {"awaiting_payment", "pending"}:
+        raise HTTPException(409, "This registration does not need payment")
+    recipient = registration.participant.email if registration.participant else None
+    if payload.send_email and not recipient:
+        raise HTTPException(422, "This participant has no email address")
+    batch = load_registration_batch(db, registration)
+    payable_batch = [item for item in batch if item.status in {"awaiting_payment", "pending", "pending_verification"} and item.payment_status not in {"approved", "not_required"}]
+    primary = payable_batch[0] if payable_batch else registration
+    token = _confirmation_token()
+    primary.confirmation_token_hash = hash_opaque_token(token)
+    db.commit()
+    origin = get_settings().frontend_origins[0].rstrip("/")
+    payment_url = f"{origin}/checkout/{event.id}?confirmation_token={token}"
+    amount_paise = sum((item.participant_total_paise or item.total_amount_paise or 0) for item in payable_batch) or (registration.participant_total_paise or registration.total_amount_paise or 0)
+    payment_message = f"Hi {registration.participant.name if registration.participant else 'there'},\n\nYour registration for {event.name} is awaiting payment. Please complete the payment of ₹{(amount_paise / 100):,.2f} using this secure link:\n\n{payment_url}\n\nSportPass ID: {primary.registration_reference}\n\nOnce payment is completed and verified, your registration will be confirmed."
+    if not payload.send_email:
+        return {"registrationId": str(registration.id), "paymentUrl": payment_url, "paymentMessage": payment_message, "emailStatus": "NOT_SENT", "message": "Payment message prepared"}
+    result = send_email(db, recipient=recipient, subject=f"Complete your payment for {event.name}", body=payment_message, email_type="PAYMENT_LINK", reference_type="REGISTRATION", reference_id=str(registration.id), event_id=event.id)
+    return {"registrationId": str(registration.id), "paymentUrl": payment_url, "paymentMessage": payment_message, "emailStatus": result.status, "message": result.message}
 
 
 @router.post("/events/{event_id}/registrations/{registration_id}/cancel")

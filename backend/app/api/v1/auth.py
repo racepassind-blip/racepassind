@@ -224,7 +224,7 @@ def organizer_signup(
         raise HTTPException(422, "Check your contact details, password and privacy consent")
     for value, minimum, maximum in ((address, 5, 1000), (city, 2, 120), (state, 2, 120), (event_history, 10, 2000)):
         if not minimum <= len(value.strip()) <= maximum:
-            raise HTTPException(422, "Complete your address and event background within the stated limits")
+            raise HTTPException(422, "Enter your complete address and describe your event. Please stay within the character limits shown on the form.")
     if not re.fullmatch(r"[1-9][0-9]{5}", pincode.strip()):
         raise HTTPException(422, "Enter a valid six-digit PIN code")
     if discovery_source not in {"REFERRAL", "SOCIAL_MEDIA", "SEARCH", "EVENT", "OTHER"}:

@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/api";
+import { Navigate, useLocation, useSearchParams } from "react-router-dom";
+import AdminOrganizers from "./AdminOrganizers";
 
 interface OrganizerApplication {
   id: string;
@@ -39,7 +41,20 @@ interface OrganizerApplicationPage {
   total: number;
 }
 
+interface ReviewResponse {
+  emailNotification?: { success: boolean; status: string; message: string };
+}
+
 const AdminOrganizerApplications = () => {
+  const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const paymentsOpen = params.get("stage") === "payments";
+  const allOpen = !params.get("stage") || params.get("stage") === "all";
+  const stageNavigation = <div className="mb-6 flex flex-wrap gap-2 rounded-xl border bg-muted/40 p-2">
+    <Button variant={allOpen ? "default" : "ghost"} onClick={() => setParams({ stage: "all" })}>All organizers</Button>
+    <Button variant={!paymentsOpen && !allOpen ? "default" : "ghost"} onClick={() => setParams({ stage: "applications" })}>Account applications</Button>
+    <Button variant={paymentsOpen ? "default" : "ghost"} onClick={() => setParams({ stage: "payments" })}>Verification & payments</Button>
+  </div>;
   const [applications, setApplications] = useState<OrganizerApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
@@ -73,12 +88,14 @@ const AdminOrganizerApplications = () => {
     void loadApplications();
   }, [loadApplications]);
 
+
   const approve = async (application: OrganizerApplication) => {
     if (!window.confirm(`Approve ${application.applicantName} as an organizer for ${application.organizationName}?`)) return;
     setReviewingId(application.id);
     try {
-      await apiRequest(`/admin/organizer-applications/${application.id}/approve`, { method: "POST", body: "{}" });
+      const response = await apiRequest<ReviewResponse>(`/admin/organizer-applications/${application.id}/approve`, { method: "POST", body: "{}" });
       toast.success("Organizer application approved.");
+      if (response.emailNotification && !response.emailNotification.success) toast.warning(`Application approved, but the email was not sent: ${response.emailNotification.message}`);
       await loadApplications();
     } catch (approveError) {
       toast.error(approveError instanceof Error ? approveError.message : "Could not approve application.");
@@ -93,11 +110,12 @@ const AdminOrganizerApplications = () => {
     if (reason.trim().length < 5) {toast.error("Please provide a clear reason."); return;}
     setReviewingId(application.id);
     try {
-      await apiRequest(`/admin/organizer-applications/${application.id}/reject`, {
+      const response = await apiRequest<ReviewResponse>(`/admin/organizer-applications/${application.id}/reject`, {
         method: "POST",
         body: JSON.stringify({ reason: reason.trim() || null }),
       });
       toast.success("Organizer application rejected.");
+      if (response.emailNotification && !response.emailNotification.success) toast.warning(`Application rejected, but the email was not sent: ${response.emailNotification.message}`);
       await loadApplications();
     } catch (rejectError) {
       toast.error(rejectError instanceof Error ? rejectError.message : "Could not reject application.");
@@ -111,8 +129,9 @@ const AdminOrganizerApplications = () => {
     if (!reason) return;
     setReviewingId(application.id);
     try {
-      await apiRequest(`/admin/organizer-applications/${application.id}/request-changes`, {method: "POST", body: JSON.stringify({reason})});
+      const response = await apiRequest<ReviewResponse>(`/admin/organizer-applications/${application.id}/request-changes`, {method: "POST", body: JSON.stringify({reason})});
       toast.success("Corrections requested.");
+      if (response.emailNotification && !response.emailNotification.success) toast.warning(`Corrections saved, but the email was not sent: ${response.emailNotification.message}`);
       await loadApplications();
     } catch (error) {toast.error(error instanceof Error ? error.message : "Could not request corrections");}
     finally {setReviewingId(null);}
@@ -133,9 +152,27 @@ const AdminOrganizerApplications = () => {
     } catch (error) { tab?.close(); toast.error(error instanceof Error ? error.message : "Could not open proof"); }
   };
 
+  if (location.pathname === "/admin/organizer-applications") {
+    const next = new URLSearchParams(params);
+    if (!next.has("stage")) next.set("stage", "applications");
+    return <Navigate replace to={`/admin/organizers?${next}`} />;
+  }
+
+  if (paymentsOpen || allOpen) return (
+    <AdminDashboardLayout>
+      <div className="mx-auto max-w-[1500px] px-4 pt-8 sm:px-6">
+        <h1 className="mb-2 text-3xl font-bold">Organizers</h1>
+        <p className="mb-6 text-sm text-muted-foreground">Manage applications, verification, payments, and ongoing operations.</p>
+        {stageNavigation}
+      </div>
+      <AdminOrganizers key={paymentsOpen ? "payments" : "all"} embedded operations={allOpen} />
+    </AdminDashboardLayout>
+  );
+
   return (
     <AdminDashboardLayout>
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+        {stageNavigation}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck className="h-4 w-4" /> Admin-only review</div>
@@ -174,7 +211,7 @@ const AdminOrganizerApplications = () => {
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm"><div><p className="font-semibold">Identity document</p><p className="text-muted-foreground">{application.idProofType || "Missing"}{application.idProofFilename ? ` · ${application.idProofFilename}` : ""}</p></div>{application.hasIdProof && <Button variant="outline" onClick={() => void openProof(application.id)}>Open private proof</Button>}</div>
                   <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2"><p>{application.privacyPolicyAccepted ? "✓ Privacy consent recorded" : "✕ Privacy consent missing"}</p><p>{application.hasIdProof ? "✓ ID proof uploaded" : "✕ ID proof missing"}</p><p>{application.address && application.city && application.state && application.pincode ? "✓ Address complete" : "✕ Address incomplete"}</p><p>{application.eventHistory ? "✓ Event background provided" : "✕ Event background missing"}</p></div>
-                  <div className="rounded-lg bg-muted/30 p-3 text-sm">{Object.entries(application.paymentDetails).map(([key, value]) => <p key={key}><span className="font-medium">{key.replace(/([A-Z])/g, " $1")}: </span>{value}</p>)}<p className="mt-2 text-muted-foreground">Account approval does not enable payments. Review paid-event verification and payment permissions separately.</p></div>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">After account approval</p><p className="mt-1 leading-5">The organizer can access the workspace, but paid registrations remain blocked until they complete <strong>Paid-event verification</strong> and SportPass approves payment access.</p><p className="mt-2 text-xs">Application payment preference: {application.paymentPreference?.replaceAll("_", " ") || "Not provided"}</p></div>
                   {application.rejectionReason && <p className="whitespace-pre-wrap rounded-lg border p-3 text-sm">Review feedback: {application.rejectionReason}</p>}
                   <Button variant="ghost" onClick={() => void showHistory(application.id)} className="gap-2"><History className="h-4 w-4" /> Review history</Button>
                   {history[application.id] && <ul className="space-y-2 text-sm text-muted-foreground">{history[application.id].map(item => <li key={item.id}>{new Date(item.createdAt).toLocaleString("en-IN")} · {item.action.replaceAll("_", " ")} · {item.actor}</li>)}</ul>}

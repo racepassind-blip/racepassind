@@ -54,16 +54,15 @@ const OrganizerDashboard = () => {
   useEffect(() => {
     if (searchParams.get("tab") === "organization") {
       setOrganizationTabOpen(true);
-      // Clear the param so refreshes don't re-trigger, then scroll to the verification card.
+      // Clear the tab param after opening the workspace, while preserving the hash.
       const next = new URLSearchParams(searchParams);
       next.delete("tab");
       setSearchParams(next, { replace: true });
       if (window.location.hash === "#paid-verification") {
-        window.setTimeout(() => document.getElementById("paid-verification")?.scrollIntoView({ behavior: "smooth" }), 200);
+        window.setTimeout(() => document.getElementById("paid-verification")?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams, setSearchParams]);
 
   const updateArchiveState = async (event: (typeof events)[number]) => {
     const message = `Archive ${event.name}? It will be hidden from participants and new registrations will stop. Existing registrations, payments, tickets, audit records, and media will be preserved.`;
@@ -91,6 +90,11 @@ const OrganizerDashboard = () => {
     queryFn: async () => (await apiRequest<{ accounts: Array<{ organizationId: string; balancePaise: number }> }>("/organizer/credits")).accounts,
     enabled: user?.role === "organizer" || user?.role === "admin",
     staleTime: 30_000,
+  });
+  const { data: paidVerification } = useQuery({
+    queryKey: ["organizer-paid-verification", organizations[0]?.id],
+    queryFn: () => apiRequest<{ paidVerificationStatus: "NOT_SUBMITTED" | "UNDER_REVIEW" | "VERIFIED" | "REJECTED" | "SUSPENDED" }>(`/organizer/organizations/${organizations[0].id}/paid-verification`),
+    enabled: user?.role === "organizer" && Boolean(organizations[0]?.id),
   });
   const onboardingPending = user?.role === "organizer" && !organizationsLoading && !organizationsError && organizations.length > 0 && organizations[0].onboardingStatus !== "completed";
   const availableCredits = creditAccounts.reduce((sum, account) => sum + account.balancePaise, 0) / 100;
@@ -136,6 +140,12 @@ const OrganizerDashboard = () => {
           <section className="flex flex-col gap-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
             <div><p className="font-semibold">Organizer onboarding is pending</p><p className="mt-1 text-sm text-amber-900/75 dark:text-amber-100/75">Add your organization type, primary city, and state before creating your first event.</p></div>
             <Button variant="outline" className="w-fit shrink-0 border-amber-300 bg-white text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-transparent dark:text-amber-100 dark:hover:bg-amber-950/40" onClick={() => navigate("/organizer/setup")}>Complete onboarding</Button>
+          </section>
+        )}
+        {user?.role === "organizer" && paidVerification?.paidVerificationStatus !== "VERIFIED" && (
+          <section className="flex flex-col gap-4 rounded-xl border border-orange-200 bg-orange-50 p-4 text-orange-950 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-orange-900/50 dark:bg-orange-950/20 dark:text-orange-100">
+            <div className="flex items-start gap-3"><div className="mt-0.5 rounded-lg bg-orange-100 p-2 text-orange-700 dark:bg-orange-900/40 dark:text-orange-200"><CreditCard className="h-5 w-5" /></div><div><p className="font-semibold">{paidVerification?.paidVerificationStatus === "UNDER_REVIEW" ? "Payment verification under review" : paidVerification?.paidVerificationStatus === "REJECTED" ? "Payment verification needs changes" : paidVerification?.paidVerificationStatus === "SUSPENDED" ? "Payment verification suspended" : "Complete payment verification"}</p><p className="mt-1 text-sm leading-5 text-orange-900/75 dark:text-orange-100/75">{paidVerification?.paidVerificationStatus === "UNDER_REVIEW" ? "Your details were submitted and are now with SportPass for approval." : paidVerification?.paidVerificationStatus === "REJECTED" ? "Review the admin feedback and resubmit your details before collecting paid registrations." : paidVerification?.paidVerificationStatus === "SUSPENDED" ? "Review the suspension reason and update your details." : "Your account is approved. Submit your PAN, billing details, and supporting documents before collecting paid registrations."}</p></div></div>
+            <Button variant="outline" className="w-full shrink-0 border-orange-300 bg-white text-orange-950 hover:bg-orange-100 sm:w-fit dark:border-orange-800 dark:bg-transparent dark:text-orange-100 dark:hover:bg-orange-950/40" onClick={() => navigate("/organizer?tab=organization#paid-verification")}>{paidVerification?.paidVerificationStatus === "UNDER_REVIEW" ? "View status" : paidVerification?.paidVerificationStatus === "NOT_SUBMITTED" ? "Start verification" : "Review details"} <ArrowUpRight className="ml-2 h-4 w-4" /></Button>
           </section>
         )}
         {user?.role === "admin" && (

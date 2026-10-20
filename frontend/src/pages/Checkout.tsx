@@ -129,10 +129,12 @@ const Checkout = () => {
   const { data: event, isLoading, isError } = useEvent(eventId);
   const participantLabel = getSportConfig(event?.category).participant_label;
   const steps = ["Tickets", `${participantLabel} details`, event?.paymentCollectionMethod === "CASHFREE_MANAGED" ? "Online Payment" : "UPI Payment"];
-  const [waitlistToken] = useState(() => new URLSearchParams((location.hash ?? "").slice(1)).get("waitlist") || sessionStorage.getItem(`sportpass_waitlist_token_${eventId}`));
+  const paymentLinkToken = new URLSearchParams(location.search).get("confirmation_token");
+  const [waitlistToken] = useState(() => paymentLinkToken ? null : new URLSearchParams((location.hash ?? "").slice(1)).get("waitlist") || sessionStorage.getItem(`sportpass_waitlist_token_${eventId}`));
   const [offer, setOffer] = useState<{ email: string; name: string; expiresAt: string; waivePayment: boolean } | null>(null);
   const [offerError, setOfferError] = useState("");
   const [offerLoading, setOfferLoading] = useState(Boolean(waitlistToken));
+  const [paymentLinkLoading, setPaymentLinkLoading] = useState(Boolean(paymentLinkToken));
   const [cart, setCart] = useState<CartLine[]>(() => waitlistToken ? [] : readCart(eventId, tierId));
   const [riders, setRiders] = useState<RiderDraft[]>([]);
   const [activeRiderIndex, setActiveRiderIndex] = useState(0);
@@ -178,6 +180,28 @@ const Checkout = () => {
       .finally(() => { if (!cancelled) setOfferLoading(false); });
     return () => { cancelled = true; };
   }, [waitlistToken, eventId]);
+
+  // A payment link sent by the organizer reopens the saved registration. It
+  // must not create a second registration or ask the participant to re-enter
+  // their details; the confirmation token is the payment link credential.
+  useEffect(() => {
+    if (!paymentLinkToken || !eventId) return;
+    let cancelled = false;
+    void apiRequest<BatchRegistrationResponse>("/registrations/confirmation", {
+      method: "POST",
+      body: JSON.stringify({ confirmation_token: paymentLinkToken }),
+    }).then((result) => {
+      if (cancelled) return;
+      if (result.event?.id && result.event.id !== eventId) throw new Error("This payment link belongs to another event.");
+      setRegistration(result);
+      setCurrentStep(2);
+    }).catch((error) => {
+      if (!cancelled) setOfferError(error instanceof Error ? error.message : "This payment link is no longer valid.");
+    }).finally(() => {
+      if (!cancelled) setPaymentLinkLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [paymentLinkToken, eventId]);
 
   useEffect(() => {
     if (!eventId || !new URLSearchParams(location.search).has("cashfree_return")) return;
@@ -530,7 +554,7 @@ const Checkout = () => {
     </div></main></Layout>
   );
   if (offerError) return <Layout><div role="alert" className="mx-auto max-w-xl p-8">{offerError}</div></Layout>;
-  if (isLoading || offerLoading) return <Layout><div className="py-20 text-center text-muted-foreground">Loading event…</div></Layout>;
+  if (isLoading || offerLoading || paymentLinkLoading) return <Layout><div className="py-20 text-center text-muted-foreground">Loading payment link…</div></Layout>;
   if (isError || !event || (selectedTiers.length === 0 && !registration)) return <Layout><div className="py-20 text-center text-muted-foreground">Event or ticket selection not found.</div></Layout>;
   if (event.registrationStatus === "closed" && !registration) return <Layout><div className="mx-auto max-w-2xl px-4 py-20 text-center"><h1 className="text-2xl font-extrabold">Registration is closed</h1><p className="mt-3 text-muted-foreground">The organizer is not accepting new responses for {event.title}.</p><Button className="mt-6" onClick={() => navigate(`/event/${event.id}`)}>Back to event</Button></div></Layout>;
 
@@ -719,10 +743,11 @@ const Checkout = () => {
     : currentStep === 0 ? "Confirm your ticket selection, then add the details needed for the event."
       : `Add the required details for each ${participantLabel.toLowerCase()} in this booking.`;
 
-  const copyUpi = async () => {
-    if (registration?.paymentSettings?.upiId) {
-      await navigator.clipboard.writeText(registration.paymentSettings.upiId);
-      toast.success("UPI ID copied");
+  const copySportPassId = async () => {
+    const reference = registration?.registrations[0]?.registrationReference ?? registration?.registrationReference;
+    if (reference) {
+      await navigator.clipboard.writeText(`SportPass ${reference}`);
+      toast.success("SportPass ID copied for your UPI message");
     }
   };
   const fieldInput = (rider: RiderDraft, field: ParticipantFieldConfig) => {
@@ -1182,7 +1207,7 @@ const Checkout = () => {
                   </>}
                   <div className="flex justify-between gap-3 border-t pt-2 font-bold"><span>Total to pay</span><span>{formatPaise(chargedPaise)}</span></div>
                 </div>
-              </details>{registration.paymentSettings && <div className="space-y-3 rounded-xl border bg-primary/5 p-3.5 sm:space-y-4 sm:rounded-2xl sm:p-5"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="text-sm text-muted-foreground">UPI ID</p><p className="break-all font-bold">{registration.paymentSettings.upiId}</p><p className="text-xs text-muted-foreground">Payee: {registration.paymentSettings.payeeName}</p></div><Button variant="outline" size="sm" className="shrink-0" onClick={copyUpi}><Copy className="mr-2 h-4 w-4" /> Copy</Button></div><p className="text-sm text-muted-foreground">{registration.paymentSettings.instructions}</p><div className="flex flex-col items-center gap-2 rounded-lg bg-white p-2.5 sm:gap-3 sm:p-3"><img src={registration.paymentSettings.qrDataUrl} alt="Generated UPI payment QR" className="h-44 w-44 sm:h-56 sm:w-56" /><p className="text-xs text-muted-foreground">Scan to pay ₹{totalRupees.toLocaleString("en-IN")}</p></div>{registration.paymentSettings.qrImageUrl && <div><p className="mb-2 text-xs font-medium text-muted-foreground">Organizer-provided QR</p><img src={registration.paymentSettings.qrImageUrl} alt="Organizer UPI QR" className="mx-auto max-h-44 sm:max-h-56" /></div>}<div className="rounded-lg border bg-card p-3 text-sm"><details><summary className="cursor-pointer font-semibold">Paying on this phone?</summary><p className="mt-2 text-muted-foreground">Download this QR, then import it using Scan QR in your UPI app. Check the payee and amount before paying.</p></details><Button type="button" variant="outline" size="sm" className="mt-3 gap-2 border-blue-300 bg-white text-blue-900 hover:bg-blue-50 dark:border-blue-800 dark:bg-transparent dark:text-blue-100" onClick={() => void downloadQrAsPng(registration.paymentSettings!.qrDataUrl, `sportpass-payment-qr-${registration.registrations[0]?.registrationReference ?? "order"}.png`).then(() => setQrDownloaded(true)).catch(() => toast.error("Could not download QR image"))}><Download className="h-4 w-4" /> Download QR image</Button>{qrDownloaded && <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400"><CheckCircle2 className="h-4 w-4 shrink-0" /> QR saved — open your UPI app, tap Scan QR or Upload QR, and pick this image to pay.</p>}</div></div>}<div className="space-y-2"><Label>UTR / transaction reference (optional)</Label><Input value={utrReference} onChange={(e) => setUtrReference(e.target.value)} placeholder="Enter it after paying in your UPI app" /><p className="text-xs text-muted-foreground">One reference will be submitted for the complete {participantLabel.toLowerCase()} group.</p></div><Button onClick={submitUtr} disabled={loading} size="lg" className="w-full">{loading ? "Saving…" : "Submit reference / continue"}</Button><p className="flex items-center justify-center gap-1 text-xs text-muted-foreground"><Shield className="h-3 w-3" /> Do not enter card details on SportPass.</p></section>}
+              </details>{registration.paymentSettings && <div className="space-y-3 rounded-xl border bg-primary/5 p-3.5 sm:space-y-4 sm:rounded-2xl sm:p-5"><div className="rounded-lg border border-primary/20 bg-card p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SportPass ID for the payment message</p><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><p className="font-mono font-bold">SportPass {registration.registrations[0]?.registrationReference ?? registration.registrationReference}</p><Button type="button" variant="outline" size="sm" onClick={() => void copySportPassId()}><Copy className="mr-2 h-4 w-4" /> Copy ID</Button></div><p className="mt-2 text-xs text-muted-foreground">This is included in the SportPass QR. If your UPI app leaves the message blank, paste this ID before paying.</p></div><p className="text-sm text-muted-foreground">{registration.paymentSettings.instructions}</p><div className="flex flex-col items-center gap-2 rounded-lg bg-white p-2.5 sm:gap-3 sm:p-3"><img src={registration.paymentSettings.qrDataUrl} alt="SportPass UPI payment QR" className="h-44 w-44 sm:h-56 sm:w-56" /><p className="text-xs text-muted-foreground">Scan this SportPass QR to pay ₹{totalRupees.toLocaleString("en-IN")} with your SportPass ID attached.</p></div><p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-950">This payment goes directly to the organizer. Once the organizer confirms the payment, we’ll send your registration confirmation by email.</p><Button type="button" variant="outline" size="sm" className="gap-2 border-blue-300 bg-white text-blue-900 hover:bg-blue-50 dark:border-blue-800 dark:bg-transparent dark:text-blue-100" onClick={() => void downloadQrAsPng(registration.paymentSettings!.qrDataUrl, `sportpass-payment-qr-${registration.registrations[0]?.registrationReference ?? "order"}.png`).then(() => setQrDownloaded(true)).catch(() => toast.error("Could not download QR image"))}><Download className="h-4 w-4" /> Download QR image</Button>{qrDownloaded && <p className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400"><CheckCircle2 className="h-4 w-4 shrink-0" /> QR saved — open your UPI app, tap Scan QR or Upload QR, and pick this image to pay.</p>}</div>}<div className="space-y-2"><Label>UTR / transaction reference (optional)</Label><Input value={utrReference} onChange={(e) => setUtrReference(e.target.value)} placeholder="Enter it after paying in your UPI app" /><p className="text-xs text-muted-foreground">One reference will be submitted for the complete {participantLabel.toLowerCase()} group.</p></div><Button onClick={submitUtr} disabled={loading} size="lg" className="w-full">{loading ? "Saving…" : "Submit reference / continue"}</Button><p className="flex items-center justify-center gap-1 text-xs text-muted-foreground"><Shield className="h-3 w-3" /> Do not enter card details on SportPass.</p></section>}
           </main>
 
           <aside className="min-w-0 lg:col-span-1">

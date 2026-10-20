@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { BadgeCheck, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Clock, RefreshCw, Search, ShieldCheck, Users, XCircle, Banknote } from "lucide-react";
 import { toast } from "sonner";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
 import { Badge } from "@/components/ui/badge";
@@ -105,7 +105,12 @@ function formatDateTime(value: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-const AdminOrganizers = () => {
+const AdminOrganizers = ({ embedded = false, operations = false }: { embedded?: boolean; operations?: boolean }) => {
+  const navigate = useNavigate();
+  const Wrapper = embedded ? Fragment : AdminDashboardLayout;
+  const reviewing = embedded && !operations;
+  const [searchParams] = useSearchParams();
+  const requestedOrganization = searchParams.get("organization");
   const [rows, setRows] = useState<OrganizerOverview[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +145,7 @@ const AdminOrganizers = () => {
       const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
       if (search.trim()) params.set("q", search.trim());
       if (verifFilter !== "all") params.set("verification_status", verifFilter);
+      if (reviewing && requestedOrganization) params.set("organization_id", requestedOrganization);
       const response = await apiRequest<{ items: OrganizerOverview[]; total: number; summary: { organizers: number; pendingVerification: number; participants: number; approvedRevenuePaise: number } }>(`/admin/organizers/overview?${params}`);
       setRows(response.items);
       setTotal(response.total);
@@ -149,7 +155,7 @@ const AdminOrganizers = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, search, verifFilter]);
+  }, [page, search, verifFilter, reviewing, requestedOrganization]);
 
   useEffect(() => { const timer = window.setTimeout(() => void load(), 250); return () => window.clearTimeout(timer); }, [load]);
 
@@ -192,6 +198,9 @@ const AdminOrganizers = () => {
       toast.success(decision === "VERIFIED" ? "Organizer verified." : "Verification rejected.");
       closeReview();
       await load();
+      if (reviewing && decision === "VERIFIED") {
+        await openManage({ ...reviewOrg, paidVerificationStatus: "VERIFIED" });
+      }
     } catch (reviewError) {
       toast.error(reviewError instanceof Error ? reviewError.message : "Could not submit the review.");
     } finally {
@@ -307,26 +316,27 @@ const AdminOrganizers = () => {
   };
 
   return (
-    <AdminDashboardLayout>
-      <div className="mx-auto max-w-[1500px] space-y-8 px-4 py-8 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <Wrapper>
+      <div className={`mx-auto max-w-[1500px] px-4 sm:px-6 lg:px-8 ${embedded ? "pb-10" : "space-y-8 py-8 lg:py-10"}`}>
+        {!embedded && <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Organizer management</p>
-            <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Organizers</h1>
-            <p className="mt-2 max-w-2xl text-muted-foreground">Open any organizer to manage events, pricing, Credits, verification, and payment access.</p>
+            <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">{reviewing ? "Verification & payment access" : "Organizers"}</h1>
+            <p className="mt-2 max-w-2xl text-muted-foreground">{reviewing ? "Review documents, approve verification, and enable payment access here. After verification approval, payment controls open automatically." : "View events, pricing, Credits, and account status. Use Verification & payments for approvals."}</p>
+            {!reviewing && <Button asChild variant="outline" className="mt-3"><Link to="/admin/organizers?stage=payments">Review verification & payments</Link></Button>}
           </div>
           <Button variant="outline" onClick={() => void load()} disabled={loading} className="w-fit gap-2"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh</Button>
-        </div>
+        </div>}
 
         {error ? (
           <Card><CardContent className="flex flex-col gap-4 p-6"><p role="alert" className="text-sm text-destructive">{error}</p><Button onClick={() => void load()} className="w-fit">Try again</Button></CardContent></Card>
         ) : (
           <>
-            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {!reviewing && !embedded && <section className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard icon={Building2} tone="primary" label="Organizers" value={totals.organizers.toLocaleString("en-IN")} sub={`${totals.pendingVerification} awaiting verification`} />
               <StatCard icon={Users} tone="blue" label="Total participants" value={totals.participants.toLocaleString("en-IN")} sub="Confirmed across all events" />
               <StatCard icon={CircleDollarSign} tone="green" label="Approved sales" value={formatINR(totals.revenue)} sub="Participant registration value" />
-            </section>
+            </section>}
 
             <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
               <div className="flex flex-col gap-3 border-b p-5 lg:flex-row lg:items-center lg:justify-between">
@@ -349,9 +359,20 @@ const AdminOrganizers = () => {
                 <div className="grid gap-4 p-5 lg:grid-cols-2">
                   {filtered.map((row) => {
                     const meta = VERIF_META[row.paidVerificationStatus];
-                    return <button key={row.organizationId} type="button" onClick={() => void openManage(row)} className="group rounded-2xl border bg-background p-5 text-left transition hover:border-primary/40 hover:shadow-md">
+                    const nextStep = row.paidVerificationStatus === "NOT_SUBMITTED"
+                      ? "Waiting for organizer: submit payment verification."
+                      : row.paidVerificationStatus === "UNDER_REVIEW"
+                      ? "Your action: review submitted documents."
+                      : row.paidVerificationStatus === "REJECTED"
+                      ? "Waiting for organizer: correct details and resubmit."
+                      : row.paidVerificationStatus === "SUSPENDED"
+                      ? "Access suspended: review the reason and follow up."
+                      : !row.allowDirectUpi && !row.allowCashfree
+                      ? "Your action: enable the appropriate payment method."
+                      : "Verification approved. Check receiving-account approval and event payment setup.";
+                    return <button key={row.organizationId} type="button" onClick={() => navigate(`/admin/organizers/${row.organizationId}`)} className="group rounded-2xl border bg-background p-5 text-left transition hover:border-primary/40 hover:shadow-md">
                       <div className="flex items-start justify-between gap-4"><div className="min-w-0"><h3 className="truncate text-lg font-bold">{row.organizationName}</h3><p className="truncate text-sm text-muted-foreground">{row.responsiblePerson ?? "Responsible person not set"}{row.email ? ` · ${row.email}` : ""}</p><p className="text-xs text-muted-foreground">{[row.city, row.state].filter(Boolean).join(", ") || "Location not set"}</p></div><span className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition group-hover:border-primary group-hover:text-primary">Manage</span></div>
-                      <div className="mt-5 grid grid-cols-3 gap-2"><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Events</p><p className="font-bold">{row.eventsPublished} / {row.eventsTotal}</p></div><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Participants</p><p className="font-bold">{row.totalParticipants.toLocaleString("en-IN")}</p></div><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Sales</p><p className="font-bold">{formatINR(row.approvedRevenuePaise)}</p></div></div>
+                      {reviewing ? <p className="mt-4 rounded-lg bg-muted/40 p-3 text-sm font-medium">{nextStep}</p> : <div className="mt-5 grid grid-cols-3 gap-2"><div><p className="text-xs text-muted-foreground">Events</p><p className="font-bold">{row.eventsTotal}</p></div><div><p className="text-xs text-muted-foreground">Participants</p><p className="font-bold">{row.totalParticipants}</p></div><div><p className="text-xs text-muted-foreground">Sales</p><p className="font-bold">{formatINR(row.approvedRevenuePaise)}</p></div></div>}
                       <div className="mt-4 flex flex-wrap gap-2"><Badge variant="outline" className={`gap-1 ${meta.className}`}>{row.paidVerificationStatus === "VERIFIED" ? <BadgeCheck className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "UNDER_REVIEW" ? <Clock className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "REJECTED" ? <XCircle className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}{meta.label}</Badge><Badge variant="outline" className={row.allowDirectUpi ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}><Banknote className="mr-1 h-3 w-3" />UPI {row.allowDirectUpi ? "allowed" : "restricted"}</Badge><Badge variant="outline" className={row.allowCashfree ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}>Cashfree {row.allowCashfree ? "allowed" : "restricted"}</Badge></div>
                     </button>;
                   })}
@@ -430,7 +451,7 @@ const AdminOrganizers = () => {
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Manage — {manageOrg?.organizationName}</DialogTitle>
-            <DialogDescription>Events, pricing, Credits, verification, and payment controls in one place.</DialogDescription>
+            <DialogDescription>{reviewing ? "Review verification, enable the appropriate payment method, and approve the receiving account." : "Manage events, pricing, and Credits. Review approvals in the Verification & payments tab."}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-5">
@@ -440,7 +461,9 @@ const AdminOrganizers = () => {
               <div className="rounded-xl border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">Participants</p><p className="text-xl font-bold">{manageOrg?.totalParticipants ?? 0}</p></div>
               <div className="rounded-xl border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">UPI status</p><p className="text-sm font-bold">{manageOrg?.allowDirectUpi ? "Allowed" : "Restricted"}</p></div>
             </section>
-            <section className="rounded-xl border p-4"><p className="font-semibold">Organizer controls</p><p className="mt-1 text-xs text-muted-foreground">Open the full event history or manage pricing, Credits, verification, and payment access.</p><div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm"><Link to={`/admin/organizers/${manageOrg?.organizationId}/events`}>View all events</Link></Button><Button asChild size="sm" variant="outline"><Link to="/admin/organizer-pricing">Configure pricing</Link></Button><Button asChild size="sm" variant="outline"><Link to="/admin/credits">Open Credits ledger</Link></Button><Button size="sm" variant="outline" onClick={() => void openReview(manageOrg!)}>Verification details</Button></div></section>
+            {reviewing ? <Button variant="outline" onClick={() => void openReview(manageOrg!)}>Review verification & documents</Button> : <section className="rounded-xl border p-4"><p className="font-semibold">Organizer operations</p><div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm"><Link to={`/admin/organizers/${manageOrg?.organizationId}/events`}>View events</Link></Button><Button asChild variant="outline" size="sm"><Link to="/admin/organizer-pricing">Pricing</Link></Button><Button asChild variant="outline" size="sm"><Link to="/admin/credits">Credits ledger</Link></Button></div></section>}
+            {!reviewing && <Button asChild className="w-full"><Link to={`/admin/organizers?stage=payments&organization=${manageOrg?.organizationId}`}>Review verification & payments</Link></Button>}
+            {reviewing && <>
             {manageOrg && manageOrg.paidVerificationStatus !== "VERIFIED" && (
               <section id="payment-verification-required" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                 <p className="font-semibold">Verification required to enable payments</p>
@@ -507,6 +530,7 @@ const AdminOrganizers = () => {
               </section>
             )}
 
+            </>}
             {/* Audit history */}
             <section>
               <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Change history</p>
@@ -537,7 +561,7 @@ const AdminOrganizers = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </AdminDashboardLayout>
+    </Wrapper>
   );
 };
 

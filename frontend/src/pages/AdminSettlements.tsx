@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/api";
 import { ArrowLeft, ArrowRight, Banknote, CalendarRange, IndianRupee, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 
 type Summary = {
   eventId: string; recoverablePaise: number; reservationShortfallPaise: number;
@@ -30,6 +31,9 @@ export function parsePaise(value: string) {
 }
 
 export default function AdminSettlements() {
+  const [scope] = useSearchParams();
+  const organizationId = scope.get("organization_id") || "";
+  const eventId = scope.get("event_id") || "";
   const [selected, setSelected] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -40,18 +44,22 @@ export default function AdminSettlements() {
   useEffect(() => {
     let active = true;
     setLoading(true); setError("");
-    apiRequest<{ items: Summary[]; total: number }>(`/admin/settlement-events?search=${encodeURIComponent(search)}&page=${page}`)
+    const filters = new URLSearchParams({ search, page: String(page), managed_only: "true" });
+    if (organizationId) filters.set("organization_id", organizationId);
+    if (eventId) filters.set("event_id", eventId);
+    apiRequest<{ items: Summary[]; total: number }>(`/admin/settlement-events?${filters}`)
       .then(r => { if (active) { setEvents(r.items); setTotal(r.total); } }).catch(e => { if (active) setError(e.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [search, page, selected]);
+  }, [search, page, selected, organizationId, eventId]);
+  useEffect(() => { setPage(1); setSelected(""); }, [organizationId, eventId]);
   if (selected) return <EventLedger key={selected} selectedEventId={selected} onBack={() => setSelected("")} />;
 
   const outstanding = events.reduce((sum, event) => sum + event.outstandingAmountPaise, 0);
   const managed = events.filter(event => event.paymentMode === "CASHFREE_MANAGED").length;
   return <AdminDashboardLayout><div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Finance workspace</p><h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">Organizer settlements</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">Review event balances and record manual transfers to organizers. No money is moved from this screen.</p></div>
+      <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Finance workspace</p><h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">Organizer payouts</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">Review event balances and record manual transfers to organizers. No money is moved from this screen.</p></div>
       <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900"><span className="font-semibold">Manual ledger</span><br />Always verify the bank or UPI receipt before marking paid.</div>
     </div>
 
@@ -200,14 +208,14 @@ function EventLedger({ selectedEventId, onBack }: { selectedEventId: string; onB
         <div className="grid gap-4 sm:grid-cols-3"><Metric label="Paid registrations" value={String(summary.paidRegistrationCount)} icon={CalendarRange} /><Metric label="Participants" value={String(summary.paidParticipantCount)} icon={Users} /><Metric label="Refunded registrations" value={String(summary.refundedRegistrationCount)} /></div>
         <div className="mt-6 grid gap-4 border-t pt-6 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Gross collected" value={money(summary.grossCollectionsPaise)} /><Metric label="Gross organizer payable" value={money(summary.grossOrganizerPayablePaise)} /><Metric label="Refund deductions" value={money(summary.refundsPaise)} /><Metric label="Adjustments" value={money(summary.adjustmentsPaise)} /></div>
       </CardContent></Card>
-      <Card><CardHeader><CardTitle>{editingId ? "Edit pending settlement" : "Record settlement"}</CardTitle><CardDescription>Paid settlements are immutable. Correct them with an adjustment entry.</CardDescription></CardHeader><CardContent><form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+      <Card><CardHeader><CardTitle>{editingId ? "Edit pending settlement" : "Record payout"}</CardTitle><CardDescription>Paid settlements are immutable. Correct them with an adjustment entry.</CardDescription></CardHeader><CardContent><form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
         <Field label="Amount (₹)"><Input inputMode="decimal" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required /></Field>
         <Field label="Method"><select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.method} onChange={e => setForm({ ...form, method: e.target.value as Form["method"] })}><option value="BANK_TRANSFER">Bank transfer</option><option value="UPI">UPI</option><option value="OTHER">Other</option></select></Field>
         <Field label="UTR / reference"><Input value={form.reference} onChange={e => setForm({ ...form, reference: e.target.value })} /></Field>
         <Field label="Settlement date"><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required /></Field>
         <Field label="Status"><select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as Form["status"] })}><option value="PAID">Paid — bank transfer confirmed</option><option value="PENDING">Pending — reserve funds</option>{editingId && <><option value="CANCELLED">Cancelled</option><option value="FAILED">Failed</option></>}</select></Field>
         <Field label="Notes"><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
-        <div className="flex gap-2 sm:col-span-2"><Button type="submit" disabled={busy}>{busy ? "Saving…" : editingId ? "Save changes" : "Record settlement"}</Button>{editingId && <Button disabled={busy} type="button" variant="outline" onClick={() => { setEditingId(null); setForm(emptyForm()); }}>Cancel edit</Button>}</div>
+        <div className="flex gap-2 sm:col-span-2"><Button type="submit" disabled={busy}>{busy ? "Saving…" : editingId ? "Save changes" : "Record payout"}</Button>{editingId && <Button disabled={busy} type="button" variant="outline" onClick={() => { setEditingId(null); setForm(emptyForm()); }}>Cancel edit</Button>}</div>
       </form></CardContent></Card>
       <Card><CardHeader><CardTitle>Record correction</CardTitle><CardDescription>A transfer reversal corrects an erroneous paid entry or records funds returned by the bank. It does not recall money. Payable adjustments change the amount owed; enter a signed amount and a supporting reason.</CardDescription></CardHeader><CardContent><form className="grid gap-4 sm:grid-cols-2" onSubmit={addAdjustment}><Field label="Correction type"><select value={reversal} onChange={e => setReversal(e.target.value)} className="w-full border rounded p-2 bg-background"><option value="">Payable adjustment</option>{rows.filter(r => r.status === "PAID").map(r => <option key={r.id} value={r.id}>Reverse {r.referenceNumber} · {money(r.amountPaise)}</option>)}</select></Field><Field label={reversal ? "Amount to reverse (₹, positive)" : "Signed amount (₹)"}><Input inputMode="decimal" value={adjustmentAmount} onChange={e => setAdjustmentAmount(e.target.value)} required /></Field><Field label="Reason / supporting reference"><Input value={adjustmentReason} onChange={e => setAdjustmentReason(e.target.value)} minLength={3} required /></Field><div className="sm:col-span-2"><Button disabled={busy} type="submit" variant="outline">Record correction</Button></div></form></CardContent></Card>
       <Card><CardHeader><CardTitle>Correction history</CardTitle></CardHeader><CardContent>{adjustments.map(a => <div key={a.id} className="border-b py-3"><p>{money(a.amountPaise)} · {a.kind} · {new Date(a.createdAt).toLocaleString()}</p><p>{a.reason}</p>{a.settlementId && <p>Transfer: {rows.find(r => r.id === a.settlementId)?.referenceNumber || a.settlementId}</p>}<p className="text-xs break-all">Recorded by {a.createdBy}</p></div>)}{!adjustments.length && <p>No corrections recorded.</p>}</CardContent></Card>

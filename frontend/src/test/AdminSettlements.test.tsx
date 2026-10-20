@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import AdminSettlements, { parsePaise } from "@/pages/AdminSettlements";
 
 const request = vi.hoisted(() => vi.fn());
@@ -27,9 +28,9 @@ it("parses exact paise and rejects rounding, exponents and overflow", () => {
 });
 
 it("keeps the same request key on a timeout retry and binds the selected event", async () => {
-  render(<AdminSettlements />);
+  render(<MemoryRouter><AdminSettlements /></MemoryRouter>);
   fireEvent.click((await screen.findAllByRole("button", { name: "Open ledger" }))[0]);
-  await screen.findByRole("button", { name: "Record settlement" });
+  await screen.findByRole("button", { name: "Record payout" });
   fireEvent.change(screen.getByLabelText("Amount (₹)"), { target: { value: "100" } });
   const posts: { url: string; body: { idempotency_key: string } }[] = [];
   const original = request.getMockImplementation()!;
@@ -37,9 +38,9 @@ it("keeps the same request key on a timeout retry and binds the selected event",
     if (options?.method === "POST") { posts.push({ url, body: JSON.parse(options.body as string) }); throw new Error("Timeout"); }
     return original(url, options);
   });
-  fireEvent.click(screen.getByRole("button", { name: "Record settlement" }));
+  fireEvent.click(screen.getByRole("button", { name: "Record payout" }));
   await screen.findByText("Timeout");
-  fireEvent.click(screen.getByRole("button", { name: "Record settlement" }));
+  fireEvent.click(screen.getByRole("button", { name: "Record payout" }));
   await waitFor(() => expect(posts).toHaveLength(2));
   expect(posts[0].body.idempotency_key).toBe(posts[1].body.idempotency_key);
   expect(posts[0].url).toBe("/admin/events/event-a/settlements");
@@ -52,7 +53,7 @@ it("discards pending edits when selecting another event", async () => {
       method: "UPI", referenceNumber: "ABC", settlementDate: "2026-10-07", status: "PENDING", notes: null }] };
     return original(url, options);
   });
-  render(<AdminSettlements />);
+  render(<MemoryRouter><AdminSettlements /></MemoryRouter>);
   fireEvent.click((await screen.findAllByRole("button", { name: "Open ledger" }))[0]);
   fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
   expect(screen.getByLabelText("Amount (₹)")).toHaveValue("100");

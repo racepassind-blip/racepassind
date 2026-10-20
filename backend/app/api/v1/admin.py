@@ -21,7 +21,7 @@ from app.services.communication_service import (
     send_test_email,
     update_email_settings,
 )
-from app.services.email_service import get_email_limit_status, retry_pending_emails, EMAIL_HARD_LIMIT, EMAIL_WARNING_LIMIT, EMAIL_RETRY_ENABLED
+from app.services.email_service import get_email_limit_status, retry_pending_emails, send_email, EMAIL_HARD_LIMIT, EMAIL_WARNING_LIMIT, EMAIL_RETRY_ENABLED
 from app.services.organization_fee_service import (
     OrganizationFeeValidationError,
     OrganizationNotFoundError,
@@ -51,6 +51,61 @@ from app.services.event_archive_service import restore_event_record
 from models import CreditTopupRequest, CreditTransaction, Event, OrganizerApplication, Organization, OrganizationMember, OrganizationPaymentDestination, OrganizationVerificationSubmission, Registration, User
 
 router = APIRouter()
+
+
+@router.get("/transactions")
+def admin_transactions(
+    search: str = Query(default="", max_length=120),
+    organization_id: UUID | None = None, event_id: UUID | None = None,
+    date_from: dt.date | None = None, date_to: dt.date | None = None,
+    method: Literal["all", "cashfree", "direct_upi", "offline", "free"] = "all",
+    kind: Literal["all", "registration", "merchandise"] = "all",
+    status: str = Query(default="all", max_length=40),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+    _: User = Depends(require_roles("admin")), db: Session = Depends(get_db),
+) -> dict:
+    if date_from and date_to and date_from > date_to or date_to == dt.date.max:
+        raise HTTPException(status_code=422, detail="Choose a valid date range")
+    from app.services.admin_transactions import transactions
+    return transactions(db, search=search, organization_id=organization_id, event_id=event_id,
+        date_from=date_from, date_to=date_to, method=method, kind=kind, status=status, page=page, page_size=page_size)
+
+
+@router.get("/transactions/options")
+def admin_transaction_options(_: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    return {
+        "organizers": [dict(row) for row in db.execute(select(Organization.id, Organization.name).order_by(Organization.name)).mappings()],
+        "events": [dict(row) for row in db.execute(select(Event.id, Event.name, Event.organization_id).order_by(Event.name)).mappings()],
+    }
+
+
+@router.get("/transactions/{kind}/{transaction_id}")
+def admin_transaction_detail(kind: Literal["registration", "merchandise"], transaction_id: UUID,
+    _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    from models import CheckoutPayment, CheckoutReceipt, Payment, ProductOrder, Refund
+    history = []
+    if kind == "registration":
+        item = db.get(Registration, transaction_id)
+        if item is None:
+            raise HTTPException(404, "Registration not found")
+        payment = db.scalar(select(Payment).where(Payment.registration_id == item.id))
+        checkout = db.scalar(select(CheckoutPayment).where(CheckoutPayment.event_order_id == payment.order_id)) if payment else None
+        if payment:
+            for when, label in ((payment.submitted_at, "Payment reference submitted"), (payment.reviewed_at, f"Payment review: {payment.status}")):
+                if when:
+                    history.append({"date": when, "label": label, "reference": payment.utr_reference or payment.transaction_id, "note": payment.decision_reason})
+        for refund in db.scalars(select(Refund).where(Refund.registration_id == item.id)).all():
+            history.append({"date": refund.refunded_at or refund.requested_at, "label": f"Refund: {refund.status}", "reference": refund.provider_refund_id, "note": None})
+    else:
+        item = db.get(ProductOrder, transaction_id)
+        if item is None:
+            raise HTTPException(404, "Order not found")
+        checkout = db.scalar(select(CheckoutPayment).where(CheckoutPayment.product_order_id == item.id))
+    if checkout:
+        for receipt in db.scalars(select(CheckoutReceipt).where(CheckoutReceipt.checkout_payment_id == checkout.id)).all():
+            history.append({"date": receipt.created_at, "label": f"Payment receipt: {receipt.disposition}", "reference": receipt.payment_id, "note": None})
+    history.sort(key=lambda row: str(row["date"]))
+    return {"history": history}
 
 
 def cashfree_ledger_filters(
@@ -176,9 +231,17 @@ class OrganizerPayableAdjustmentIn(BaseModel):
 
 @router.get("/settlement-events")
 def settlement_events(search: str = Query(default="", max_length=120), page: int = Query(default=1, ge=1),
+                      organization_id: UUID | None = None, event_id: UUID | None = None,
+                      managed_only: bool = False,
                       _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
     query = select(Event).join(Organization).where(
         Event.name.ilike(f"%{search}%") | Organization.name.ilike(f"%{search}%"))
+    if organization_id:
+        query = query.where(Event.organization_id == organization_id)
+    if event_id:
+        query = query.where(Event.id == event_id)
+    if managed_only:
+        query = query.where(Event.payment_collection_method == "CASHFREE_MANAGED")
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     events = db.scalars(query.order_by(Event.created_at.desc(), Event.id).offset((page - 1) * 20).limit(20)).all()
     summaries = {e.id: settlement_summary(db, event_id=e.id) for e in sorted(events, key=lambda e: str(e.id))}
@@ -295,6 +358,7 @@ def _serialize_admin_event(event: Event) -> dict:
         "archivedAt": event.archived_at.isoformat() if event.archived_at else None,
         "isArchived": event.archived_at is not None,
         "participantCount": event.participants,
+        "startingPricePaise": min((ticket.price for ticket in event.tickets), default=0),
         "featuresUnlocked": event.features_unlocked,
     }
 
@@ -613,17 +677,19 @@ def notify_paid_verification_review(db: Session, organization: Organization) -> 
         logging.getLogger(__name__).exception("Paid verification notification failed for %s", organization_id)
 
 
-def notify_application_review(db: Session, application: OrganizerApplication) -> None:
+def notify_application_review(db: Session, application: OrganizerApplication) -> dict:
     from app.config import get_settings
     import logging
     try:
         origin = get_settings().frontend_origins[0].rstrip("/")
-        send_email(db, recipient=application.email, subject="SportPass organizer application update",
+        result = send_email(db, recipient=application.email, subject="SportPass organizer application update",
             body=f"Your organizer application is {application.status.replace('_', ' ')}.\nCheck your status and next steps securely at {origin}/signup?type=organizer&status=1",
             email_type="ORGANIZER_APPLICATION")
+        return result.to_dict()
     except Exception:
         db.rollback()
         logging.getLogger(__name__).exception("Organizer review notification failed")
+        return {"success": False, "status": "FAILED", "message": "Could not send the organizer notification", "email_log_id": None}
 
 
 @router.post("/organizer-applications/{application_id}/request-changes")
@@ -640,8 +706,8 @@ def request_application_changes(application_id: UUID, payload: ApplicationChange
     application.reviewed_at = utc_now()
     record_audit(db, actor_user_id=admin.id, action="organizer_application_changes_requested", resource_type="organizer_application", resource_id=application.id)
     db.commit()
-    notify_application_review(db, application)
-    return {"application": _serialize_organizer_application(application)}
+    email_notification = notify_application_review(db, application)
+    return {"application": _serialize_organizer_application(application), "emailNotification": email_notification}
 
 
 @router.post("/organizer-applications/{application_id}/approve")
@@ -741,11 +807,12 @@ def approve_organizer_application(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Organizer application could not be approved") from exc
 
-    notify_application_review(db, application)
+    email_notification = notify_application_review(db, application)
     return {
         "application": _serialize_organizer_application(application),
         "organizer": public_user(organizer),
         "organization": {"id": str(organization.id), "name": organization.name, "status": organization.status},
+        "emailNotification": email_notification,
     }
 
 
@@ -782,8 +849,8 @@ def reject_organizer_application(
         metadata={"has_reason": bool(application.rejection_reason)},
     )
     db.commit()
-    notify_application_review(db, application)
-    return {"application": _serialize_organizer_application(application)}
+    email_notification = notify_application_review(db, application)
+    return {"application": _serialize_organizer_application(application), "emailNotification": email_notification}
 
 
 class PaidVerificationReviewIn(BaseModel):
@@ -897,6 +964,7 @@ def review_paid_verification(
 
 @router.get("/organizers/overview")
 def organizers_overview(
+    organization_id: UUID | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=24, ge=1, le=100),
     q: str | None = Query(default=None, max_length=160),
@@ -907,7 +975,7 @@ def organizers_overview(
     """Per-organizer rollup: events, participants, revenue, verification, billing."""
     if verification_status and verification_status not in {"NOT_SUBMITTED", "UNDER_REVIEW", "VERIFIED", "REJECTED", "SUSPENDED"}:
         raise HTTPException(status_code=422, detail="Unsupported verification status")
-    return get_admin_organizers_overview(db, page=page, page_size=page_size, search=q, verification_status=verification_status)
+    return get_admin_organizers_overview(db, page=page, page_size=page_size, search=q, verification_status=verification_status, organization_id=organization_id)
 
 
 class DirectUpiAccessIn(BaseModel):

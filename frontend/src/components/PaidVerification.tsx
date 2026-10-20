@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, Ban, Clock, FileCheck2, ShieldCheck, XCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -69,6 +70,7 @@ const emptyForm = {
 };
 
 const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationProps) => {
+  const queryClient = useQueryClient();
   const [verification, setVerification] = useState<PaidVerification | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -168,6 +170,7 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
         }),
       });
       toast.success("Verification submitted. We'll review it shortly.");
+      await queryClient.invalidateQueries({ queryKey: ["organizer-paid-verification", organizationId] });
       setLoading(true);
       await load();
     } catch (submitError) {
@@ -196,7 +199,7 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2"><FileCheck2 className="h-5 w-5 text-primary" /> Paid event verification</CardTitle>
-            <CardDescription>Verify your organization once to publish paid events. You can run free events without completing this step.</CardDescription>
+            <CardDescription>Required only if you want to collect paid registrations. Free events can be published without this verification.</CardDescription>
           </div>
           <Badge variant="outline" className={`w-fit gap-1.5 ${meta.className}`}><StatusIcon className="h-3.5 w-3.5" /> {meta.label}</Badge>
         </div>
@@ -236,8 +239,9 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
           <form onSubmit={submit} className="space-y-5">
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="pv-pan">PAN</Label>
+                <Label htmlFor="pv-pan">PAN <span className="font-normal text-muted-foreground">(required for paid events)</span></Label>
                 <Input id="pv-pan" value={form.panNumber} onChange={(event) => update("panNumber", event.target.value.toUpperCase())} maxLength={10} placeholder="ABCDE1234F" autoComplete="off" required />
+                <p className="text-xs leading-5 text-muted-foreground">No PAN? You can continue running free events. Paid-event access requires a valid PAN or an approved alternative; contact SportPass support before submitting.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="pv-pan-name">Name as per PAN</Label>

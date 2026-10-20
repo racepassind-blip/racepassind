@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { ArrowRight, Building2, CheckCircle2, ImagePlus, ShieldCheck } from "lucide-react";
+import { ArrowRight, Building2, CheckCircle2, ImagePlus, ShieldCheck, Circle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -65,7 +65,7 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
   const [verificationStatus, setVerificationStatus] = useState<string>("LOADING");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [application, setApplication] = useState<{paymentPreference: string; paymentDetails: {upiId?: string; payeeName?: string}; reviewedAt: string | null} | null>(null);
+  const [application, setApplication] = useState<{status?: string; paymentPreference: string; paymentDetails: {upiId?: string; payeeName?: string}; reviewedAt: string | null} | null>(null);
 
   useEffect(() => {
     if (!logoFile) { setLogoPreviewUrl(null); return; }
@@ -106,6 +106,14 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
     void loadOrganization();
   }, []);
 
+  useEffect(() => {
+    if (section !== "verification") return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("organization-panel-verification")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [section]);
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!organization) return;
@@ -143,6 +151,7 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
       });
       setSaved(true);
       await queryClient.invalidateQueries({ queryKey: ["organizer-organizations"] });
+      await queryClient.invalidateQueries({ queryKey: ["organizer-paid-verification", organization.id] });
       if (!embedded) navigate("/organizer");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not save your organization profile.");
@@ -153,6 +162,11 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
 
   const displayedLogo = logoPreviewUrl || organization?.logoUrl;
   const paymentMethods = [organization?.allowDirectUpi && "Direct UPI", organization?.allowCashfree && "Gateway"].filter(Boolean).join(", ");
+  const paymentAccessApproved = application?.paymentPreference === "DIRECT_UPI"
+    ? Boolean(organization?.allowDirectUpi)
+    : application?.paymentPreference === "CASHFREE"
+      ? Boolean(organization?.allowCashfree)
+      : Boolean(paymentMethods);
   const verificationSummary = verificationStatus === "VERIFIED"
     ? paymentMethods ? "Your verification and payment access are approved. Complete payment setup for each event; Direct UPI also requires an approved payment destination." : "Your paid-event verification is complete. Payment access is awaiting admin approval."
     : verificationStatus === "UNDER_REVIEW" ? "Your paid-event verification is submitted and awaiting review."
@@ -162,18 +176,27 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
     : verificationStatus === "LOADING" ? "Loading your current verification status…"
     : "Could not confirm your verification status. Open verification details to retry.";
 
+  const onboardingSteps = [
+    { title: "Organizer account approved", detail: "Your workspace is ready.", done: application?.status === "approved" || organization?.status === "approved" },
+    { title: "Complete paid-event verification", detail: "Submit PAN and billing details once to collect paid registrations.", done: verificationStatus === "VERIFIED", action: ["NOT_SUBMITTED", "REJECTED", "SUSPENDED"].includes(verificationStatus) },
+    { title: "Payment access approved", detail: "SportPass enables Direct UPI or the online gateway after review.", done: paymentAccessApproved },
+    { title: "Set up your event payment", detail: "Choose a payment method and complete the event payment details before publishing.", done: false },
+  ];
+
   const content = (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-        {application && <Card className="border-primary/20"><CardHeader><CardTitle>Your onboarding progress</CardTitle><CardDescription>{verificationSummary}</CardDescription></CardHeader><CardContent className="space-y-3 text-sm">
-          {verificationStatus === "VERIFIED" && <p>✓ Paid-event verification complete</p>}
-          <p>{paymentMethods ? `✓ Payment access enabled: ${paymentMethods}` : "Payment access: awaiting separate admin approval"}</p>
-          <Button variant="outline" onClick={() => setSection("verification")}>{["NOT_SUBMITTED", "REJECTED"].includes(verificationStatus) ? "Complete paid-event verification" : "View verification details"}</Button>
-          <p className="text-muted-foreground">Free events do not require paid-event verification.</p>
+        {application && <Card className="border-primary/20 shadow-sm"><CardHeader className="pb-4"><CardTitle>Before you accept paid registrations</CardTitle><CardDescription>Two approvals are needed. Your account is already approved.</CardDescription></CardHeader><CardContent className="space-y-2">
+          {onboardingSteps.slice(1, 3).map((step, index) => <div key={step.title} className={`flex items-center gap-3 rounded-lg border p-3 ${step.action ? "border-primary/40 bg-primary/5" : ""}`}>
+            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${step.done ? "bg-emerald-100 text-emerald-700" : step.action ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{step.done ? <CheckCircle2 className="h-4 w-4" /> : index + 1}</span>
+            <div className="min-w-0 flex-1"><p className="font-semibold">{step.title}</p><p className="mt-0.5 text-xs leading-5 text-muted-foreground">{step.done ? "Approved" : step.detail}</p></div>
+            {step.action && <Button size="sm" onClick={() => setSection("verification")}>Start</Button>}
+          </div>)}
+          <p className="pt-2 text-xs text-muted-foreground">{verificationSummary} Free events do not need paid verification.</p>
         </CardContent></Card>}
         <div>
           <p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Organizer settings</p>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Your organization</h1>
-          <p className="mt-2 max-w-2xl text-muted-foreground">Manage your public profile and verification in one place.</p>
+          <p className="mt-2 max-w-2xl text-muted-foreground">Complete your profile and follow the payment setup steps above. You can save your profile before verification is finished.</p>
         </div>
 
         <div className="grid grid-cols-2 gap-2 rounded-xl border bg-muted/40 p-1.5" role="tablist" aria-label="Organization settings">

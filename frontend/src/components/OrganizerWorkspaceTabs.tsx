@@ -18,20 +18,20 @@ export function OrganizerWorkspaceTabs({ organizationEmbedded = false, onOrganiz
 
   return (
     <>
-    <nav aria-label="Organizer workspace" className="scrollbar-none grid grid-cols-3 items-stretch gap-1 overflow-hidden border-b">
-      <Button asChild variant="ghost" className={`min-w-0 gap-1.5 rounded-b-none border-b-2 px-1 text-xs sm:gap-2 sm:px-4 sm:text-sm ${eventsActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-        <Link to="/organizer" onClick={onEventsSelect}><Calendar className="h-4 w-4" /> Events</Link>
+    <nav aria-label="Organizer workspace" className="grid min-w-0 grid-cols-3 items-stretch gap-1 overflow-hidden border-b">
+      <Button asChild variant="ghost" className={`min-w-0 gap-1 rounded-b-none border-b-2 px-1 text-[11px] sm:gap-2 sm:px-4 sm:text-sm ${eventsActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+        <Link className="min-w-0 whitespace-nowrap" to="/organizer" onClick={onEventsSelect}><Calendar className="h-4 w-4 shrink-0" /><span className="truncate">Events</span></Link>
       </Button>
-      <Button asChild variant="ghost" className={`min-w-0 gap-1.5 rounded-b-none border-b-2 px-1 text-xs sm:gap-2 sm:px-4 sm:text-sm ${transactionsActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-        <Link to="/organizer/payments" aria-current={transactionsActive ? "page" : undefined}><CreditCard className="h-4 w-4" /> Transactions</Link>
+      <Button asChild variant="ghost" className={`min-w-0 gap-1 rounded-b-none border-b-2 px-1 text-[11px] sm:gap-2 sm:px-4 sm:text-sm ${transactionsActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+        <Link className="min-w-0 whitespace-nowrap" to="/organizer/payments" aria-current={transactionsActive ? "page" : undefined}><CreditCard className="h-4 w-4 shrink-0" /><span className="truncate">Transactions</span></Link>
       </Button>
       {onOrganizationSelect ? (
-        <Button type="button" variant="ghost" className={`min-w-0 gap-1.5 rounded-b-none border-b-2 px-1 text-xs sm:gap-2 sm:px-4 sm:text-sm ${organizationActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`} onClick={onOrganizationSelect}>
-          <Building2 className="h-4 w-4" /> Organization
+        <Button type="button" variant="ghost" className={`min-w-0 gap-1 rounded-b-none border-b-2 px-1 text-[11px] sm:gap-2 sm:px-4 sm:text-sm ${organizationActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`} onClick={onOrganizationSelect}>
+          <Building2 className="h-4 w-4 shrink-0" /><span className="truncate">Organization</span>
         </Button>
       ) : (
-        <Button asChild variant="ghost" className={`min-w-0 gap-1.5 rounded-b-none border-b-2 px-1 text-xs sm:gap-2 sm:px-4 sm:text-sm ${organizationActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-          <Link to="/organizer/setup"><Building2 className="h-4 w-4" /> Organization</Link>
+        <Button asChild variant="ghost" className={`min-w-0 gap-1 rounded-b-none border-b-2 px-1 text-[11px] sm:gap-2 sm:px-4 sm:text-sm ${organizationActive ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+          <Link className="min-w-0 whitespace-nowrap" to="/organizer/setup"><Building2 className="h-4 w-4 shrink-0" /><span className="truncate">Organization</span></Link>
         </Button>
       )}
     </nav>
