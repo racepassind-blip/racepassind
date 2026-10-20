@@ -143,7 +143,33 @@ VITE_API_URL=https://your-backend-origin.example npm run build
 
 Publish `dist/` through the static host. Configure SPA fallback so unknown frontend routes serve `index.html`. Configure the backend CORS origin to exactly match the deployed frontend origin.
 
-## 5. Provider replacement checklist
+## 5. Optional Ollama connectivity diagnostic
+
+The opt-in diagnostic is `backend/scripts/test_ai_connection.py`. It is not
+imported by the application, startup command, migration command, or health
+checks. Run locally with the four secret-managed variables set:
+
+```sh
+cd backend
+python3 scripts/test_ai_connection.py
+```
+
+The current Render blueprint uses the paid `starter` web-service plan. Run it
+from Render Dashboard Shell or an ephemeral shell using the latest image:
+
+```sh
+render ssh <service-id> --ephemeral
+python scripts/test_ai_connection.py
+```
+
+Alternatively, create a Render one-off job for the backend service with start
+command `python scripts/test_ai_connection.py`, then review its logs. Do not add
+a public diagnostic route. If the service is changed to Render Free, shell
+access and one-off jobs are unavailable; use a paid service/ephemeral shell or
+run locally from a network path that can reach Cloudflare Access. Never paste
+token values into commands or logs.
+
+## 6. Provider replacement checklist
 
 A provider is replaceable when it supplies these equivalent inputs:
 
@@ -155,7 +181,7 @@ A provider is replaceable when it supplies these equivalent inputs:
 
 Names such as Vercel, Render, Supabase, Railway, Neon, and Cloudflare are only replaceable operational examples. No business logic imports their SDKs or depends on their hostnames.
 
-## 6. Operations and security
+## 7. Operations and security
 
 - Keep HTTPS enabled for frontend, backend, database connections, and OAuth callbacks.
 - Rotate session, CSRF, ticket-signing, database, OAuth, and storage secrets through the platform secret manager.
@@ -166,7 +192,7 @@ Names such as Vercel, Render, Supabase, Railway, Neon, and Cloudflare are only r
 - Monitor `/health`, `/ready`, migration status, database errors, storage errors, response latency, and rate-limit responses.
 - Use a managed background-job mechanism later for exports, emails, and verification work; do not make the container filesystem a queue.
 
-## 7. Launch checks
+## 8. Launch checks
 
 Before calling the POC publicly launch-ready, complete T025's non-sensitive end-to-end flow and confirm:
 

@@ -1,0 +1,159 @@
+"""Diagnostic for the Render backend's private Ollama connection.
+
+This is intentionally a standalone, opt-in script. It is not imported by the
+FastAPI application and never runs during startup or deployment.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import time
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urljoin
+
+import requests
+
+REQUIRED_ENV = (
+    "SPORTPASS_AI_URL",
+    "SPORTPASS_AI_MODEL",
+    "CF_ACCESS_CLIENT_ID",
+    "CF_ACCESS_CLIENT_SECRET",
+)
+PROMPT = (
+    "Write a factual two-sentence summary of a cycling event with 100 registrations, "
+    "85 finishers, 10 DNF and 5 DNS. Use only the supplied facts."
+)
+DEFAULT_MODEL = "qwen2.5:1.5b"
+TIMEOUT = (10.0, 180.0)  # connection, read; home CPU inference may be slow
+
+
+class DiagnosticError(RuntimeError):
+    """A safe, user-facing diagnostic failure (never contains credentials)."""
+
+
+@dataclass(frozen=True)
+class Config:
+    url: str
+    model: str
+    headers: dict[str, str]
+
+
+def load_config(environ: dict[str, str] | None = None) -> Config:
+    env = os.environ if environ is None else environ
+    missing = [key for key in REQUIRED_ENV if not env.get(key, "").strip()]
+    if missing:
+        raise DiagnosticError("Missing required environment variable(s): " + ", ".join(missing))
+    return Config(
+        url=env["SPORTPASS_AI_URL"].strip().rstrip("/") + "/",
+        model=env["SPORTPASS_AI_MODEL"].strip(),
+        headers={
+            "CF-Access-Client-Id": env["CF_ACCESS_CLIENT_ID"].strip(),
+            "CF-Access-Client-Secret": env["CF_ACCESS_CLIENT_SECRET"].strip(),
+            "Accept": "application/json",
+        },
+    )
+
+
+def _request_error(response: requests.Response, endpoint: str) -> DiagnosticError:
+    status = response.status_code
+    if status in (401, 403):
+        reason = "Cloudflare Access authentication failed"
+    elif status in (502, 503):
+        reason = "Cloudflare/origin failure"
+    else:
+        reason = f"unexpected HTTP status {status}"
+    return DiagnosticError(f"{endpoint}: {reason} (HTTP {status})")
+
+
+def _json(response: requests.Response, endpoint: str) -> dict[str, Any]:
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise DiagnosticError(f"{endpoint}: invalid JSON response") from exc
+    if not isinstance(data, dict):
+        raise DiagnosticError(f"{endpoint}: unexpected response shape")
+    return data
+
+
+def run_diagnostic(config: Config, session: requests.Session | Any = requests) -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        tags_response = session.get(urljoin(config.url, "api/tags"), headers=config.headers, timeout=TIMEOUT)
+    except requests.exceptions.Timeout as exc:
+        raise DiagnosticError("/api/tags: request timeout") from exc
+    except requests.exceptions.RequestException as exc:
+        raise DiagnosticError(f"/api/tags: DNS or network connection failure ({exc.__class__.__name__})") from exc
+    connection_duration = time.perf_counter() - started
+    if tags_response.status_code != 200:
+        raise _request_error(tags_response, "/api/tags")
+    tags = _json(tags_response, "/api/tags")
+    models = tags.get("models")
+    if not isinstance(models, list):
+        raise DiagnosticError("/api/tags: missing or invalid models list")
+    available_names = {item.get("name") or item.get("model") for item in models if isinstance(item, dict)}
+    if config.model not in available_names:
+        raise DiagnosticError(f"/api/tags: configured model unavailable: {config.model}")
+
+    payload = {
+        "model": config.model,
+        "prompt": PROMPT,
+        "stream": False,
+        "options": {"temperature": 0.2, "num_ctx": 2048, "num_predict": 100},
+    }
+    generation_started = time.perf_counter()
+    try:
+        generate_response = session.post(
+            urljoin(config.url, "api/generate"), headers={**config.headers, "Content-Type": "application/json"},
+            json=payload, timeout=TIMEOUT,
+        )
+    except requests.exceptions.Timeout as exc:
+        raise DiagnosticError("/api/generate: request timeout") from exc
+    except requests.exceptions.RequestException as exc:
+        raise DiagnosticError(f"/api/generate: DNS or network connection failure ({exc.__class__.__name__})") from exc
+    total_duration = time.perf_counter() - started
+    generation_duration = time.perf_counter() - generation_started
+    if generate_response.status_code != 200:
+        raise _request_error(generate_response, "/api/generate")
+    result = _json(generate_response, "/api/generate")
+    response_text = result.get("response")
+    if not isinstance(response_text, str):
+        raise DiagnosticError("/api/generate: missing or invalid response text")
+
+    def seconds(key: str) -> float | None:
+        value = result.get(key)
+        return value / 1_000_000_000 if isinstance(value, (int, float)) else None
+
+    return {
+        "connection_duration": connection_duration,
+        "total_duration": total_duration,
+        "generation_duration": generation_duration,
+        "model_available": True,
+        "response": response_text,
+        "ollama_total_duration": seconds("total_duration"),
+        "model_load_duration": seconds("load_duration"),
+        "ollama_generation_duration": seconds("eval_duration"),
+    }
+
+
+def main() -> int:
+    try:
+        result = run_diagnostic(load_config())
+    except DiagnosticError as exc:
+        print(f"AI connectivity check FAILED: {exc}", file=sys.stderr)
+        return 1
+    print("AI connectivity check PASSED")
+    print(f"Model available: {result['model_available']}")
+    print(f"AI response: {result['response']}")
+    print(f"Connection time: {result['connection_duration']:.3f}s")
+    print(f"Total response time: {result['total_duration']:.3f}s")
+    print(f"Generation request duration: {result['generation_duration']:.3f}s")
+    for label, key in (("Ollama total", "ollama_total_duration"), ("Model load", "model_load_duration"), ("Ollama generation", "ollama_generation_duration")):
+        if result[key] is not None:
+            print(f"{label} duration: {result[key]:.3f}s")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

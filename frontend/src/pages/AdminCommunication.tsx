@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, CheckCircle2, RefreshCw, Save, Send, ShieldCheck, WifiOff } from "lucide-react";
+import { AlertCircle, Bot, CheckCircle2, RefreshCw, Save, Send, ShieldCheck, WifiOff } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { AdminDashboardLayout } from "@/components/AdminDashboardLayout";
@@ -29,6 +29,8 @@ const AdminCommunication = () => {
   const [testRecipient, setTestRecipient] = useState("");
   const [testStatus, setTestStatus] = useState<"idle" | "success" | "error" | null>(null);
   const [testMessage, setTestMessage] = useState("");
+  const [testingAi, setTestingAi] = useState(false);
+  const [aiResult, setAiResult] = useState<{ success: boolean; response?: string; modelAvailable?: boolean; totalDuration?: number; modelLoadDuration?: number | null; detail?: string } | null>(null);
 
   const loadSettings = async () => {
     setLoading(true);
@@ -112,6 +114,21 @@ const AdminCommunication = () => {
     setSettings((prev) => (prev ? { ...prev, [key]: value } : null));
     setTestStatus(null);
     setTestMessage("");
+  };
+
+  const handleTestAi = async () => {
+    setTestingAi(true);
+    setAiResult(null);
+    try {
+      setAiResult(await apiRequest<typeof aiResult>("/admin/communication/test-ai", {
+        method: "POST",
+        timeoutMs: 210_000,
+      }));
+    } catch (aiError) {
+      setAiResult({ success: false, detail: aiError instanceof Error ? aiError.message : "AI connectivity test failed." });
+    } finally {
+      setTestingAi(false);
+    }
   };
 
   if (loading && !settings) {
@@ -284,6 +301,30 @@ const AdminCommunication = () => {
                       <p className="font-medium">Test failed</p>
                       <p className="mt-1">{testMessage}</p>
                     </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* WhatsApp Coming Soon Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Bot className="h-5 w-5" /> Test private AI connection</CardTitle>
+                <CardDescription className="mt-1">Run a safe connectivity proof-of-concept against the configured Ollama server. This does not use event or participant data.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button onClick={() => void handleTestAi()} disabled={testingAi} className="gap-2">
+                  {testingAi ? <><RefreshCw className="h-4 w-4 animate-spin" /> Testing AI…</> : <><Bot className="h-4 w-4" /> Test AI</>}
+                </Button>
+                {aiResult && (
+                  <div className={`rounded-lg p-4 text-sm ${aiResult.success ? "bg-emerald-500/10 text-emerald-700" : "bg-destructive/10 text-destructive"}`}>
+                    {aiResult.success ? (
+                      <>
+                        <p className="font-semibold">AI connection successful · Model available: {aiResult.modelAvailable ? "Yes" : "No"}</p>
+                        <p className="mt-2 whitespace-pre-wrap">{aiResult.response}</p>
+                        <p className="mt-2 text-xs">Total response time: {aiResult.totalDuration?.toFixed(2)}s{aiResult.modelLoadDuration != null ? ` · Model load: ${aiResult.modelLoadDuration.toFixed(2)}s` : ""}</p>
+                      </>
+                    ) : <><p className="font-semibold">AI connection failed</p><p className="mt-1">{aiResult.detail}</p></>}
                   </div>
                 )}
               </CardContent>

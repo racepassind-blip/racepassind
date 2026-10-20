@@ -21,6 +21,7 @@ from app.services.communication_service import (
     send_test_email,
     update_email_settings,
 )
+from scripts.test_ai_connection import DiagnosticError, load_config, run_diagnostic
 from app.services.email_service import get_email_limit_status, retry_pending_emails, send_email, EMAIL_HARD_LIMIT, EMAIL_WARNING_LIMIT, EMAIL_RETRY_ENABLED
 from app.services.organization_fee_service import (
     OrganizationFeeValidationError,
@@ -1483,6 +1484,29 @@ def send_test_email_endpoint(
     if success:
         return {"success": True, "message": message}
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+
+
+@router.post("/communication/test-ai")
+def test_ai_endpoint(
+    _: User = Depends(require_roles("admin")),
+    __: None = Depends(require_csrf),
+) -> dict:
+    """Run the opt-in private Ollama connectivity check for an admin."""
+    try:
+        result = run_diagnostic(load_config())
+    except DiagnosticError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return {
+        "success": True,
+        "modelAvailable": result["model_available"],
+        "response": result["response"],
+        "connectionDuration": result["connection_duration"],
+        "totalDuration": result["total_duration"],
+        "generationDuration": result["generation_duration"],
+        "ollamaTotalDuration": result["ollama_total_duration"],
+        "modelLoadDuration": result["model_load_duration"],
+        "ollamaGenerationDuration": result["ollama_generation_duration"],
+    }
 
 
 @router.get("/email-usage")
