@@ -290,15 +290,7 @@ def create_event(
     _validate_registration_window(payload)
     organization = get_authorized_organization(db, user, payload.organization_id)
 
-    has_paid_tickets = any(ticket.price_rupees > 0 for category in payload.categories for ticket in category.tickets)
-    if has_paid_tickets and payload.payment_collection_method == "DIRECT_UPI" and not organization.allow_direct_upi:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Direct UPI payments are not enabled for this organizer. Contact SportPass to request access.",
-        )
-    if has_paid_tickets and payload.payment_collection_method == "CASHFREE_MANAGED" and not organization.allow_cashfree:
-        raise HTTPException(status_code=403, detail="Cashfree payments are not enabled for this organizer. Contact SportPass to request access.")
-
+    # Drafts can be prepared before payment access is approved. Publishing enforces readiness.
     field_config, addon_config = normalize_event_configs(
         payload.field_config,
         payload.addon_config,
@@ -722,14 +714,14 @@ def update_event(
     if payload.payment_collection_method is not None:
         if payload.payment_collection_method != event.payment_collection_method and _event_has_registration(db, event.id):
             raise HTTPException(status_code=409, detail="Payment method cannot be changed after the first registration. Create a new event to use a different method.")
-        if payload.payment_collection_method != event.payment_collection_method and payload.payment_collection_method == "DIRECT_UPI":
+        if event.status != "draft" and payload.payment_collection_method != event.payment_collection_method and payload.payment_collection_method == "DIRECT_UPI":
             org = db.scalar(select(Organization).where(Organization.id == event.organization_id))
             if org and not org.allow_direct_upi:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Direct UPI payments are not enabled for this organizer. Contact SportPass to request access.",
                 )
-        if payload.payment_collection_method != event.payment_collection_method and payload.payment_collection_method == "CASHFREE_MANAGED":
+        if event.status != "draft" and payload.payment_collection_method != event.payment_collection_method and payload.payment_collection_method == "CASHFREE_MANAGED":
             org = db.scalar(select(Organization).where(Organization.id == event.organization_id))
             if org and not org.allow_cashfree:
                 raise HTTPException(status_code=403, detail="Cashfree payments are not enabled for this organizer. Contact SportPass to request access.")

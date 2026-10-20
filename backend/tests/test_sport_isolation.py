@@ -74,19 +74,30 @@ def test_payment_method_locks_after_first_registration(db):
     assert event.payment_collection_method == "DIRECT_UPI"
 
 
-def test_paid_cashfree_event_requires_admin_grant(db):
+@pytest.mark.parametrize("method", ["DIRECT_UPI", "CASHFREE_MANAGED"])
+def test_paid_draft_can_be_saved_without_payment_approval(db, method):
     from fastapi import HTTPException
+    from app.api.v1.events import publish_event
     event, user, payload = make_event(db, "running")
-    payload["name"] = "Paid Cashfree race"
+    event.organization.allow_direct_upi = False
+    event.organization.allow_cashfree = False
+    event.organization.paid_verification_status = "NOT_SUBMITTED"
+    db.commit()
     payload["categories"][0]["tickets"][0]["price_rupees"] = "100"
-    payload["payment_collection_method"] = "CASHFREE_MANAGED"
-    event.organization.paid_verification_status = "VERIFIED"
-    with pytest.raises(HTTPException) as exc:
-        create_event(OrganizerEventCreateV1.model_validate(payload), user=user, db=db, storage=None)
-    assert exc.value.status_code == 403
-    event.organization.allow_cashfree = True
+    payload["payment_collection_method"] = method
     created = create_event(OrganizerEventCreateV1.model_validate(payload), user=user, db=db, storage=None)
-    assert created["paymentCollectionMethod"] == "CASHFREE_MANAGED"
+    draft = db.get(Event, UUID(created["id"]))
+    assert draft.status == "draft"
+    assert draft.payment_collection_method == method
+    payload.pop("organization_id")
+    payload["payment_collection_method"] = "DIRECT_UPI" if method == "CASHFREE_MANAGED" else "CASHFREE_MANAGED"
+    update_event(draft.id, OrganizerEventUpdateV1.model_validate(payload), user=user, db=db, storage=None)
+    db.refresh(draft)
+    assert draft.payment_collection_method == payload["payment_collection_method"]
+    with pytest.raises(HTTPException) as exc:
+        publish_event(draft.id, user=user, db=db)
+    assert exc.value.status_code in (403, 422)
+    assert draft.status == "draft"
 
 
 @pytest.mark.parametrize("sport", ["badminton", "table_tennis", "running", "cycling", "trekking", "tennis", "squash", "triathlon", "swimming", "walkathon", "obstacle_course"])

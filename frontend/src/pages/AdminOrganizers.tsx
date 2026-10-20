@@ -158,6 +158,7 @@ const AdminOrganizers = () => {
 
   // ── Verification review ──────────────────────────────────────────────────
   const openReview = async (org: OrganizerOverview) => {
+    closeManage();
     setReviewOrg(org);
     setDetail(null);
     setRejectReason("");
@@ -440,6 +441,12 @@ const AdminOrganizers = () => {
               <div className="rounded-xl border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">UPI status</p><p className="text-sm font-bold">{manageOrg?.allowDirectUpi ? "Allowed" : "Restricted"}</p></div>
             </section>
             <section className="rounded-xl border p-4"><p className="font-semibold">Organizer controls</p><p className="mt-1 text-xs text-muted-foreground">Open the full event history or manage pricing, Credits, verification, and payment access.</p><div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm"><Link to={`/admin/organizers/${manageOrg?.organizationId}/events`}>View all events</Link></Button><Button asChild size="sm" variant="outline"><Link to="/admin/organizer-pricing">Configure pricing</Link></Button><Button asChild size="sm" variant="outline"><Link to="/admin/credits">Open Credits ledger</Link></Button><Button size="sm" variant="outline" onClick={() => void openReview(manageOrg!)}>Verification details</Button></div></section>
+            {manageOrg && manageOrg.paidVerificationStatus !== "VERIFIED" && (
+              <section id="payment-verification-required" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="font-semibold">Verification required to enable payments</p>
+                <p className="mt-1">Current status: {VERIF_META[manageOrg.paidVerificationStatus].label}. Open Verification details to review the organizer before enabling Direct UPI or Cashfree.</p>
+              </section>
+            )}
             {/* Payment Access section */}
             <section className="rounded-xl border p-4 space-y-3">
               <div className="flex items-center justify-between gap-3">
@@ -448,14 +455,16 @@ const AdminOrganizers = () => {
                   <p className="text-xs text-muted-foreground mt-1">
                     Direct UPI sends participant registration payments directly to the organizer.
                     SportPass platform fees are deducted from organizer Credits when registrations are approved.
-                    Enable this only for approved or trusted organizers.
+                    Verify the organizer before enabling Direct UPI.
                   </p>
                 </div>
                 <button
                   type="button"
                   role="switch"
+                  aria-label="Allow Direct UPI Payments"
+                  aria-describedby={manageOrg?.paidVerificationStatus !== "VERIFIED" ? "payment-verification-required" : undefined}
                   aria-checked={manageOrg?.allowDirectUpi ?? false}
-                  disabled={upiToggleBusy}
+                  disabled={upiToggleBusy || (!manageOrg?.allowDirectUpi && manageOrg?.paidVerificationStatus !== "VERIFIED")}
                   onClick={() => void toggleDirectUpi(!(manageOrg?.allowDirectUpi ?? false))}
                   className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${(manageOrg?.allowDirectUpi ?? false) ? "bg-emerald-500" : "bg-muted-foreground/30"}`}
                 >
@@ -470,7 +479,7 @@ const AdminOrganizers = () => {
             <section className="rounded-xl border p-4 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div><p className="font-semibold text-sm">Allow Cashfree Payments</p><p className="mt-1 text-xs text-muted-foreground">Admin approval is required before this organizer can collect new registrations through Cashfree. Existing payments and refunds can still be reconciled.</p></div>
-                <button type="button" role="switch" aria-label="Allow Cashfree Payments" aria-checked={manageOrg?.allowCashfree ?? false} disabled={upiToggleBusy} onClick={() => void toggleCashfree(!(manageOrg?.allowCashfree ?? false))} className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${manageOrg?.allowCashfree ? "bg-emerald-500" : "bg-muted-foreground/30"}`}><span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform ${manageOrg?.allowCashfree ? "translate-x-5" : "translate-x-0"}`} /></button>
+                <button type="button" role="switch" aria-label="Allow Cashfree Payments" aria-checked={manageOrg?.allowCashfree ?? false} aria-describedby={manageOrg?.paidVerificationStatus !== "VERIFIED" ? "payment-verification-required" : undefined} disabled={upiToggleBusy || (!manageOrg?.allowCashfree && manageOrg?.paidVerificationStatus !== "VERIFIED")} onClick={() => void toggleCashfree(!(manageOrg?.allowCashfree ?? false))} className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${manageOrg?.allowCashfree ? "bg-emerald-500" : "bg-muted-foreground/30"}`}><span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform ${manageOrg?.allowCashfree ? "translate-x-5" : "translate-x-0"}`} /></button>
               </div>
             </section>
 
@@ -481,7 +490,7 @@ const AdminOrganizers = () => {
                   <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold">{destination.upiId}</p><p className="text-xs text-muted-foreground">{destination.payeeName} · submitted {formatDate(destination.submittedAt)}</p></div><Badge variant="outline">{destination.status.replaceAll("_", " ")}</Badge></div>
                   {destination.rejectionReason && <p className="mt-2 text-xs text-destructive">Reason: {destination.rejectionReason}</p>}
                   {(destination.status === "UNDER_REVIEW" || destination.status === "LEGACY_APPROVED") && (
-                    <div className="mt-3 space-y-2"><Textarea value={destinationReason} onChange={(event) => setDestinationReason(event.target.value)} rows={2} maxLength={2000} placeholder="Reason required only when rejecting" /><div className="flex gap-2"><Button size="sm" onClick={() => void reviewDestination(destination, "APPROVED")} disabled={upiToggleBusy}>Approve destination</Button><Button size="sm" variant="outline" className="text-destructive" onClick={() => void reviewDestination(destination, "REJECTED")} disabled={upiToggleBusy}>Reject</Button></div></div>
+                    <div className="mt-3 space-y-2"><Textarea value={destinationReason} onChange={(event) => setDestinationReason(event.target.value)} rows={2} maxLength={2000} placeholder="Reason required only when rejecting" /><div className="flex gap-2"><Button size="sm" onClick={() => void reviewDestination(destination, "APPROVED")} disabled={upiToggleBusy || manageOrg?.paidVerificationStatus !== "VERIFIED"}>Approve destination</Button><Button size="sm" variant="outline" className="text-destructive" onClick={() => void reviewDestination(destination, "REJECTED")} disabled={upiToggleBusy}>Reject</Button></div></div>
                   )}
                 </div>
               ))}

@@ -924,14 +924,6 @@ const OrganizerEventCreate = () => {
         return false;
       }
     }
-    if (step === 5 && hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI" && (!upiId.trim() || !payeeName.trim())) {
-      toast.error("Add UPI ID and payee name for paid ticket tiers.");
-      return false;
-    }
-    if (step === 5 && hasPaidTickets && !paymentMethodLocked && (paymentCollectionMethod === "DIRECT_UPI" ? !allowDirectUpi : !allowCashfree || !cashfreeEnabled)) {
-      toast.error("This payment method must be enabled for your organizer by SportPass before publishing.");
-      return false;
-    }
     return true;
   };
 
@@ -952,11 +944,11 @@ const OrganizerEventCreate = () => {
       toast.error(`Missing: ${missingFields.join(", ")}.`);
       return;
     }
-    if (hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI" && (!upiId || !payeeName)) {
+    if (publish && hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI" && (!upiId.trim() || !payeeName.trim())) {
       toast.error("Add UPI payment details for paid ticket tiers.");
       return;
     }
-    if (hasPaidTickets && !paymentMethodLocked && (paymentCollectionMethod === "DIRECT_UPI" ? !allowDirectUpi : !allowCashfree || !cashfreeEnabled)) {
+    if (publish && hasPaidTickets && !paymentMethodLocked && (paymentCollectionMethod === "DIRECT_UPI" ? !allowDirectUpi : !allowCashfree || !cashfreeEnabled)) {
       toast.error("Ask SportPass to enable this payment method for your organizer.");
       return;
     }
@@ -1146,7 +1138,7 @@ const OrganizerEventCreate = () => {
         bannerFile
           ? uploadFile(`/organizer/events/${savedEventId}/banner`, bannerFile)
           : Promise.resolve(),
-        hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI"
+        hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI" && upiId.trim() && payeeName.trim()
           ? apiRequest<{ paymentDestinationStatus: typeof paymentDestinationStatus }>(`/organizer/events/${savedEventId}/payment-settings`, {
               method: "PUT",
               body: JSON.stringify({ upi_id: upiId, payee_name: payeeName, instructions: paymentInstructions }),
@@ -1588,6 +1580,7 @@ const OrganizerEventCreate = () => {
           {currentStep === 5 && <section className="space-y-5 rounded-xl border bg-card p-6">
             <div><h2 className="text-lg font-bold">Payment details</h2><p className="text-sm text-muted-foreground">{hasPaidTickets ? (paymentCollectionMethod === "CASHFREE_MANAGED" ? "Participants pay online through Cashfree. No organizer UPI details are required." : "Participants pay your verified UPI destination, submit a UTR, and you approve payment.") : "All ticket tiers are free. Participants can register without payment details."}</p></div>
             <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">You can save a draft before payment setup is complete. Verification and payment approval are required to publish paid events.</p>
               <Label>Payment Collection Method {hasPaidTickets ? "*" : "(optional)"}</Label>
               {paymentMethodLocked && <p className="text-xs text-amber-700">This event already has registrations. Its payment method cannot be changed; create a new event to use the other method.</p>}
               <div className="space-y-2">
