@@ -112,6 +112,12 @@ def test_rewrite_description_uses_system_prompt_and_returns_only_model_text():
     assert payload["options"]["temperature"] == 0.1
 
 
+def test_rewrite_description_falls_back_when_model_changes_source_terms():
+    session = FakeSession(response(200, {}), response(200, {"response": "Mysuru Dasra is organizing a special event for HAM."}))
+    source = "Mysuru's Dasara celebrates with HAMS."
+    assert module.rewrite_description(config(), source, session) == source
+
+
 def test_ai_inference_lease_enforces_shared_capacity():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
