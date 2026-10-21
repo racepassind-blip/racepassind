@@ -88,7 +88,7 @@ def get_admin_organizers_overview(db: Session, *, page: int = 1, page_size: int 
                 OrganizationMember.organization_id.in_(organization_ids),
                 OrganizationMember.member_role == "organizer",
             )
-            .order_by(OrganizationMember.created_at.asc(), OrganizationMember.id.asc())
+            .order_by(OrganizationMember.created_at.asc(), OrganizationMember.user_id.asc())
         ).all()
         for organization_id, user in member_rows:
             organizer_members.setdefault(organization_id, user)
