@@ -216,12 +216,21 @@ def rewrite_description(config: Config, description: str, session: requests.Sess
     rewritten = rewritten.strip()
     # The small local model can occasionally corrupt proper names. Never surface a
     # rewrite that drops a source number or changes a capitalized/unusual term.
-    source_terms = {
-        token.lower()
-        for token in re.findall(r"[A-Za-z][A-Za-z0-9'’-]*|\d+(?:\.\d+)?", description)
-        if any(character.isupper() for character in token) or any(character.isdigit() for character in token)
-    }
-    rewritten_terms = {token.lower() for token in re.findall(r"[A-Za-z][A-Za-z0-9'’-]*|\d+(?:\.\d+)?", rewritten)}
+    def protected_terms(text: str, *, include_all_words: bool = False) -> set[str]:
+        terms: set[str] = set()
+        for token in re.findall(r"[A-Za-z][A-Za-z0-9'’-]*|\d+(?:\.\d+)?", text):
+            if include_all_words or any(character.isupper() for character in token):
+                terms.add(token.lower())
+            if any(character.isdigit() for character in token):
+                # Treat “4th”, “4th,” and “4” as the same protected number so
+                # safe date formatting changes do not cause a false fallback.
+                number = re.search(r"\d+(?:\.\d+)?", token)
+                if number:
+                    terms.add(number.group(0))
+        return terms
+
+    source_terms = protected_terms(description)
+    rewritten_terms = protected_terms(rewritten, include_all_words=True)
     rewritten_words = set(re.findall(r"[a-z]+", rewritten.lower()))
     source_words = set(re.findall(r"[a-z]+", description.lower()))
     added_system_words = rewritten_words.intersection(UNSUPPORTED_SYSTEM_WORDS) - source_words

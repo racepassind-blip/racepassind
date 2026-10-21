@@ -119,6 +119,12 @@ def test_rewrite_description_falls_back_when_model_changes_source_terms():
     assert module.rewrite_description(config(), source, session) == source
 
 
+def test_rewrite_description_allows_safe_date_formatting():
+    session = FakeSession(response(200, {}), response(200, {"response": "Join the Hyderabad Night Run on December 4 at uppal."}))
+    source = "Hyderabad Night Run on 4th dec at uppal, come with family and friends"
+    assert module.rewrite_description(config(), source, session) == "Join the Hyderabad Night Run on December 4 at uppal."
+
+
 def test_rewrite_description_falls_back_when_model_adds_promotional_claims():
     session = FakeSession(response(200, {}), response(200, {"response": "Join us for the exciting event with delicious breakfast."}))
     source = "Mysuru Dasara cycling event, 25 km ride, breakfast after the ride."
