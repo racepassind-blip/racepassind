@@ -61,7 +61,7 @@ def rewrite_event_description(
     user: User = Depends(require_roles("admin", "organizer")),
     __: None = Depends(require_csrf),
     db: Session = Depends(get_db),
-) -> dict[str, str]:
+) -> dict[str, str | bool]:
     """Suggest friendly event copy using only the organizer's supplied text."""
     organization = get_authorized_organization(db, user, payload.organization_id)
     lease_id: UUID | None = None
