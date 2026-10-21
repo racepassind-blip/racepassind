@@ -684,8 +684,46 @@ def notify_application_review(db: Session, application: OrganizerApplication) ->
     import logging
     try:
         origin = get_settings().frontend_origins[0].rstrip("/")
-        result = send_email(db, recipient=application.email, subject="SportPass organizer application update",
-            body=f"Your organizer application is {application.status.replace('_', ' ')}.\nCheck your status and next steps securely at {origin}/signup?type=organizer&status=1",
+        status_link = f"{origin}/signup?type=organizer&status=1"
+        if application.status == "pending":
+            subject = "Welcome to SportPass India — Application Under Review"
+            body = (
+                f"Hello {application.applicant_name},\n\n"
+                "Welcome to SportPass India, and thank you for applying to become an organizer.\n\n"
+                f"Your organizer application for {application.organization_name} has been received successfully. "
+                "Our admin team will review your application and approve it after completing the verification process.\n\n"
+                f"You can securely check your application status and any next steps here:\n{status_link}\n\n"
+                "We appreciate your interest in organizing events with SportPass India.\n\n"
+                "Regards,\nSportPass India Team"
+            )
+        elif application.status == "changes_requested":
+            subject = "Action Required: Update Your SportPass Organizer Application"
+            body = (
+                f"Hello {application.applicant_name},\n\n"
+                "Thank you for applying to become a SportPass India organizer.\n\n"
+                f"Our admin team has reviewed your application for {application.organization_name} and requires "
+                "some additional information or corrections before approval.\n\n"
+                f"Requested changes:\n{application.rejection_reason or 'Please review your application details and provide any missing information.'}\n\n"
+                f"Please update your application and resubmit it using the secure link below:\n{status_link}\n\n"
+                "Your application will be reviewed again after the requested changes are submitted.\n\n"
+                "Regards,\nSportPass India Team"
+            )
+        elif application.status == "approved":
+            subject = "Welcome to SportPass India — Organizer Application Approved"
+            body = (
+                f"Hello {application.applicant_name},\n\n"
+                "Congratulations. Your application to become a SportPass India organizer has been approved.\n\n"
+                f"Your organization, {application.organization_name}, can now access the organizer workspace. "
+                "Please sign in using your registered email address to continue setting up your profile and events.\n\n"
+                f"View your application status and continue securely here:\n{status_link}\n\n"
+                "Please note that paid-event registration access may require a separate verification step before it is enabled.\n\n"
+                "We look forward to supporting your events on SportPass India.\n\n"
+                "Regards,\nSportPass India Team"
+            )
+        else:
+            subject = "SportPass organizer application update"
+            body = f"Your organizer application is {application.status.replace('_', ' ')}.\nCheck your status and next steps securely at {status_link}"
+        result = send_email(db, recipient=application.email, subject=subject, body=body,
             email_type="ORGANIZER_APPLICATION")
         return result.to_dict()
     except Exception:
@@ -706,7 +744,14 @@ def request_application_changes(application_id: UUID, payload: ApplicationChange
     application.rejection_reason = payload.reason.strip()
     application.reviewed_by = admin.id
     application.reviewed_at = utc_now()
-    record_audit(db, actor_user_id=admin.id, action="organizer_application_changes_requested", resource_type="organizer_application", resource_id=application.id)
+    record_audit(
+        db,
+        actor_user_id=admin.id,
+        action="organizer_application_changes_requested",
+        resource_type="organizer_application",
+        resource_id=application.id,
+        metadata={"reason": application.rejection_reason},
+    )
     db.commit()
     email_notification = notify_application_review(db, application)
     return {"application": _serialize_organizer_application(application), "emailNotification": email_notification}
@@ -848,7 +893,7 @@ def reject_organizer_application(
         action="organizer_application_rejected",
         resource_type="organizer_application",
         resource_id=application.id,
-        metadata={"has_reason": bool(application.rejection_reason)},
+        metadata={"reason": application.rejection_reason},
     )
     db.commit()
     email_notification = notify_application_review(db, application)

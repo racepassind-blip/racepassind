@@ -62,7 +62,7 @@ const AdminOrganizerApplications = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState("pending");
-  const [history, setHistory] = useState<Record<string, {id: string; action: string; actor: string; createdAt: string}[]>>({});
+  const [history, setHistory] = useState<Record<string, {id: string; action: string; actor: string; createdAt: string; details?: Record<string, unknown>}[]>>({});
   const pageSize = 20;
   const statusOptions = [["pending", "Pending"], ["changes_requested", "Corrections"], ["approved", "Approved"], ["rejected", "Rejected"], ["", "All"]] as const;
 
@@ -138,7 +138,7 @@ const AdminOrganizerApplications = () => {
   };
   const showHistory = async (id: string) => {
     try {
-      const response = await apiRequest<{items: {id: string; action: string; actor: string; createdAt: string}[]}>(`/admin/organizer-applications/${id}/history`);
+      const response = await apiRequest<{items: {id: string; action: string; actor: string; createdAt: string; details?: Record<string, unknown>}[]}>(`/admin/organizer-applications/${id}/history`);
       setHistory(current => ({...current, [id]: response.items}));
     } catch (error) {toast.error(error instanceof Error ? error.message : "Could not load history");}
   };
@@ -214,7 +214,7 @@ const AdminOrganizerApplications = () => {
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">After account approval</p><p className="mt-1 leading-5">The organizer can access the workspace, but paid registrations remain blocked until they complete <strong>Paid-event verification</strong> and SportPass approves payment access.</p><p className="mt-2 text-xs">Application payment preference: {application.paymentPreference?.replaceAll("_", " ") || "Not provided"}</p></div>
                   {application.rejectionReason && <p className="whitespace-pre-wrap rounded-lg border p-3 text-sm">Review feedback: {application.rejectionReason}</p>}
                   <Button variant="ghost" onClick={() => void showHistory(application.id)} className="gap-2"><History className="h-4 w-4" /> Review history</Button>
-                  {history[application.id] && <ul className="space-y-2 text-sm text-muted-foreground">{history[application.id].map(item => <li key={item.id}>{new Date(item.createdAt).toLocaleString("en-IN")} · {item.action.replaceAll("_", " ")} · {item.actor}</li>)}</ul>}
+                  {history[application.id] && <ul className="space-y-3 text-sm text-muted-foreground">{history[application.id].map(item => <li key={item.id}><div>{new Date(item.createdAt).toLocaleString("en-IN")} · {item.action.replaceAll("_", " ")} · {item.actor}</div>{typeof item.details?.reason === "string" && <div className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950"><span className="font-semibold">Reason:</span> {item.details.reason}</div>}</li>)}</ul>}
                   {application.status === "pending" && <div className="flex flex-col gap-2 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => void requestChanges(application)} disabled={reviewingId === application.id}>Request corrections</Button><Button variant="outline" onClick={() => void reject(application)} disabled={reviewingId === application.id} className="gap-2 text-destructive"><X className="h-4 w-4" /> Reject</Button><Button onClick={() => void approve(application)} disabled={reviewingId === application.id || !application.hasIdProof || !application.address || !application.eventHistory || !application.privacyPolicyAccepted} className="gap-2"><Check className="h-4 w-4" /> {reviewingId === application.id ? "Reviewing…" : "Approve organizer"}</Button></div>}
                 </CardContent>
               </Card>
