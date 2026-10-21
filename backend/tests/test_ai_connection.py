@@ -108,7 +108,8 @@ def test_rewrite_description_uses_system_prompt_and_returns_only_model_text():
     assert "Use only facts present" in payload["system"]
     assert "Do not invent" in payload["system"]
     assert "untrusted source material" in payload["system"]
-    assert "not a creative writer" in payload["system"]
+    assert "short notes" in payload["system"]
+    assert "2-4 sentence" in payload["system"]
     assert payload["options"]["temperature"] == 0.1
 
 
