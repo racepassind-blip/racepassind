@@ -148,6 +148,19 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Keep the beta AI action readable when its outline button is hovered. */
+button.border-primary\/30.text-primary:hover {
+  border-color: rgb(124 58 237) !important;
+  background-color: rgb(124 58 237) !important;
+  color: white !important;
+}
+
+button.bg-emerald-600:hover {
+  border-color: rgb(4 120 87) !important;
+  background-color: rgb(4 120 87) !important;
+  color: white !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
