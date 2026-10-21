@@ -14,6 +14,7 @@ it("retries a timed-out discount with the same key, refreshes totals and uses a 
   const posts: Record<string, unknown>[] = [];
   let discount = 0;
   request.mockImplementation(async (url: string, options?: RequestInit) => {
+    if (url.startsWith("/admin/bills")) return { items: [], total: 0 };
     if (options?.method === "POST") {
       posts.push(JSON.parse(options.body as string));
       if (posts.length === 1) throw new Error("Timeout");

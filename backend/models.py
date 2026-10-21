@@ -13,6 +13,28 @@ from db import Base
 JSON_CONFIG = JSON().with_variant(JSONB, "postgresql")
 
 
+class AdminBill(Base):
+    """Issued bill snapshots; deliberately independent of Credit movements."""
+    __tablename__ = "admin_bills"
+    __table_args__ = (
+        CheckConstraint("total_paise >= 0", name="ck_admin_bill_total"),
+        CheckConstraint("status IN ('PENDING', 'PAID', 'CANCELLED')", name="ck_admin_bill_status"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), index=True)
+    event_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("events.id"), nullable=True)
+    idempotency_key: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), unique=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    details: Mapped[dict] = mapped_column(JSON)
+    total_paise: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))
+    payment_reference: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    paid_on: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    cancellation_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class User(Base):
     __tablename__ = "users"
 

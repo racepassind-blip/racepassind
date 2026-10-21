@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import require_csrf, require_roles
+from app.api.v1.admin_bills import router as bills_router
 from app.services.admin_dashboard_service import get_admin_dashboard
 from app.services.admin_organizers_service import get_admin_organizers_overview
 from app.services.audit_service import record_audit
@@ -53,6 +54,8 @@ from app.services.event_archive_service import restore_event_record
 from models import CreditTopupRequest, CreditTransaction, Event, OrganizerApplication, Organization, OrganizationMember, OrganizationPaymentDestination, OrganizationVerificationSubmission, Registration, User
 
 router = APIRouter()
+
+router.include_router(bills_router)
 
 
 @router.get("/transactions")
