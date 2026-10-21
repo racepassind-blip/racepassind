@@ -14,7 +14,7 @@ from app.api.deps import require_csrf, require_roles
 from app.services.admin_dashboard_service import get_admin_dashboard
 from app.services.admin_organizers_service import get_admin_organizers_overview
 from app.services.audit_service import record_audit
-from app.services.credit_service import CreditValidationError, add_credits, approve_topup, credit_event_discount, get_credit_payment_settings, reject_topup, update_credit_payment_settings
+from app.services.credit_service import CreditValidationError, add_credits, approve_topup, credit_event_discount, event_settlement_summary, get_credit_payment_settings, reject_topup, update_credit_payment_settings
 from app.services.auth_service import hash_password, normalize_email, normalize_phone, public_user, utc_now, validate_required_phone
 from app.services.communication_service import (
     get_communication_settings,
@@ -186,6 +186,23 @@ class CreditAdjustmentIn(BaseModel):
 class CreditRejectIn(BaseModel):
     rejection_reason: str = Field(min_length=3, max_length=1000)
 
+class CreditSubtractionIn(CreditAdjustmentIn):
+    idempotency_key: UUID
+
+
+@router.post("/credits/subtract")
+def subtract_credits_endpoint(payload: CreditSubtractionIn, admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
+    from app.services.credit_service import subtract_admin_credits
+    try:
+        row = subtract_admin_credits(db, organization_id=payload.organization_id,
+            amount_paise=payload.amount_paise, reason=payload.reason, created_by=admin.id,
+            request_id=payload.idempotency_key)
+        db.commit()
+        return {"transactionId": str(row.id), "balanceAfterPaise": row.balance_after_paise}
+    except CreditValidationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
 class CreditPaymentSettingsIn(BaseModel):
     method: Literal["UPI"] = "UPI"
     upi_id: str = Field(min_length=3, max_length=255)
@@ -201,6 +218,7 @@ class OrganizerPricingIn(BaseModel):
 class CreditReasonIn(BaseModel):
     reason: str = Field(min_length=3, max_length=1000)
     amount_paise: StrictInt = Field(gt=0)
+    idempotency_key: UUID
 
 
 class OrganizerSettlementIn(BaseModel):
@@ -665,15 +683,39 @@ def notify_paid_verification_review(db: Session, organization: Organization) -> 
     organization_id = organization.id
     verification_status = organization.paid_verification_status
     try:
-        recipients = db.scalars(select(User.email).join(
+        recipients = db.execute(select(User.name, User.email).join(
             OrganizationMember, OrganizationMember.user_id == User.id
         ).where(OrganizationMember.organization_id == organization_id,
                 OrganizationMember.member_role == "organizer", User.is_active.is_(True))).all()
         origin = get_settings().frontend_origins[0].rstrip("/")
-        for recipient in set(recipients):
-            send_email(db, recipient=recipient, subject="SportPass paid verification update",
-                body=f"Your organization's paid verification is {verification_status.lower().replace('_', ' ')}.\nReview the decision and next steps securely at {origin}/organizer/setup#paid-verification",
-                email_type="ORGANIZER_VERIFICATION")
+        recipients_by_email = {email: name for name, email in recipients}
+        for recipient, name in recipients_by_email.items():
+            greeting = name.strip() if name else "Organizer"
+            review_link = f"{origin}/organizer/setup#paid-verification"
+            if verification_status == "VERIFIED":
+                subject = "Your paid verification is approved — SportPass India"
+                body = (
+                    f"Hello {greeting},\n\n"
+                    f"Good news — the paid verification for {organization.name} has been approved.\n\n"
+                    "Your verification details have been accepted. Before you can accept paid registrations, "
+                    "SportPass must also enable a payment method for your organization, such as Direct UPI or the online payment gateway.\n\n"
+                    "Next step: sign in to review your payment setup and available options.\n"
+                    f"{review_link}\n\n"
+                    "If a payment method is not yet available, please contact SportPass support for assistance.\n\n"
+                    "Regards,\nSportPass India Team"
+                )
+            else:
+                reason = organization.paid_verification_rejection_reason or "Please review your submitted details and update any information that needs correction."
+                subject = "Action required: update your paid verification — SportPass India"
+                body = (
+                    f"Hello {greeting},\n\n"
+                    f"We reviewed the paid verification submitted for {organization.name}. It has not been approved yet.\n\n"
+                    f"Reason for review:\n{reason}\n\n"
+                    "Please update the requested information and resubmit your verification. Paid registrations remain unavailable until verification is approved.\n\n"
+                    f"Review and update your details securely:\n{review_link}\n\n"
+                    "Regards,\nSportPass India Team"
+                )
+            send_email(db, recipient=recipient, subject=subject, body=body, email_type="ORGANIZER_VERIFICATION")
     except Exception:
         db.rollback()
         logging.getLogger(__name__).exception("Paid verification notification failed for %s", organization_id)
@@ -1800,7 +1842,15 @@ def update_credit_deduction_mode(organization_id: UUID, mode: Literal["AUTOMATIC
 @router.post("/credits/events/{event_id}/discount")
 def discount_event_credits(event_id: UUID, payload: CreditReasonIn, admin: User = Depends(require_roles("admin")), _: None = Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
     try:
-        row = credit_event_discount(db, event_id=event_id, amount_paise=payload.amount_paise, reason=payload.reason, created_by=admin.id); db.commit()
+        row = credit_event_discount(db, event_id=event_id, amount_paise=payload.amount_paise, reason=payload.reason.strip(), created_by=admin.id, source_id=str(payload.idempotency_key)); db.commit()
         return {"transactionId": str(row.id), "amountPaise": row.amount_paise, "balanceAfterPaise": row.balance_after_paise}
     except CreditValidationError as exc:
         db.rollback(); raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/credits/events/{event_id}/summary")
+def credit_event_summary(event_id: UUID, _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    try:
+        return event_settlement_summary(db, event_id=event_id)
+    except CreditValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

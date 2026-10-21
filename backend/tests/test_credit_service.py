@@ -9,6 +9,53 @@ from db import Base
 from models import CreditTransaction, Event, Order, Organization, OrganizerCreditAccount, Participant, Payment, Registration, Ticket
 
 class CreditServiceTests(unittest.TestCase):
+    def test_admin_subtraction_is_atomic_and_retry_safe(self):
+        from app.services.credit_service import subtract_admin_credits
+        with Session(self.engine) as db:
+            org = Organization(name="Synthetic", status="active")
+            db.add(org); db.flush()
+            add_credits(db, organization_id=org.id, amount=100000, description="Topup")
+            key = uuid.uuid4()
+            actor = uuid.uuid4()
+            def subtract(amount, request_id=key):
+                return subtract_admin_credits(db, organization_id=org.id, amount_paise=amount, reason="Excess topup approved", created_by=actor, request_id=request_id)
+            first = subtract(30000)
+            self.assertEqual(first.id, subtract(30000).id)
+            self.assertEqual(first.created_by, actor)
+            self.assertEqual(first.balance_before_paise, 100000)
+            self.assertEqual(first.balance_after_paise, 70000)
+            with self.assertRaises(CreditValidationError): subtract(30001)
+            with self.assertRaises(CreditValidationError): subtract(70001, uuid.uuid4())
+            self.assertEqual(get_balance(db, org.id), 70000)
+            subtract(70000, uuid.uuid4())
+            self.assertEqual(get_balance(db, org.id), 0)
+
+    def test_discount_multiple_requests_retry_cap_and_summary(self):
+        from app.services.credit_service import credit_event_discount, event_settlement_summary
+        with Session(self.engine) as db:
+            org = Organization(name="Synthetic", status="active")
+            db.add(org); db.flush()
+            event = Event(organization_id=org.id, name="Run", description="Test", category="running", distance="5k", status="draft", max_participants=100, rules=[])
+            db.add(event); db.flush()
+            add_credits(db, organization_id=org.id, amount=100000, description="Topup")
+            debit_credits(db, organization_id=org.id, event_id=event.id, amount=50000, transaction_type="REGISTRATION_DEBIT", description="Fees")
+            actor = uuid.uuid4()
+            def discount(amount, key):
+                return credit_event_discount(db, event_id=event.id, amount_paise=amount, reason="Courtesy", created_by=actor, source_id=key)
+            first = discount(10000, "first")
+            self.assertEqual(first.id, discount(10000, "first").id)
+            discount(10000, "second")
+            discount(5000, "third")
+            self.assertEqual(get_balance(db, org.id), 75000)
+            with self.assertRaises(CreditValidationError): discount(25001, "excess")
+            with self.assertRaises(CreditValidationError): discount(10001, "first")
+            discount(25000, "remaining")
+            self.assertEqual(first.id, discount(10000, "first").id)
+            summary = event_settlement_summary(db, event_id=event.id)
+            self.assertEqual(summary["netFeePaise"], 0)
+            self.assertEqual(summary["discountPaise"], 50000)
+            self.assertEqual(summary["availablePaise"], 100000)
+
     def setUp(self):
         self.engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(self.engine)

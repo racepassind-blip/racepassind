@@ -107,6 +107,21 @@ def debit_credits(db: Session, *, organization_id: UUID, amount: int | Decimal, 
     return _mutate(db, organization_id=organization_id, amount=amount, transaction_type=transaction_type, description=description, reason=reason, event_id=event_id, registration_id=registration_id, source_type=source_type, source_id=source_id, created_by=created_by, debit=True)
 
 
+def subtract_admin_credits(db: Session, *, organization_id: UUID, amount_paise: int, reason: str, created_by: UUID, request_id: UUID) -> CreditTransaction:
+    if len(reason.strip()) < 3:
+        raise CreditValidationError("Provide a reason of at least three characters")
+    if db.get(Organization, organization_id) is None:
+        raise CreditValidationError("Organization not found")
+    _account(db, organization_id, create=True)
+    existing = db.scalar(select(CreditTransaction).where(CreditTransaction.source_type == "ADMIN_CREDIT_SUBTRACTION", CreditTransaction.source_id == str(request_id)))
+    if existing is not None and existing.reason != reason.strip():
+        raise CreditValidationError("Correction request conflicts with a previous request")
+    return _mutate(db, organization_id=organization_id, amount=amount_paise,
+        transaction_type=CREDIT_ADMIN_ADJUSTMENT, description="Admin Credit subtraction",
+        reason=reason.strip(), event_id=None, registration_id=None,
+        source_type="ADMIN_CREDIT_SUBTRACTION", source_id=str(request_id), created_by=created_by, debit=True)
+
+
 def get_credit_payment_settings(db: Session, *, amount_paise: int | None = None, organizer_name: str | None = None) -> dict:
     settings = db.get(CreditPaymentSettings, 1)
     if settings is None:
@@ -210,25 +225,37 @@ def event_settlement_summary(db: Session, *, event_id: UUID) -> dict:
     event = db.scalar(select(Event).where(Event.id == event_id))
     if event is None:
         raise CreditValidationError("Event not found")
-    rows = db.execute(
-        select(Registration, Payment)
-        .join(Payment, Payment.registration_id == Registration.id)
+    rows = db.scalars(
+        select(Registration)
         .where(
             Registration.event_id == event_id,
             Registration.status.in_(("confirmed", "checked_in")),
             Registration.payment_status.in_(("approved", "not_required")),
-            Payment.payment_gateway.in_(CREDIT_CHARGEABLE_PAYMENT_GATEWAYS),
         )
     ).all()
     balance = db.scalar(select(OrganizerCreditAccount.balance_paise).where(OrganizerCreditAccount.organization_id == event.organization_id)) or 0
-    required = sum(registration.platform_fee_paise or 0 for registration, _ in rows)
+    required = sum(registration.platform_fee_paise or 0 for registration in rows)
+    charged = db.scalar(select(func.coalesce(func.sum(CreditTransaction.amount_paise), 0)).where(
+        CreditTransaction.organization_id == event.organization_id,
+        CreditTransaction.event_id == event_id,
+        CreditTransaction.type.in_((CREDIT_MANUAL_EVENT_DEBIT, CREDIT_REGISTRATION_DEBIT)),
+    )) or 0
+    discounts = db.scalar(select(func.coalesce(func.sum(CreditTransaction.amount_paise), 0)).where(
+        CreditTransaction.organization_id == event.organization_id,
+        CreditTransaction.event_id == event_id,
+        CreditTransaction.type == CREDIT_DISCOUNT,
+    )) or 0
     return {
         "eventId": str(event.id),
-        "organizationId": event.organization_id,
-        "confirmedParticipantCount": sum(registration.participant_count or registration.quantity for registration, _ in rows),
-        "requiredPaise": required,
+        "eventName": event.name,
+        "organizationId": str(event.organization_id),
+        "registrationCount": len(rows),
+        "confirmedParticipantCount": sum(registration.participant_count or registration.quantity for registration in rows),
+        "calculatedFeePaise": required,
+        "chargedPaise": int(charged),
+        "discountPaise": int(discounts),
+        "netFeePaise": int(charged) - int(discounts),
         "availablePaise": balance,
-        "afterPaise": balance - required,
     }
 
 
@@ -245,6 +272,16 @@ def credit_event_discount(db: Session, *, event_id: UUID, amount_paise: int | De
     if not reason.strip():
         raise CreditValidationError("Discount reason is required")
     amount = _paise(amount_paise)
+    # Serialize both the cap check and credit on the same account lock.
+    _account(db, event.organization_id, create=True)
+    source_id = source_id or str(event_id)
+    existing = db.scalar(select(CreditTransaction).where(
+        CreditTransaction.source_type == "EVENT_DISCOUNT", CreditTransaction.source_id == source_id))
+    if existing is not None:
+        if (existing.event_id != event_id or existing.organization_id != event.organization_id
+                or existing.amount_paise != amount or existing.reason != reason.strip()):
+            raise CreditValidationError("Discount request conflicts with a previous request")
+        return existing
     charged = db.scalar(select(func.coalesce(func.sum(CreditTransaction.amount_paise), 0)).where(CreditTransaction.organization_id == event.organization_id, CreditTransaction.event_id == event_id, CreditTransaction.type.in_((CREDIT_MANUAL_EVENT_DEBIT, CREDIT_REGISTRATION_DEBIT)))) or 0
     credited = db.scalar(select(func.coalesce(func.sum(CreditTransaction.amount_paise), 0)).where(CreditTransaction.organization_id == event.organization_id, CreditTransaction.event_id == event_id, CreditTransaction.type == CREDIT_DISCOUNT)) or 0
     if amount > charged - credited:
