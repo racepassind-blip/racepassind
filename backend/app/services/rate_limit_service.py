@@ -257,3 +257,13 @@ def enforce_checkin_attempt_limit(db: Session, *, material: str, user_id: str, c
         max_attempts=30,
         message="Too many check-in attempts. Try again later.",
     )
+
+
+def enforce_ai_rewrite_limit(db: Session, *, organization_id: str) -> None:
+    """Bound expensive private-model calls before they reach the home server."""
+    _enforce_limit(
+        db,
+        key_hash=_rate_limit_key("ai-rewrite-organization", organization_id, "all"),
+        max_attempts=6,
+        message="Too many AI rewrite requests for this organization. Try again later.",
+    )

@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -32,10 +33,71 @@ from app.services.organizer_visibility_service import get_event_visibility, get_
 from app.services.registration_config_service import normalize_event_configs
 from app.services.storage_service import StorageError, StorageService
 from app.config import get_settings
+from app.services.ai_rewrite_service import AiInferenceBusy, acquire_inference_lease, release_inference_lease
+from app.services.rate_limit_service import RateLimitExceeded, enforce_ai_rewrite_limit
+from scripts.test_ai_connection import DiagnosticError, load_config, rewrite_description
 from db import get_db
 from models import Event, EventCategory, EventCheckpoint, EventPaymentSettings, Organization, OrganizationMember, Registration, Ticket, User
 
 router = APIRouter()
+
+
+class EventDescriptionRewriteIn(BaseModel):
+    organization_id: UUID
+    description: str = Field(min_length=3, max_length=5000)
+
+    @field_validator("description")
+    @classmethod
+    def require_meaningful_description(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Description must contain at least 3 non-space characters")
+        return value
+
+
+@router.post("/events/ai/rewrite-description")
+def rewrite_event_description(
+    payload: EventDescriptionRewriteIn,
+    user: User = Depends(require_roles("admin", "organizer")),
+    __: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Suggest friendly event copy using only the organizer's supplied text."""
+    organization = get_authorized_organization(db, user, payload.organization_id)
+    lease_id: UUID | None = None
+    try:
+        enforce_ai_rewrite_limit(db, organization_id=str(organization.id))
+        lease_id = acquire_inference_lease(
+            db, purpose="event-description-rewrite", organization_id=organization.id
+        )
+        db.commit()
+    except RateLimitExceeded as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
+    except AiInferenceBusy as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+            headers={"Retry-After": "10"},
+        ) from exc
+
+    try:
+        return {"description": rewrite_description(load_config(), payload.description.strip())}
+    except DiagnosticError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    finally:
+        if lease_id is not None:
+            try:
+                release_inference_lease(db, lease_id)
+                db.commit()
+            except Exception:
+                # The lease expires shortly even if cleanup cannot be persisted.
+                db.rollback()
 
 
 @router.get("/events/{event_id}/finance")

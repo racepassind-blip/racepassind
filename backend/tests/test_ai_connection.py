@@ -6,7 +6,19 @@ from pathlib import Path
 
 import pytest
 import requests
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from app.services.ai_load_test import recommendation
+from app.services.ai_rewrite_service import (
+    AiInferenceBusy,
+    acquire_inference_lease,
+    finish_load_test_admission,
+    load_test_snapshot,
+    release_inference_lease,
+    save_load_test_snapshot,
+    start_load_test_admission,
+)
+from db import Base
 
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "test_ai_connection.py"
@@ -85,3 +97,65 @@ def test_load_test_recommendation_uses_only_fully_successful_stages():
     assert recommendation([{"concurrency": 1, "failures": 0, "p95": 1.0}, {"concurrency": 2, "failures": 1, "p95": 2.0}]) == "1 request"
     assert recommendation([{"concurrency": 1, "failures": 0, "p95": 1.0}, {"concurrency": 2, "failures": 0, "p95": 2.0}]) == "1–2 concurrent requests"
     assert recommendation([{"concurrency": 1, "failures": 1, "p95": None}]) == "No safe concurrency measured"
+
+
+def test_rewrite_description_uses_system_prompt_and_returns_only_model_text():
+    session = FakeSession(response(200, {}), response(200, {"response": "Join us for a friendly community ride."}))
+    rewritten = module.rewrite_description(config(), "Community ride for local cyclists.", session)
+    assert rewritten == "Join us for a friendly community ride."
+    payload = session.calls[0][2]["json"]
+    assert payload["stream"] is False
+    assert "Use only facts present" in payload["system"]
+    assert "Do not invent" in payload["system"]
+    assert "untrusted source material" in payload["system"]
+
+
+def test_ai_inference_lease_enforces_shared_capacity():
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        leases = [acquire_inference_lease(db, purpose="test") for _ in range(3)]
+        db.commit()
+        with pytest.raises(AiInferenceBusy):
+            acquire_inference_lease(db, purpose="test")
+        db.rollback()
+        release_inference_lease(db, leases[0])
+        db.commit()
+        assert acquire_inference_lease(db, purpose="test")
+
+
+def test_load_test_admission_is_globally_exclusive_and_applies_cooldown():
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        start_load_test_admission(db, job_id="job-1", cooldown_seconds=300)
+        db.commit()
+        with pytest.raises(AiInferenceBusy, match="already running"):
+            start_load_test_admission(db, job_id="job-2", cooldown_seconds=300)
+        db.rollback()
+        finish_load_test_admission(db, job_id="job-1")
+        db.commit()
+        with pytest.raises(AiInferenceBusy, match="cooldown"):
+            start_load_test_admission(db, job_id="job-2", cooldown_seconds=300)
+
+
+def test_old_load_test_cannot_release_a_newer_job_lock():
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        start_load_test_admission(db, job_id="current-job", cooldown_seconds=0)
+        db.commit()
+        finish_load_test_admission(db, job_id="stale-job")
+        db.commit()
+        with pytest.raises(AiInferenceBusy, match="already running"):
+            start_load_test_admission(db, job_id="next-job", cooldown_seconds=0)
+
+
+def test_load_test_progress_snapshot_is_shared_through_database():
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        start_load_test_admission(db, job_id="job-1", cooldown_seconds=0)
+        assert save_load_test_snapshot(db, job_id="job-1", snapshot={"id": "job-1", "status": "running"})
+        db.commit()
+        assert load_test_snapshot(db) == {"id": "job-1", "status": "running"}

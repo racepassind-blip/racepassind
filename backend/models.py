@@ -1275,6 +1275,31 @@ class RateLimitBucket(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class AiInferenceGuard(Base):
+    """Single lock row that serializes admission to the private AI server."""
+
+    __tablename__ = "ai_inference_guards"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    load_test_active_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    load_test_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    last_load_test_finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    load_test_snapshot: Mapped[dict | None] = mapped_column(JSON_CONFIG, nullable=True)
+
+
+class AiInferenceLease(Base):
+    """Short-lived, database-backed capacity reservation for Ollama work."""
+
+    __tablename__ = "ai_inference_leases"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True)
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class AllocationHistory(Base):
     """Audit trail for allocation number changes."""
 
@@ -1536,6 +1561,8 @@ __all__ = [
     "CommunicationConfig",
     "EmailLog",
     "RateLimitBucket",
+    "AiInferenceGuard",
+    "AiInferenceLease",
     "AllocationHistory",
     "Refund",
     "OrganizerCreditAccount",
