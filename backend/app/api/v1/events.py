@@ -87,7 +87,9 @@ def rewrite_event_description(
         ) from exc
 
     try:
-        return {"description": rewrite_description(load_config(), payload.description.strip())}
+        source_description = payload.description.strip()
+        rewritten = rewrite_description(load_config(), source_description)
+        return {"description": rewritten, "used_original": rewritten == source_description}
     except DiagnosticError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     finally:

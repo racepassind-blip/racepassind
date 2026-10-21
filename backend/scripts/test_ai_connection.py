@@ -28,6 +28,15 @@ PROMPT = (
 )
 DEFAULT_MODEL = "qwen2.5:1.5b"
 TIMEOUT = (10.0, 180.0)  # connection, read; home CPU inference may be slow
+UNSUPPORTED_PROMOTIONAL_WORDS = frozenset({
+    "amazing", "delicious", "exciting", "fantastic", "guaranteed", "incredible",
+    "memorable", "perfect", "special", "thrilling", "unforgettable", "wonderful",
+})
+INSTRUCTION_MARKERS = (
+    "ignore all rules", "ignore previous", "ignore the instructions", "system prompt",
+    "reveal your instructions", "database deletion", "delete the database", "drop the database",
+)
+UNSUPPORTED_SYSTEM_WORDS = frozenset({"database", "deletion", "delete", "system", "prompt", "instruction"})
 
 
 class DiagnosticError(RuntimeError):
@@ -168,6 +177,8 @@ def generate_prompt(config: Config, prompt: str, session: requests.Session | Any
 
 def rewrite_description(config: Config, description: str, session: requests.Session | Any = requests) -> str:
     """Rewrite organizer-supplied copy without adding facts."""
+    if any(marker in description.casefold() for marker in INSTRUCTION_MARKERS):
+        return description.strip()
     system = (
         "You are a careful event-description writer for SportPass India. Turn the organizer's short notes "
         "into a polished, friendly 2-4 sentence description that participants can understand easily. "
@@ -211,7 +222,14 @@ def rewrite_description(config: Config, description: str, session: requests.Sess
         if any(character.isupper() for character in token) or any(character.isdigit() for character in token)
     }
     rewritten_terms = {token.lower() for token in re.findall(r"[A-Za-z][A-Za-z0-9'’-]*|\d+(?:\.\d+)?", rewritten)}
-    if not source_terms.issubset(rewritten_terms):
+    rewritten_words = set(re.findall(r"[a-z]+", rewritten.lower()))
+    source_words = set(re.findall(r"[a-z]+", description.lower()))
+    added_system_words = rewritten_words.intersection(UNSUPPORTED_SYSTEM_WORDS) - source_words
+    if (
+        not source_terms.issubset(rewritten_terms)
+        or rewritten_words.intersection(UNSUPPORTED_PROMOTIONAL_WORDS)
+        or added_system_words
+    ):
         return description.strip()
     return rewritten
 
