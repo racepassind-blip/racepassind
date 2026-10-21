@@ -245,12 +245,17 @@ def event_settlement_summary(db: Session, *, event_id: UUID) -> dict:
         CreditTransaction.event_id == event_id,
         CreditTransaction.type == CREDIT_DISCOUNT,
     )) or 0
+    category_counts: dict[str, int] = {}
+    for registration in rows:
+        category_name = registration.category.name if registration.category else "Uncategorised"
+        category_counts[category_name] = category_counts.get(category_name, 0) + (registration.participant_count or registration.quantity)
     return {
         "eventId": str(event.id),
         "eventName": event.name,
         "organizationId": str(event.organization_id),
         "registrationCount": len(rows),
         "confirmedParticipantCount": sum(registration.participant_count or registration.quantity for registration in rows),
+        "categoryCounts": [{"name": name, "count": count} for name, count in category_counts.items()],
         "calculatedFeePaise": required,
         "chargedPaise": int(charged),
         "discountPaise": int(discounts),

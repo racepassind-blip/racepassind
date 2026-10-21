@@ -10,7 +10,7 @@ Open **Admin → Credits → Raise bill** (also available on the Credit ledger p
 
 Bills have unique numbers, immutable issue details, and an audit record. Pending bills can be marked paid or cancelled with a reason. Paid/cancelled bills cannot be edited through this workflow. The bill register supports organizer filtering and pagination.
 
-Issuing, paying, or cancelling a bill does not move Credits or money. A bill discount affects only that bill; it does not return Credits. The current format shows **GST not charged** and does not calculate tax. Documents are admin-only and are not automatically emailed or publicly shared.
+Issuing, paying, or cancelling a bill does not move Credits or money. A bill discount affects only that bill; it does not return Credits. Documents are admin-only and are not automatically emailed or publicly shared.
 
 ## Deployment
 

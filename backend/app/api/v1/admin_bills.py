@@ -131,7 +131,6 @@ def issue_bill(payload: BillIn, admin: User = Depends(require_roles("admin")),
         raise HTTPException(422, "Select an event belonging to this organizer.")
     details = {key: value for key, value in body.items() if key not in {"idempotency_key", "status", "payment_reference", "paid_on"}}
     details["event_name"] = event.name if event else None
-    details["tax_note"] = "GST not charged."
     bill = AdminBill(organization_id=payload.organization_id, event_id=payload.event_id,
         idempotency_key=payload.idempotency_key, fingerprint=fingerprint, details=details,
         total_paise=sum(line.quantity * line.unit_paise for line in payload.lines) - payload.discount_paise,
