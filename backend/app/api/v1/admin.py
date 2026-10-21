@@ -790,7 +790,10 @@ def approve_organizer_application(
 
     existing_user = db.scalar(select(User).where(User.normalized_email == application.normalized_email))
     if existing_user is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This email is already linked to a SportPass account. Use that account instead of creating another one.")
+    existing_phone_user = db.scalar(select(User).where(User.normalized_phone == application.normalized_phone)) if application.normalized_phone else None
+    if existing_phone_user is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This phone number is already linked to another SportPass account. Ask the applicant to use that account or update the application with a different phone number.")
 
     organizer = User(
         name=application.applicant_name,

@@ -282,7 +282,11 @@ def organizer_signup(
     if existing_user is None:
         existing_user = db.scalar(select(User).where(User.email == email))
     if existing_user is not None:
-        raise HTTPException(status_code=409, detail="An account with that email already exists")
+        raise HTTPException(status_code=409, detail="This email is already linked to a SportPass account. Sign in or use a different email address.")
+    normalized_phone = normalize_phone(payload.phone)
+    existing_phone_user = db.scalar(select(User).where(User.normalized_phone == normalized_phone)) if normalized_phone else None
+    if existing_phone_user is not None:
+        raise HTTPException(status_code=409, detail="This phone number is already linked to a SportPass account. Sign in with that account or use a different phone number.")
 
     pending_application = db.scalar(select(OrganizerApplication.id).where(
         OrganizerApplication.normalized_email == email,
@@ -309,7 +313,7 @@ def organizer_signup(
             email=email,
             normalized_email=email,
             phone=payload.phone.strip() if payload.phone else None,
-            normalized_phone=normalize_phone(payload.phone),
+            normalized_phone=normalized_phone,
             password_hash=hash_password(payload.password),
             privacy_policy_version=PRIVACY_POLICY_VERSION,
             privacy_policy_accepted_at=dt.datetime.now(dt.timezone.utc),
