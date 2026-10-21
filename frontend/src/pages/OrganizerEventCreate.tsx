@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { eachDayOfInterval, format, startOfDay } from "date-fns";
-import { ArrowLeft, ArrowRight, Calculator, CalendarIcon, Check, CircleHelp, ClipboardList, Eye, Minus, Plus, Save, ShieldCheck, Shirt, Sparkles, Trash2, UserRound, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, ArrowRight, Calculator, CalendarIcon, Check, CircleHelp, ClipboardList, Clock3, Eye, Loader2, Minus, Plus, Save, ShieldCheck, Shirt, Sparkles, Trash2, UserRound, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
 
 import { OrganizerDashboardLayout } from "@/components/OrganizerDashboardLayout";
@@ -23,6 +23,15 @@ import { transitionSportFields } from "@/lib/sportRegistrationFields";
 import type { CommunicationEvent } from "@/lib/eventCommunication";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+
+const AI_REWRITE_STAGES = [
+  "Connecting to SportPass AI…",
+  "Reading your event details…",
+  "Keeping only the information you provided…",
+  "Rewriting in friendly language…",
+  "Checking that no facts were added…",
+  "Almost ready…",
+];
 import { DISTRICTS_BY_STATE, getCitiesForDistrict, INDIA_STATES, CITIES_BY_DISTRICT } from "@/data/indiaLocations";
 
 interface TicketForm {
@@ -265,6 +274,8 @@ const OrganizerEventCreate = () => {
   const [description, setDescription] = useState("");
   const [descriptionSuggestion, setDescriptionSuggestion] = useState<string | null>(null);
   const [rewritingDescription, setRewritingDescription] = useState(false);
+  const [rewriteStage, setRewriteStage] = useState(0);
+  const [rewriteElapsedSeconds, setRewriteElapsedSeconds] = useState(0);
   const descriptionRevisionRef = useRef(0);
   const [sport, setSport] = useState("");
   const [cricketConfig, setCricketConfig] = useState({ tournament_format: "league", ball_type: "tennis", overs_per_innings: "10", minimum_players: "11", maximum_players: "15" });
@@ -332,6 +343,19 @@ const OrganizerEventCreate = () => {
   const districts = useMemo(() => DISTRICTS_BY_STATE[state] ?? [], [state]);
   const cities = useMemo(() => getCitiesForDistrict(district), [district]);
   const isTrekking = normalizeSport(sport) === "trekking";
+
+  useEffect(() => {
+    if (!rewritingDescription) return undefined;
+    const startedAt = Date.now();
+    setRewriteStage(0);
+    setRewriteElapsedSeconds(0);
+    const timer = window.setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      setRewriteElapsedSeconds(elapsed);
+      setRewriteStage(Math.min(AI_REWRITE_STAGES.length - 1, Math.floor(elapsed / 7)));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [rewritingDescription]);
 
   const handleRewriteDescription = async () => {
     const sourceDescription = description.trim();
@@ -1277,7 +1301,7 @@ const OrganizerEventCreate = () => {
                 {selectedOrganization && <p className="text-sm font-semibold text-foreground">Creating for: {selectedOrganization.name}</p>}
               </div>}
               <div className="space-y-2 sm:col-span-2"><Label>Event name *</Label><Input value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="e.g. Bengaluru Community Sports Day" /></div>
-              <div className="space-y-2 sm:col-span-2"><div className="flex flex-wrap items-center justify-between gap-2"><Label htmlFor="event-description">Event description *</Label><Button type="button" variant="outline" size="sm" onClick={() => void handleRewriteDescription()} disabled={rewritingDescription || description.trim().length < 3} className="gap-2"><Sparkles className="h-4 w-4" />{rewritingDescription ? "Rewriting…" : "Rewrite with AI"}</Button></div><Textarea id="event-description" value={description} onChange={(e) => { descriptionRevisionRef.current += 1; setDescription(e.target.value); setDescriptionSuggestion(null); }} placeholder="Write the event details in your own words. AI will only use the information you provide." /><p className="text-xs text-muted-foreground">Optional writing help: AI makes your text friendlier. Review every fact before applying.</p>{descriptionSuggestion && <div className="rounded-lg border border-primary/20 bg-primary/[0.035] p-3"><p className="text-xs font-semibold uppercase tracking-wide text-primary">AI suggestion</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{descriptionSuggestion}</p><div className="mt-3 flex gap-2"><Button type="button" size="sm" onClick={() => { setDescription(descriptionSuggestion); setDescriptionSuggestion(null); }}>Use suggestion</Button><Button type="button" size="sm" variant="ghost" onClick={() => setDescriptionSuggestion(null)}>Keep my text</Button></div></div>}</div>
+              <div className="space-y-2 sm:col-span-2"><div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-2"><Label htmlFor="event-description">Event description *</Label><span className="rounded-full border border-amber-300/70 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-300">Beta</span></div><Button type="button" variant="outline" size="sm" onClick={() => void handleRewriteDescription()} disabled={rewritingDescription || description.trim().length < 3} className="gap-2"><Sparkles className="h-4 w-4" />{rewritingDescription ? "AI is working…" : "Rewrite with AI"}</Button></div><Textarea id="event-description" value={description} onChange={(e) => { descriptionRevisionRef.current += 1; setDescription(e.target.value); setDescriptionSuggestion(null); }} placeholder="Write the event details in your own words. AI will only use the information you provide." />{rewritingDescription ? <div className="rounded-xl border border-primary/20 bg-primary/[0.035] p-4" role="status" aria-live="polite"><div className="flex items-center gap-2 text-sm font-semibold text-primary"><Loader2 className="h-4 w-4 animate-spin" />{AI_REWRITE_STAGES[rewriteStage]}</div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-primary/10"><div className="h-full w-1/3 animate-pulse rounded-full bg-primary" /></div><div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />Working for {rewriteElapsedSeconds}s · Private home AI may take a little longer</div></div> : <p className="text-xs text-muted-foreground">Beta writing help: AI makes your text friendlier using only the details you provide. Review every fact before applying.</p>}{descriptionSuggestion && <div className="rounded-lg border border-primary/20 bg-primary/[0.035] p-3"><p className="text-xs font-semibold uppercase tracking-wide text-primary">AI suggestion ready</p><p className="mt-1 text-xs text-muted-foreground">Review dates, prices, locations and other facts before applying.</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{descriptionSuggestion}</p><div className="mt-3 flex gap-2"><Button type="button" size="sm" onClick={() => { setDescription(descriptionSuggestion); setDescriptionSuggestion(null); }}>Use suggestion</Button><Button type="button" size="sm" variant="ghost" onClick={() => setDescriptionSuggestion(null)}>Keep my text</Button></div></div>}</div>
               <div className="space-y-2"><Label>Sport *</Label><Select value={sport} onValueChange={handleSportChange}><SelectTrigger><SelectValue placeholder="Select sport" /></SelectTrigger><SelectContent>{sports.map((sportOption) => <SelectItem key={sportOption.value} value={sportOption.value}>{sportOption.label}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-3 rounded-lg border p-3 text-sm"><label className="flex items-start gap-3"><input aria-label="Enable waiting list" type="checkbox" className="mt-1" checked={waitlistEnabled} onChange={(event) => setWaitlistEnabled(event.target.checked)} /><span><strong>Enable waiting list</strong><span className="block text-xs leading-5 text-muted-foreground">When enabled, people can join a queue after this event or their selected ticket is full.</span></span></label>{waitlistEnabled && <label className="block space-y-1.5 pl-7"><span className="text-xs font-semibold">Invitation hold time</span><select aria-label="Invitation hold time" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={waitlistOfferWindow} onChange={(event) => setWaitlistOfferWindow(event.target.value as typeof waitlistOfferWindow)}><option value="30">30 minutes</option><option value="60">1 hour</option><option value="until_close">Until registration closes</option></select><span className="block text-xs leading-5 text-muted-foreground">If an invitation expires, you can send a fresh invitation from the registrations page.</span></label>}</div>
               {currentSportConfig.event_setup === "cricket" && <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/[0.035] p-4 sm:col-span-2"><div><h3 className="font-semibold">Cricket Setup</h3><p className="mt-1 text-sm text-muted-foreground">Basic event defaults for this cricket event.</p></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Tournament format</Label><Select value={cricketConfig.tournament_format} onValueChange={(value) => setCricketConfig((current) => ({ ...current, tournament_format: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="league">League</SelectItem><SelectItem value="knockout">Knockout</SelectItem><SelectItem value="league_knockout">League + Knockout</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Ball type</Label><Select value={cricketConfig.ball_type} onValueChange={(value) => setCricketConfig((current) => ({ ...current, ball_type: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tennis">Tennis Ball</SelectItem><SelectItem value="leather">Leather Ball</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Overs per innings</Label><Input type="number" min={1} step={1} value={cricketConfig.overs_per_innings} onChange={(event) => setCricketConfig((current) => ({ ...current, overs_per_innings: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label>Default squad size</Label><div className="grid gap-4 sm:grid-cols-2"><Input aria-label="Minimum players" type="number" min={1} value={cricketConfig.minimum_players} onChange={(event) => setCricketConfig((current) => ({ ...current, minimum_players: event.target.value }))} placeholder="Minimum players" /><Input aria-label="Maximum players" type="number" min={1} value={cricketConfig.maximum_players} onChange={(event) => setCricketConfig((current) => ({ ...current, maximum_players: event.target.value }))} placeholder="Maximum players" /></div></div></div></div>}
