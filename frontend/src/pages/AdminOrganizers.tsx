@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { BadgeCheck, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Clock, RefreshCw, Search, ShieldCheck, Users, XCircle, Banknote } from "lucide-react";
 import { toast } from "sonner";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -137,6 +137,7 @@ const AdminOrganizers = ({ embedded = false, operations = false }: { embedded?: 
   const [upiWarningEvents, setUpiWarningEvents] = useState<Array<{ id: string; name: string }>>([]);
   const [destinations, setDestinations] = useState<PaymentDestination[]>([]);
   const [destinationReason, setDestinationReason] = useState("");
+  const openedRequestedOrganization = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -248,6 +249,17 @@ const AdminOrganizers = ({ embedded = false, operations = false }: { embedded?: 
   };
 
   const closeManage = () => { setManageOrg(null); setUpiAudit([]); setUpiWarningEvents([]); setDestinations([]); setDestinationReason(""); };
+
+  // Deep links from an organizer detail page should open the actionable review
+  // panel rather than sending the admin back to the detail page again.
+  useEffect(() => {
+    if (!reviewing || !requestedOrganization || loading || openedRequestedOrganization.current === requestedOrganization) return;
+    const requestedOrg = rows.find((row) => row.organizationId === requestedOrganization);
+    if (!requestedOrg) return;
+    openedRequestedOrganization.current = requestedOrganization;
+    if (requestedOrg.paidVerificationStatus === "VERIFIED") void openManage(requestedOrg);
+    else void openReview(requestedOrg);
+  }, [loading, requestedOrganization, reviewing, rows]);
 
   const reviewDestination = async (destination: PaymentDestination, decision: "APPROVED" | "REJECTED") => {
     if (!manageOrg) return;
@@ -370,7 +382,7 @@ const AdminOrganizers = ({ embedded = false, operations = false }: { embedded?: 
                       : !row.allowDirectUpi && !row.allowCashfree
                       ? "Your action: enable the appropriate payment method."
                       : "Verification approved. Check receiving-account approval and event payment setup.";
-                    return <button key={row.organizationId} type="button" onClick={() => navigate(`/admin/organizers/${row.organizationId}`)} className="group rounded-2xl border bg-background p-5 text-left transition hover:border-primary/40 hover:shadow-md">
+                    return <button key={row.organizationId} type="button" onClick={() => void (reviewing ? (row.paidVerificationStatus === "VERIFIED" ? openManage(row) : openReview(row)) : navigate(`/admin/organizers/${row.organizationId}`))} className="group rounded-2xl border bg-background p-5 text-left transition hover:border-primary/40 hover:shadow-md">
                       <div className="flex items-start justify-between gap-4"><div className="min-w-0"><h3 className="truncate text-lg font-bold">{row.organizationName}</h3><p className="truncate text-sm text-muted-foreground">{row.responsiblePerson ?? "Responsible person not set"}{row.email ? ` · ${row.email}` : ""}</p><p className="text-xs text-muted-foreground">{[row.city, row.state].filter(Boolean).join(", ") || "Location not set"}</p></div><span className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition group-hover:border-primary group-hover:text-primary">Manage</span></div>
                       {reviewing ? <p className="mt-4 rounded-lg bg-muted/40 p-3 text-sm font-medium">{nextStep}</p> : <div className="mt-5 grid grid-cols-3 gap-2"><div><p className="text-xs text-muted-foreground">Events</p><p className="font-bold">{row.eventsTotal}</p></div><div><p className="text-xs text-muted-foreground">Participants</p><p className="font-bold">{row.totalParticipants}</p></div><div><p className="text-xs text-muted-foreground">Sales</p><p className="font-bold">{formatINR(row.approvedRevenuePaise)}</p></div></div>}
                       <div className="mt-4 flex flex-wrap gap-2"><Badge variant="outline" className={`gap-1 ${meta.className}`}>{row.paidVerificationStatus === "VERIFIED" ? <BadgeCheck className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "UNDER_REVIEW" ? <Clock className="h-3.5 w-3.5" /> : row.paidVerificationStatus === "REJECTED" ? <XCircle className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}{meta.label}</Badge><Badge variant="outline" className={row.allowDirectUpi ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}><Banknote className="mr-1 h-3 w-3" />UPI {row.allowDirectUpi ? "allowed" : "restricted"}</Badge><Badge variant="outline" className={row.allowCashfree ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}>Cashfree {row.allowCashfree ? "allowed" : "restricted"}</Badge></div>
