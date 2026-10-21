@@ -294,6 +294,7 @@ def _serialize_organization(organization: Organization, storage=None) -> dict:
         "onboardingCompletedAt": organization.onboarding_completed_at.isoformat() if onboarding_complete else None,
         "allowDirectUpi": organization.allow_direct_upi,
         "allowCashfree": organization.allow_cashfree,
+        "paidVerificationStatus": organization.paid_verification_status,
     }
 
 

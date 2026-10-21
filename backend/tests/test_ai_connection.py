@@ -109,7 +109,7 @@ def test_rewrite_description_uses_system_prompt_and_returns_only_model_text():
     assert "Do not invent" in payload["system"]
     assert "untrusted source material" in payload["system"]
     assert "short notes" in payload["system"]
-    assert "2-4 sentence" in payload["system"]
+    assert "one- or two-sentence" in payload["system"]
     assert payload["options"]["temperature"] == 0.1
 
 
@@ -123,6 +123,12 @@ def test_rewrite_description_allows_safe_date_formatting():
     session = FakeSession(response(200, {}), response(200, {"response": "Join the Hyderabad Night Run on December 4 at uppal."}))
     source = "Hyderabad Night Run on 4th dec at uppal, come with family and friends"
     assert module.rewrite_description(config(), source, session) == "Join the Hyderabad Night Run on December 4 at uppal."
+
+
+def test_rewrite_description_allows_replacing_an_ordinary_opening_phrase():
+    session = FakeSession(response(200, {}), response(200, {"response": "Sports Pass India is organizing a new event on December 5, 2026, featuring running and cycling."}))
+    source = "This is a new event organized for the Sports pass india event on December 5th 2026. and this event includes running, cycling."
+    assert module.rewrite_description(config(), source, session) == "Sports Pass India is organizing a new event on December 5, 2026, featuring running and cycling."
 
 
 def test_rewrite_description_falls_back_when_model_adds_promotional_claims():

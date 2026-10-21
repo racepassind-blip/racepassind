@@ -207,6 +207,7 @@ interface OrganizerOrganizationOption {
   status: string;
   allowDirectUpi?: boolean;
   allowCashfree?: boolean;
+  paidVerificationStatus?: "NOT_SUBMITTED" | "UNDER_REVIEW" | "VERIFIED" | "REJECTED" | "SUSPENDED";
 }
 
 const MAX_IMAGE_BYTES = 2_000_000;
@@ -320,6 +321,7 @@ const OrganizerEventCreate = () => {
   }, []);
   const [allowDirectUpi, setAllowDirectUpi] = useState(false);
   const [allowCashfree, setAllowCashfree] = useState(false);
+  const [paidVerificationStatus, setPaidVerificationStatus] = useState<OrganizerOrganizationOption["paidVerificationStatus"]>("NOT_SUBMITTED");
   const [paymentMethodLocked, setPaymentMethodLocked] = useState(false);
   const [paymentDestinationStatus, setPaymentDestinationStatus] = useState<"NOT_SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "LEGACY_APPROVED">("NOT_SUBMITTED");
   const [platformFeeBearer, setPlatformFeeBearer] = useState<"ORGANIZER" | "PARTICIPANT">("ORGANIZER");
@@ -428,6 +430,8 @@ const OrganizerEventCreate = () => {
     [categories],
   );
   const hasPaidTickets = categories.some((category) => category.tickets.some((ticket) => Number(ticket.price) > 0));
+  const hasPaidAddons = addonEditors.some((addon) => Number(addon.priceRupees) > 0);
+  const paidPricingAvailable = paidVerificationStatus === "VERIFIED" && (allowDirectUpi || (allowCashfree && cashfreeEnabled));
   const hasTeamCategory = categories.some((category) => category.entryType === "team");
   const hasMultiParticipantCategory = categories.some((category) => category.entryType !== "singles");
   const visiblePredefinedFields = PREDEFINED_FIELDS.filter((field) => supportsDistance || field.id !== "category_distance");
@@ -510,10 +514,13 @@ const OrganizerEventCreate = () => {
           setOrganizationId(organization.id);
           setAllowDirectUpi(organization.allowDirectUpi ?? false);
           setAllowCashfree(organization.allowCashfree ?? false);
+          setPaidVerificationStatus(organization.paidVerificationStatus ?? "NOT_SUBMITTED");
           setPaymentCollectionMethod(organization.allowDirectUpi ? "DIRECT_UPI" : "CASHFREE_MANAGED");
         } else {
           setOrganizationId("");
           setAllowDirectUpi(false);
+          setAllowCashfree(false);
+          setPaidVerificationStatus("NOT_SUBMITTED");
           setPaymentCollectionMethod("CASHFREE_MANAGED");
         }
       })
@@ -529,10 +536,22 @@ const OrganizerEventCreate = () => {
     setOrganizationId(nextOrganizationId);
     setAllowDirectUpi(organization?.allowDirectUpi ?? false);
     setAllowCashfree(organization?.allowCashfree ?? false);
+    setPaidVerificationStatus(organization?.paidVerificationStatus ?? "NOT_SUBMITTED");
     setPaymentCollectionMethod(organization?.allowDirectUpi ? "DIRECT_UPI" : "CASHFREE_MANAGED");
   };
 
   const selectedOrganization = organizationOptions.find((organization) => organization.id === organizationId);
+
+  // Do not let a new event retain paid prices when its organization has no
+  // approved collection method. This makes the free-only rule clear up front.
+  useEffect(() => {
+    if (eventId || paidPricingAvailable) return;
+    setCategories((current) => current.map((category) => ({
+      ...category,
+      tickets: category.tickets.map((ticket) => ({ ...ticket, price: "0" })),
+    })));
+    setAddonEditors((current) => current.map((addon) => ({ ...addon, priceRupees: "0" })));
+  }, [eventId, organizationId, paidPricingAvailable]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -631,8 +650,8 @@ const OrganizerEventCreate = () => {
         setPlatformFeeRefundable(Boolean(event.platformFeeRefundable));
         setRefundPolicyText(event.refundPolicyText ?? "");
         // Also fetch org to know if Direct UPI is allowed
-        apiRequest<{ allowDirectUpi?: boolean; allowCashfree?: boolean }>(`/organizer/organizations/${event.organizationId}`)
-          .then((org) => { setAllowDirectUpi(org.allowDirectUpi ?? false); setAllowCashfree(org.allowCashfree ?? false); })
+        apiRequest<{ allowDirectUpi?: boolean; allowCashfree?: boolean; paidVerificationStatus?: OrganizerOrganizationOption["paidVerificationStatus"] }>(`/organizer/organizations/${event.organizationId}`)
+          .then((org) => { setAllowDirectUpi(org.allowDirectUpi ?? false); setAllowCashfree(org.allowCashfree ?? false); setPaidVerificationStatus(org.paidVerificationStatus ?? "NOT_SUBMITTED"); })
           .catch(() => undefined);
         apiRequest<{ paymentDestinationStatus: typeof paymentDestinationStatus }>(`/organizer/events/${event.id}/payment-settings`)
           .then((settings) => setPaymentDestinationStatus(settings.paymentDestinationStatus))
@@ -712,6 +731,10 @@ const OrganizerEventCreate = () => {
   };
 
   const updateTicket = (categoryId: string, ticketId: string, field: "name" | "description" | "price" | "quantity", value: string) => {
+    if (field === "price" && !paidPricingAvailable && Number(value) > 0) {
+      toast.error("Enable a payment method before setting a ticket price.");
+      return;
+    }
     setCategories((current) => current.map((category) => category.id !== categoryId ? category : {
       ...category,
       tickets: category.tickets.map((ticket) => ticket.id === ticketId ? { ...ticket, [field]: value } : ticket),
@@ -790,6 +813,10 @@ const OrganizerEventCreate = () => {
   };
 
   const updateAddon = (id: string, patch: Partial<AddonEditor>) => {
+    if (!paidPricingAvailable && patch.priceRupees !== undefined && Number(patch.priceRupees) > 0) {
+      toast.error("Enable a payment method before adding a paid extra.");
+      return;
+    }
     setAddonEditors((current) => current.map((addon) => addon.id === id ? { ...addon, ...patch } : addon));
   };
 
@@ -917,6 +944,10 @@ const OrganizerEventCreate = () => {
       }
     }
     if (step === 2) {
+      if (!paidPricingAvailable && hasPaidTickets) {
+        toast.error("This organizer has no enabled payment method. Ticket prices must remain ₹0.");
+        return false;
+      }
       if (categories.some((category) => ((!isTrekking && !category.name.trim()) || (supportsDistance && !category.distanceValue.trim()) || category.tickets.some((ticket) => !ticket.name.trim() || ticket.price.trim() === "" || ticket.quantity.trim() === "")))) {
         toast.error("Complete every category and ticket field.");
         return false;
@@ -971,6 +1002,10 @@ const OrganizerEventCreate = () => {
       }
     }
     if (step === 4) {
+      if (!paidPricingAvailable && hasPaidAddons) {
+        toast.error("This organizer has no enabled payment method. Extras must remain free.");
+        return false;
+      }
       const addonConfig = addonConfigPayload();
       if (addonEditors.some((addon) => !addon.name.trim() || addon.priceRupees.trim() === "")) {
         toast.error("Give every add-on a name and price. Use ₹0 only when it is included for free.");
@@ -1003,6 +1038,10 @@ const OrganizerEventCreate = () => {
     ].filter((field): field is string => Boolean(field));
     if (missingFields.length > 0) {
       toast.error(`Missing: ${missingFields.join(", ")}.`);
+      return;
+    }
+    if (!paidPricingAvailable && (hasPaidTickets || hasPaidAddons)) {
+      toast.error("This organizer has no enabled payment method. Set all tickets and extras to ₹0, or ask SportPass to enable payments.");
       return;
     }
     if (publish && hasPaidTickets && paymentCollectionMethod === "DIRECT_UPI" && (!upiId.trim() || !payeeName.trim())) {
@@ -1494,6 +1533,8 @@ const OrganizerEventCreate = () => {
               <Button type="button" variant="outline" size="sm" onClick={() => addAddon()}><Plus className="mr-1 h-4 w-4" /> Blank add-on</Button>
             </div>
 
+            {!paidPricingAvailable && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">Paid extras are unavailable</p><p className="mt-1">Payment verification is {paidVerificationStatus.replaceAll("_", " ").toLowerCase()}. You can add free extras only; SportPass must verify the organization and enable Direct UPI or the online payment gateway before charging participants.</p></div>}
+
             <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-sm text-blue-950">
               <div className="flex items-start gap-3">
                 <CircleHelp className="mt-0.5 h-5 w-5 shrink-0" />
@@ -1512,14 +1553,14 @@ const OrganizerEventCreate = () => {
               <div className="rounded-xl border p-4">
                 <div className="flex items-center gap-2 font-semibold"><Calculator className="h-4 w-4 text-primary" /> Sell extra breakfasts</div>
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">Use Quantity. Two ₹100 packs add ₹200 to the registration subtotal.</p>
-                <Button type="button" variant="link" className="mt-2 h-auto p-0 text-xs" onClick={() => addAddon("breakfast")}>Add breakfast quantity</Button>
+                <Button type="button" variant="link" className="mt-2 h-auto p-0 text-xs" onClick={() => addAddon("breakfast")}>{paidPricingAvailable ? "Add paid breakfast quantity" : "Add free breakfast quantity"}</Button>
               </div>
               <div className="rounded-xl border p-4">
                 <div className="flex items-center gap-2 font-semibold"><Shirt className="h-4 w-4 text-primary" /> Collect sizes correctly</div>
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">Use Jersey size in participant details when every person needs a size. A paid size add-on charges once per entry.</p>
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                   <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={requireJerseySizePerParticipant}>Require participant sizes</Button>
-                  <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => addAddon("shirt")}>Sell one T-shirt</Button>
+                  <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => addAddon("shirt")}>{paidPricingAvailable ? "Sell one T-shirt" : "Add a free T-shirt option"}</Button>
                 </div>
               </div>
             </div>
@@ -1531,8 +1572,8 @@ const OrganizerEventCreate = () => {
                 <p className="font-medium">No paid extras are configured</p>
                 <p className="mt-1 text-sm text-muted-foreground">Participants will pay the ticket price and any applicable SportPass fee.</p>
                 <div className="mt-4 flex flex-wrap justify-center gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => addAddon("breakfast")}><UtensilsCrossed className="mr-2 h-4 w-4" /> Extra breakfast</Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => addAddon("shirt")}><Shirt className="mr-2 h-4 w-4" /> One T-shirt</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => addAddon("breakfast")}><UtensilsCrossed className="mr-2 h-4 w-4" /> {paidPricingAvailable ? "Extra breakfast" : "Free breakfast"}</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => addAddon("shirt")}><Shirt className="mr-2 h-4 w-4" /> {paidPricingAvailable ? "One T-shirt" : "Free T-shirt"}</Button>
                 </div>
               </div>
             ) : (
@@ -1551,7 +1592,7 @@ const OrganizerEventCreate = () => {
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-1"><Label>Name *</Label><Input value={addon.name} onChange={(event) => updateAddon(addon.id, { name: event.target.value })} placeholder="Extra breakfast" /></div>
-                    <div className="space-y-1"><Label>{addon.type === "quantity" ? "Price per item (₹) *" : "Price added once (₹) *"}</Label><Input type="number" min="0" step="0.01" value={addon.priceRupees} onChange={(event) => updateAddon(addon.id, { priceRupees: event.target.value })} /><p className="text-xs text-muted-foreground">Use 0 only when the choice is free.</p></div>
+                    <div className="space-y-1"><Label>{addon.type === "quantity" ? "Price per item (₹) *" : "Price added once (₹) *"}</Label><Input type="number" min="0" step="0.01" value={addon.priceRupees} onChange={(event) => updateAddon(addon.id, { priceRupees: event.target.value })} disabled={!paidPricingAvailable} /><p className="text-xs text-muted-foreground">{paidPricingAvailable ? "Use 0 only when the choice is free." : "Payment approval is required before extras can have a price."}</p></div>
                     <div className="space-y-1 sm:col-span-2">
                       <div className="flex items-center justify-between gap-3"><Label>Note for participants (optional)</Label><span className="text-xs text-muted-foreground">{addon.description?.length ?? 0}/500</span></div>
                       <Textarea value={addon.description ?? ""} onChange={(event) => updateAddon(addon.id, { description: event.target.value })} maxLength={500} className="min-h-[82px]" placeholder="Example: Served after the finish. Vegetarian meal included. Collect using your bib." />
@@ -1590,6 +1631,7 @@ const OrganizerEventCreate = () => {
 
           {currentStep === 2 && <section className="space-y-5 rounded-xl border bg-card p-6">
             <div className="space-y-2"><Label htmlFor="event-capacity" className="flex items-center gap-1.5">Hard participant limit <span title="The maximum number of people across every category and ticket in this event." aria-label="Hard participant limit means the total number of people across every category and ticket" className="inline-flex cursor-help"><CircleHelp className="h-4 w-4 text-muted-foreground" /></span></Label><Input id="event-capacity" type="number" min="1" max="1000000" value={maxParticipants} onChange={(e) => setMaxParticipants(e.target.value)} /><p className="text-xs text-muted-foreground">Event-wide maximum across all categories and ticket tiers. Each ticket’s Places value remains its own inventory limit. The waiting list opens when either limit is reached.</p></div>
+            {!paidPricingAvailable && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">This event can accept free registrations only</p><p className="mt-1">Payment verification is {paidVerificationStatus.replaceAll("_", " ").toLowerCase()}, or no payment method is enabled. Ticket prices are locked at ₹0 until SportPass verifies the organization and approves Direct UPI or the online payment gateway.</p></div>}
             <div className="flex items-center justify-between"><div><h2 className="text-lg font-bold">{isTrekking ? "Trek tickets" : "Categories and Tickets"}</h2><p className="text-sm text-muted-foreground">{isTrekking ? "This trek uses one shared route and one entry type. Add ticket tiers if needed." : "Add one or more categories and ticket options for this event."}</p></div>{!isTrekking && <Button variant="outline" size="sm" onClick={addCategory}><Plus className="mr-1 h-4 w-4" /> Category</Button>}</div>
             {categories.map((category, categoryIndex) => <div key={category.id} className="space-y-4 rounded-lg border p-4">
               {!isTrekking && <div className="flex items-center justify-between"><p className="font-semibold">Category #{categoryIndex + 1}</p>{categories.length > 1 && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4" /></Button>}</div>}
@@ -1598,7 +1640,7 @@ const OrganizerEventCreate = () => {
                 <div className="flex items-center justify-between"><p className="text-sm font-medium">Ticket #{ticketIndex + 1}</p>{category.tickets.length > 1 && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeTicket(category.id, ticket.id)}><Trash2 className="h-3.5 w-3.5" /></Button>}</div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="space-y-1"><Label className="text-xs">Name *</Label><Input value={ticket.name} onChange={(e) => updateTicket(category.id, ticket.id, "name", e.target.value)} placeholder="Early Bird" /></div>
-                  <div className="space-y-1"><Label className="text-xs">Price (₹; 0 = free) *</Label><Input type="number" min="0" step="0.01" value={ticket.price} onChange={(e) => updateTicket(category.id, ticket.id, "price", e.target.value)} placeholder="0 for free" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Price (₹; 0 = free) *</Label><Input type="number" min="0" step="0.01" value={ticket.price} onChange={(e) => updateTicket(category.id, ticket.id, "price", e.target.value)} placeholder="0 for free" disabled={!paidPricingAvailable} /><p className="text-xs text-muted-foreground">{paidPricingAvailable ? "" : "Payment approval required for paid tickets."}</p></div>
                   <div className="space-y-1"><Label className="text-xs">Places *</Label><Input type="number" min="1" value={ticket.quantity} onChange={(e) => updateTicket(category.id, ticket.id, "quantity", e.target.value)} placeholder="100" /></div>
                   <div className="space-y-1 sm:col-span-3"><Label className="text-xs">What this ticket includes (optional)</Label><Input value={ticket.description} onChange={(e) => updateTicket(category.id, ticket.id, "description", e.target.value)} placeholder="Example: Registration, timing chip, breakfast and finisher medal" /><p className="text-xs text-muted-foreground">Use this for items every participant automatically receives. Do not create a paid add-on for an included item.</p></div>
                 </div>
