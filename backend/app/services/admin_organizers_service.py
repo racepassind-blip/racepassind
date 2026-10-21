@@ -10,7 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.services.platform_fee_service import get_effective_pricing
-from models import Event, Organization, Registration, User
+from models import Event, Organization, OrganizationMember, Registration, User
 
 # Match the confirmed/approved filters used by the admin dashboard so revenue and
 # participant counts are consistent across the admin surface.
@@ -76,11 +76,28 @@ def get_admin_organizers_overview(db: Session, *, page: int = 1, page_size: int 
         for user in db.scalars(select(User).where(User.id.in_(creator_ids))).all():
             creators[user.id] = user
 
+    # `Organization.created_by` records who created/approved the organization,
+    # which may be an admin. The contact shown to admins should be the actual
+    # organizer member who owns the organization.
+    organizer_members: dict = {}
+    if organization_ids:
+        member_rows = db.execute(
+            select(OrganizationMember.organization_id, User)
+            .join(User, User.id == OrganizationMember.user_id)
+            .where(
+                OrganizationMember.organization_id.in_(organization_ids),
+                OrganizationMember.member_role == "organizer",
+            )
+            .order_by(OrganizationMember.created_at.asc(), OrganizationMember.id.asc())
+        ).all()
+        for organization_id, user in member_rows:
+            organizer_members.setdefault(organization_id, user)
+
     result = []
     for org in organizations:
         events_total, events_published = events_by_org.get(org.id, (0, 0))
         participants, revenue_paise = reg_by_org.get(org.id, (0, 0))
-        creator = creators.get(org.created_by) if org.created_by else None
+        creator = organizer_members.get(org.id) or (creators.get(org.created_by) if org.created_by else None)
         result.append(
             {
                 "organizationId": str(org.id),
