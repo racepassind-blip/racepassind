@@ -56,7 +56,7 @@ from app.services.media_service import resolve_media_url, upload_media
 from app.services.storage_service import StorageError, StorageMetadata
 from app.services.audit_service import record_audit
 from db import get_db
-from models import CreditTopupRequest, CreditTransaction, EmailLog, Event, Organization, OrganizationMember, OrganizationVerificationDocument, OrganizationVerificationSubmission, Refund, Registration, User, WaitlistEntry
+from models import CreditTopupRequest, CreditTransaction, EmailLog, Event, Organization, OrganizationMember, OrganizationPaymentDestination, OrganizationVerificationDocument, OrganizationVerificationSubmission, Refund, Registration, User, WaitlistEntry
 
 router = APIRouter()
 

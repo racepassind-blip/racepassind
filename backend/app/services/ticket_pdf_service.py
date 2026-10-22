@@ -3,7 +3,9 @@ from __future__ import annotations
 import datetime as dt
 import io
 from html import escape
+from urllib.request import urlopen
 
+from PIL import Image as PilImage
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
@@ -11,8 +13,11 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from app.config import get_settings
+from app.infrastructure.storage.factory import get_storage_service
+from app.services.media_service import object_key_from_reference
 from models import Event, Registration
 
 _PAGE_MARGIN = 17 * mm
@@ -26,6 +31,7 @@ _BORDER = colors.HexColor("#D9E3EA")
 _PALE_TEAL = colors.HexColor("#F1F8FA")
 _PALE_GRAY = colors.HexColor("#F7F9FB")
 _WHITE = colors.white
+_ORGANIZATION_LOGO_MAX_BYTES = 2_000_000
 
 
 def _text(value: object | None, fallback: str = "") -> str:
@@ -89,6 +95,11 @@ def _rule_items(rules: object) -> list[str]:
     return [str(rule).strip() for rule in rules if str(rule).strip()]
 
 
+def _organizer_initials(name: object | None) -> str:
+    words = [word for word in str(name or "Organizer").split() if word]
+    return "".join(word[0] for word in words[:2]).upper() or "OR"
+
+
 def _qr_drawing(payload: str, size: float = 43 * mm) -> Drawing:
     widget = qr.QrCodeWidget(payload)
     widget.barWidth = size
@@ -96,6 +107,40 @@ def _qr_drawing(payload: str, size: float = 43 * mm) -> Drawing:
     drawing = Drawing(size, size)
     drawing.add(widget)
     return drawing
+
+
+def _organization_logo(organization) -> Image | None:
+    """Load an uploaded organization logo for the printable ticket.
+
+    Only private-storage references are fetched. This keeps ticket generation
+    from making server-side requests to arbitrary URLs stored on an organizer
+    profile, while preserving the existing text-only fallback for legacy URLs.
+    """
+    object_key = object_key_from_reference(getattr(organization, "logo_url", None))
+    if not object_key:
+        return None
+    try:
+        storage = get_storage_service()
+        logo_url = storage.get_read_url(object_key, get_settings().storage_signed_url_ttl_seconds)
+        with urlopen(logo_url, timeout=5) as response:  # nosec B310 - URL is storage-generated above
+            payload = response.read(_ORGANIZATION_LOGO_MAX_BYTES + 1)
+        if not payload or len(payload) > _ORGANIZATION_LOGO_MAX_BYTES:
+            return None
+        # Normalize the validated upload so a malformed or unusual source image
+        # cannot break ReportLab later while the document is being written.
+        with PilImage.open(io.BytesIO(payload)) as source:
+            source.verify()
+        with PilImage.open(io.BytesIO(payload)) as source:
+            source.thumbnail((300, 300))
+            source_width, source_height = source.size
+            normalized = io.BytesIO()
+            source.convert("RGBA" if source.mode in {"RGBA", "LA"} else "RGB").save(normalized, format="PNG")
+        scale = min((15 * mm) / source_width, (15 * mm) / source_height)
+        return Image(io.BytesIO(normalized.getvalue()), width=source_width * scale, height=source_height * scale)
+    except Exception:
+        # A ticket must remain downloadable even if a stored logo was removed
+        # or the object store is temporarily unavailable.
+        return None
 
 
 def _field(label: str, value: object | None, styles: dict[str, ParagraphStyle], *, accent: bool = False) -> list[Paragraph]:
@@ -113,11 +158,17 @@ def _draw_page_footer(canvas, document) -> None:
     canvas.setFillColor(_MUTED)
     canvas.setFont("Helvetica", 7.5)
     canvas.drawString(_PAGE_MARGIN + 6, 6 * mm, "Ticketing powered by SportPass India")
-    canvas.drawRightString(A4[0] - _PAGE_MARGIN - 6, 6 * mm, f"Page {document.page}")
     canvas.restoreState()
 
 
-def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> list:
+def _ticket_story(
+    registration: Registration,
+    event: Event,
+    qr_payload: str,
+    *,
+    bundle_position: int | None = None,
+    bundle_total: int | None = None,
+) -> list:
     """Shared print layout for individual downloads and emailed ticket bundles."""
     if registration.status not in {"confirmed", "checked_in"}:
         raise ValueError("A ticket PDF is available only for confirmed registrations")
@@ -128,12 +179,14 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
     ticket = registration.ticket
     participant = registration.participant
     member_names = [member.participant.name for member in registration.participant_memberships] or [participant.name]
+    is_group_registration = len(member_names) > 1 or (registration.quantity or 1) > 1
     currency = (ticket.currency if ticket is not None and ticket.currency else "INR").upper()
     category = ticket.category.name if ticket is not None and ticket.category else None
     location = event.location or "Location to be announced"
     address = _event_address(event)
     organizer_name = organization.name if organization is not None else "Event organizer"
     organizer_website = organization.website if organization is not None else None
+    organization_logo = _organization_logo(organization) if organization is not None else None
 
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(
@@ -204,8 +257,8 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         fontSize=8,
         leading=10,
         textColor=_SPORTPASS_TEAL,
-        spaceBefore=7,
-        spaceAfter=5,
+        spaceBefore=4,
+        spaceAfter=3,
         tracking=0.8,
     ))
     styles.add(ParagraphStyle(
@@ -233,6 +286,21 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         fontSize=9.2,
         leading=12,
         textColor=_SPORTPASS_NAVY,
+    ))
+    styles.add(ParagraphStyle(
+        name="participant_name",
+        parent=styles["field_value_accent"],
+        fontSize=12,
+        leading=15,
+    ))
+    styles.add(ParagraphStyle(
+        name="organizer_initials",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=10,
+        leading=12,
+        alignment=TA_CENTER,
+        textColor=_WHITE,
     ))
     styles.add(ParagraphStyle(
         name="body",
@@ -269,9 +337,11 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
 
     story: list[object] = []
 
+    entry_status = "CHECKED IN" if registration.status == "checked_in" else "CONFIRMED"
+    entry_instruction = "Entry recorded" if registration.status == "checked_in" else "Valid for one entry"
     header = Table([[
-        [Paragraph("SPORTPASS INDIA", styles["brand_kicker"]), Paragraph("Your event ticket", styles["brand"])],
-        [Paragraph("EVENT TICKET", styles["brand_badge"]), Paragraph("Keep ready at check-in", styles["brand_badge"])],
+        [Paragraph("SPORTPASS INDIA", styles["brand_kicker"]), Paragraph("ADMISSION TICKET", styles["brand"])],
+        [Paragraph(entry_status, styles["brand_badge"]), Paragraph(entry_instruction, styles["brand_badge"])],
     ]], colWidths=[_CONTENT_WIDTH - 48 * mm, 48 * mm], hAlign="LEFT")
     header.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), _SPORTPASS_NAVY),
@@ -283,7 +353,32 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         ("TOPPADDING", (0, 0), (-1, -1), 7),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
-    story.extend([header, Spacer(1, 7 * mm)])
+    story.extend([header, Spacer(1, 4 * mm)])
+
+    # A logo needs to be its own top-level row. Nesting an image in the dark
+    # event card makes ReportLab miscalculate the cell height for some image
+    # sources, which can split an otherwise single-page ticket.
+    organizer_mark = organization_logo or Paragraph(_organizer_initials(organizer_name), styles["organizer_initials"])
+    organizer_mark_background = _WHITE if organization_logo else _SPORTPASS_NAVY
+    if organization is not None:
+        organizer_brand = Table([[
+            organizer_mark,
+            [
+                Paragraph("PRESENTED BY", styles["field_label"]),
+                _paragraph(organizer_name, styles["field_value_accent"]),
+            ],
+        ]], colWidths=[17 * mm, _CONTENT_WIDTH - 17 * mm], hAlign="LEFT")
+        organizer_brand.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), _PALE_GRAY),
+            ("BACKGROUND", (0, 0), (0, 0), organizer_mark_background),
+            ("BOX", (0, 0), (-1, -1), 0.8, _BORDER),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.extend([organizer_brand, Spacer(1, 3 * mm)])
 
     event_left = [
         Paragraph("EVENT", styles["brand_kicker"]),
@@ -293,9 +388,9 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
     if address and address != location:
         event_left.append(_paragraph(address, styles["event_meta"]))
     event_right = [
-        _qr_drawing(qr_payload, 42 * mm),
+        _qr_drawing(qr_payload, 35 * mm),
         Spacer(1, 1.5 * mm),
-        Paragraph("SCAN AT CHECK-IN", styles["qr_caption"]),
+        Paragraph("SCAN TO CHECK IN", styles["qr_caption"]),
     ]
     event_card = Table([[event_left, event_right]], colWidths=[_CONTENT_WIDTH - 59 * mm, 59 * mm], hAlign="LEFT")
     event_card.setStyle(TableStyle([
@@ -307,14 +402,20 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         ("ALIGN", (1, 0), (1, 0), "CENTER"),
         ("LEFTPADDING", (0, 0), (-1, -1), 10),
         ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 11),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 11),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
-    story.extend([event_card, Spacer(1, 4 * mm)])
+    story.extend([event_card, Spacer(1, 3 * mm)])
 
+    reference_content = [_paragraph(registration.registration_reference, styles["field_value_accent"])]
+    if bundle_position is not None and bundle_total is not None and bundle_total > 1:
+        reference_content.insert(0, Paragraph(f"TICKET {bundle_position} OF {bundle_total}", styles["field_label"]))
     status_line = Table([[
-        Paragraph("REGISTRATION CONFIRMED" if registration.status != "checked_in" else "CHECKED IN", styles["brand_badge"]),
-        _paragraph(registration.registration_reference, styles["field_value_accent"]),
+        Paragraph(
+            "GROUP REGISTRATION" if is_group_registration else ("ADMISSION CONFIRMED" if registration.status != "checked_in" else "CHECKED IN"),
+            styles["brand_badge"],
+        ),
+        reference_content,
     ]], colWidths=[_CONTENT_WIDTH * 0.52, _CONTENT_WIDTH * 0.48], hAlign="LEFT")
     status_line.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FFF1E8")),
@@ -323,15 +424,15 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         ("ALIGN", (1, 0), (1, 0), "RIGHT"),
         ("LEFTPADDING", (0, 0), (-1, -1), 10),
         ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]))
-    story.extend([status_line, Spacer(1, 4 * mm)])
+    story.extend([status_line, Spacer(1, 3 * mm)])
 
-    story.append(Paragraph("REGISTRATION DETAILS", styles["section_title"]))
+    story.append(Paragraph("ATTENDEE DETAILS", styles["section_title"]))
     participant_contact = " · ".join(value for value in [participant.email, participant.phone] if value)
     detail_fields = [
-        _field("Participant", participant.name, styles, accent=True),
+        [Paragraph("PARTICIPANT", styles["field_label"]), _paragraph(participant.name, styles["participant_name"], "Not provided")],
         _field("Ticket", ticket.name if ticket else None, styles),
         _field("Category", category, styles),
         _field("Quantity", registration.quantity, styles),
@@ -347,7 +448,13 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
     if participant_contact:
         detail_rows.append([_field("Registration contact", participant_contact, styles), ""])
     if len(member_names) > 1:
-        detail_rows.append([_field("Registered participants", " / ".join(member_names), styles), ""])
+        participant_list = "<br/>".join(
+            f"{index}. {_text(name)}" for index, name in enumerate(member_names, start=1)
+        )
+        detail_rows.append([
+            [Paragraph("REGISTERED PARTICIPANTS", styles["field_label"]), Paragraph(participant_list, styles["field_value"])],
+            "",
+        ])
     details = Table(detail_rows, colWidths=[_CONTENT_WIDTH / 2] * 2, hAlign="LEFT")
     details.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), _WHITE),
@@ -356,15 +463,15 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 9),
         ("RIGHTPADDING", (0, 0), (-1, -1), 9),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
     if participant_contact:
         contact_row = len(detail_rows) - (2 if len(member_names) > 1 else 1)
         details.setStyle(TableStyle([("SPAN", (0, contact_row), (-1, contact_row))]))
     if len(member_names) > 1:
         details.setStyle(TableStyle([("SPAN", (0, len(detail_rows) - 1), (-1, len(detail_rows) - 1))]))
-    story.extend([details, Spacer(1, 5 * mm)])
+    story.extend([details, Spacer(1, 3 * mm)])
 
     # Add-ons are part of the paid/confirmed ticket, so show them on the
     # printable ticket while keeping the QR payload opaque.
@@ -389,7 +496,7 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
             if value:
                 addon_rows.append([_paragraph(addon.get("name", addon_id), styles["field_value"]), _paragraph(value, styles["field_value_accent"])])
         if addon_rows:
-            story.append(Paragraph("ADD-ONS", styles["section_title"]))
+            story.append(Paragraph("YOUR EXTRAS", styles["section_title"]))
             addon_table = Table(addon_rows, colWidths=[_CONTENT_WIDTH * 0.62, _CONTENT_WIDTH * 0.38], hAlign="LEFT")
             addon_table.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, -1), _PALE_GRAY),
@@ -402,7 +509,7 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
                 ("ALIGN", (1, 0), (1, -1), "RIGHT"),
             ]))
-            story.extend([addon_table, Spacer(1, 5 * mm)])
+            story.extend([addon_table, Spacer(1, 3 * mm)])
 
     organizer_content = [
         Paragraph("EVENT SUPPORT", styles["section_title"]),
@@ -415,11 +522,15 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         organizer_content.append(_paragraph(organizer_location, styles["body"]))
     organizer_content.extend([
         Spacer(1, 2 * mm),
-        Paragraph("For event arrangements, meeting-point instructions and refund queries, contact the organizer through the event page.", styles["body"]),
+        Paragraph("Present this pass at check-in. Contact the organizer for event-specific instructions.", styles["body"]),
         Spacer(1, 3 * mm),
         Paragraph("AT CHECK-IN", styles["section_title"]),
         Paragraph("Show the QR code above, or give the team your name and registration reference.", styles["body_dark"]),
     ])
+    rules = _rule_items(event.rules)
+    if rules:
+        organizer_content.extend([Spacer(1, 2 * mm), Paragraph("EVENT INSTRUCTIONS", styles["section_title"])])
+        organizer_content.extend(Paragraph(f"• {_text(rule)}", styles["rule"]) for rule in rules)
     access_card = Table([[organizer_content]], colWidths=[_CONTENT_WIDTH], hAlign="LEFT")
     access_card.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, 0), _PALE_GRAY),
@@ -427,28 +538,10 @@ def _ticket_story(registration: Registration, event: Event, qr_payload: str) -> 
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 10),
         ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 9),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
     story.append(access_card)
-
-    story.extend([
-        Spacer(1, 3 * mm),
-        Paragraph("TICKET VALIDITY", styles["section_title"]),
-        Paragraph("Issued for a confirmed registration for the event, date and participants shown above. Admission depends on the current registration status verified by the check-in team. A downloaded PDF does not override a later cancellation or refund. Duplicate scans are checked at each checkpoint.", styles["body_dark"]),
-    ])
-
-    if event.description:
-        story.extend([
-            Spacer(1, 3 * mm),
-            Paragraph("ABOUT THIS EVENT", styles["section_title"]),
-            _paragraph(event.description, styles["body_dark"]),
-        ])
-
-    rules = _rule_items(event.rules)
-    if rules:
-        story.extend([Spacer(1, 2 * mm), Paragraph("EVENT RULES & INSTRUCTIONS", styles["section_title"])])
-        story.extend(Paragraph(f"• {_text(rule)}", styles["rule"]) for rule in rules)
 
     return story
 
@@ -464,10 +557,17 @@ def _build_tickets_pdf(registrations: list[Registration], event: Event, qr_paylo
         subject="Confirmed event registrations",
     )
     story: list[object] = []
-    for index, (registration, payload) in enumerate(zip(registrations, qr_payloads, strict=True)):
-        if index:
+    bundle_total = len(registrations)
+    for index, (registration, payload) in enumerate(zip(registrations, qr_payloads, strict=True), start=1):
+        if index > 1:
             story.append(PageBreak())
-        story.extend(_ticket_story(registration, event, payload))
+        story.extend(_ticket_story(
+            registration,
+            event,
+            payload,
+            bundle_position=index if bundle_total > 1 else None,
+            bundle_total=bundle_total if bundle_total > 1 else None,
+        ))
     document.build(story, onFirstPage=_draw_page_footer, onLaterPages=_draw_page_footer)
     return buffer.getvalue()
 

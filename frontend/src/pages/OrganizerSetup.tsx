@@ -65,7 +65,6 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
   const [verificationStatus, setVerificationStatus] = useState<string>("LOADING");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [application, setApplication] = useState<{status?: string; paymentPreference: string; paymentDetails: {upiId?: string; payeeName?: string}; reviewedAt: string | null} | null>(null);
 
   useEffect(() => {
     if (!logoFile) { setLogoPreviewUrl(null); return; }
@@ -90,13 +89,6 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
           description: profile.description ?? "",
           website: profile.website ?? "",
         });
-        // Application history is optional; it must not prevent profile editing.
-        try {
-          const onboarding = await apiRequest<{application: typeof application}>("/auth/organizer-application/mine");
-          setApplication(onboarding.application);
-        } catch {
-          setApplication(null);
-        }
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Could not load your organization profile.");
       } finally {
@@ -162,11 +154,7 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
 
   const displayedLogo = logoPreviewUrl || organization?.logoUrl;
   const paymentMethods = [organization?.allowDirectUpi && "Direct UPI", organization?.allowCashfree && "Gateway"].filter(Boolean).join(", ");
-  const paymentAccessApproved = application?.paymentPreference === "DIRECT_UPI"
-    ? Boolean(organization?.allowDirectUpi)
-    : application?.paymentPreference === "CASHFREE"
-      ? Boolean(organization?.allowCashfree)
-      : Boolean(paymentMethods);
+  const paymentAccessApproved = verificationStatus === "VERIFIED" && Boolean(paymentMethods);
   const verificationSummary = verificationStatus === "VERIFIED"
     ? paymentMethods ? `Your verification is approved. Enabled payment methods: ${paymentMethods}. Complete payment setup for each event; Direct UPI also requires an approved payment destination.` : "Your paid-event verification is approved, but no payment method is enabled. Contact SportPass if you need payment access."
     : verificationStatus === "UNDER_REVIEW" ? "Your paid-event verification is submitted and awaiting review."
@@ -177,30 +165,32 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
     : "Could not confirm your verification status. Open verification details to retry.";
 
   const onboardingSteps = [
-    { title: "Organizer account approved", detail: "Your workspace is ready.", done: application?.status === "approved" || organization?.status === "approved" },
     { title: "Complete paid-event verification", detail: "Submit PAN and billing details once to collect paid registrations.", done: verificationStatus === "VERIFIED", action: ["NOT_SUBMITTED", "REJECTED", "SUSPENDED"].includes(verificationStatus) },
     { title: "Payment method enabled", detail: "SportPass confirms Direct UPI, Cashfree, or both as part of verification approval.", done: paymentAccessApproved },
-    { title: "Set up your event payment", detail: "Choose a payment method and complete the event payment details before publishing.", done: false },
   ];
 
   const content = (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-        {application && <Card className="border-primary/20 shadow-sm"><CardHeader className="pb-4"><CardTitle>Before you accept paid registrations</CardTitle><CardDescription>Two approvals are needed. Your account is already approved.</CardDescription></CardHeader><CardContent className="space-y-2">
-          {onboardingSteps.slice(1, 3).map((step, index) => <div key={step.title} className={`flex items-center gap-3 rounded-lg border p-3 ${step.action ? "border-primary/40 bg-primary/5" : ""}`}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Organizer settings</p>
+            <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Your organization</h1>
+            <p className="mt-2 max-w-2xl text-muted-foreground">Manage the public details participants see and the payment access used for paid events.</p>
+          </div>
+          {paymentAccessApproved && <div className="flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800"><CheckCircle2 className="h-4 w-4" /> Payment access ready</div>}
+        </div>
+
+        {verificationStatus !== "LOADING" && !paymentAccessApproved && <Card className="border-primary/20 shadow-sm"><CardHeader className="pb-4"><CardTitle>Set up paid registrations</CardTitle><CardDescription>Your organizer account is approved. Complete these steps only when you want to collect paid registrations.</CardDescription></CardHeader><CardContent className="space-y-2">
+          {onboardingSteps.map((step, index) => <div key={step.title} className={`flex items-center gap-3 rounded-lg border p-3 ${step.action ? "border-primary/40 bg-primary/5" : ""}`}>
             <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${step.done ? "bg-emerald-100 text-emerald-700" : step.action ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{step.done ? <CheckCircle2 className="h-4 w-4" /> : index + 1}</span>
             <div className="min-w-0 flex-1"><p className="font-semibold">{step.title}</p><p className="mt-0.5 text-xs leading-5 text-muted-foreground">{step.done ? "Approved" : step.detail}</p></div>
             {step.action && <Button size="sm" onClick={() => setSection("verification")}>Start</Button>}
           </div>)}
           <p className="pt-2 text-xs text-muted-foreground">{verificationSummary} Free events do not need paid verification.</p>
         </CardContent></Card>}
-        <div>
-          <p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">Organizer settings</p>
-          <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Your organization</h1>
-          <p className="mt-2 max-w-2xl text-muted-foreground">Complete your profile and follow the payment setup steps above. You can save your profile before verification is finished.</p>
-        </div>
 
         <div className="grid grid-cols-2 gap-2 rounded-xl border bg-muted/40 p-1.5" role="tablist" aria-label="Organization settings">
-          {([{ id: "profile", title: "Public profile", detail: "Logo and organization details", icon: Building2 }, { id: "verification", title: "Paid event verification", detail: "Required for paid events only", icon: ShieldCheck }] as const).map((item) => <button key={item.id} id={`organization-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`organization-panel-${item.id}`} onClick={() => setSection(item.id)} className={`flex items-start gap-3 rounded-lg p-3 text-left transition-colors sm:p-4 ${section === item.id ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:bg-background/60"}`}><item.icon className={`mt-0.5 hidden h-5 w-5 shrink-0 sm:block ${section === item.id ? "text-primary" : ""}`} /><span><span className="block text-sm font-semibold">{item.title}</span><span className="mt-1 hidden text-xs text-muted-foreground sm:block">{item.detail}</span></span></button>)}
+          {([{ id: "profile", title: "Public profile", detail: "Logo and organization details", icon: Building2 }, { id: "verification", title: "Payment access", detail: paymentAccessApproved ? "Verified and ready" : "Required for paid events", icon: ShieldCheck }] as const).map((item) => <button key={item.id} id={`organization-tab-${item.id}`} type="button" role="tab" aria-selected={section === item.id} aria-controls={`organization-panel-${item.id}`} onClick={() => setSection(item.id)} className={`flex items-start gap-3 rounded-lg p-3 text-left transition-colors sm:p-4 ${section === item.id ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:bg-background/60"}`}><item.icon className={`mt-0.5 hidden h-5 w-5 shrink-0 sm:block ${section === item.id ? "text-primary" : ""}`} /><span><span className="block text-sm font-semibold">{item.title}</span><span className="mt-1 hidden text-xs text-muted-foreground sm:block">{item.detail}</span></span>{item.id === "verification" && paymentAccessApproved && <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-emerald-600" />}</button>)}
         </div>
         <div id="organization-panel-profile" role="tabpanel" aria-labelledby="organization-tab-profile" hidden={section !== "profile"}>
         {loading ? (

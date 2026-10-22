@@ -21,6 +21,11 @@ class TicketTierOut(BaseModel):
     teamSizeMax: int | None = None
 
 
+class OrganizerInfoOut(BaseModel):
+    name: str
+    logoUrl: str | None = None
+
+
 class EventOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -40,6 +45,7 @@ class EventOut(BaseModel):
     waitlistOfferWindow: str = "30"
     waitlistOpen: bool = False
     organizer: str
+    organizerInfo: OrganizerInfoOut
     rules: list[str]
     schedule: list[dict[str, str]]
     fieldConfig: dict

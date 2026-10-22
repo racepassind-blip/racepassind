@@ -45,7 +45,7 @@ const OrganizerDashboard = () => {
   const queryClient = useQueryClient();
   const [updatingEventId, setUpdatingEventId] = useState<string | null>(null);
   const [eventSearch, setEventSearch] = useState("");
-  const [eventFilter, setEventFilter] = useState<EventFilter>("upcoming");
+  const [eventFilter, setEventFilter] = useState<EventFilter>("all");
   const [eventPage, setEventPage] = useState(1);
   const [searchParams, setSearchParams] = useSearchParams();
   const [organizationTabOpen, setOrganizationTabOpen] = useState(searchParams.get("tab") === "organization");
@@ -132,6 +132,11 @@ const OrganizerDashboard = () => {
   const pastCount = activeEvents.filter((event) => eventEndTime(event) < now).length;
   const activeEventCount = activeEvents.filter((event) => event.status === "published" && eventEndTime(event) >= now).length;
   const firstName = user?.name?.trim().split(/\s+/)[0];
+  const workspaceSummary = activeEventCount > 0
+    ? `${activeEventCount} published ${activeEventCount === 1 ? "event is" : "events are"} currently active. Keep registrations, participants, and race-day tasks on track.`
+    : pastCount > 0
+      ? "Your previous events are safely stored below. Create the next one when you are ready."
+      : "Create your first event, then manage registrations and race-day operations from one place.";
 
   return (
     <OrganizerDashboardLayout showNavigation={false}>
@@ -158,21 +163,25 @@ const OrganizerDashboard = () => {
             </Button>
           </section>
         )}
-        <section className="grid overflow-hidden rounded-xl border bg-card shadow-sm sm:rounded-2xl lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="p-4 sm:p-8">
-            <p className="text-sm font-bold uppercase tracking-[0.16em] text-primary">{user?.role === "admin" ? "Admin event operations" : "Organizer workspace"}</p>
-            <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-4xl">{user?.role === "admin" ? "All organizer events" : `Welcome back${firstName ? `, ${firstName}` : ""}`}</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground sm:mt-3">{user?.role === "admin" ? "Review and operate events across the platform without switching into an organizer account." : "See what needs attention and move into event operations quickly."}</p>
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:flex sm:flex-wrap sm:gap-3">
-              <Button variant="outline" className="h-10 gap-2 sm:h-auto" onClick={() => navigate("/organizer/products")}><Package className="h-4 w-4" /> Sell products</Button><Button className="h-10 gap-2 sm:h-auto" onClick={() => navigate("/organizer/events/new")}><Plus className="h-4 w-4" /> Create event</Button>
-              <Button variant="outline" className="col-span-2 h-10 justify-center gap-2 sm:h-auto sm:w-auto" onClick={() => navigate("/organizer/registrations?status=all")}><ClipboardList className="h-4 w-4" /> View registrations</Button>
+        <section className="grid overflow-hidden rounded-2xl border bg-card shadow-sm lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="relative overflow-hidden p-5 sm:p-8">
+            <div className="pointer-events-none absolute -left-16 -top-24 h-56 w-56 rounded-full bg-primary/10 blur-3xl" />
+            <div className="relative">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">{user?.role === "admin" ? "Admin event operations" : "Organizer home"}</p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">{user?.role === "admin" ? "All organizer events" : `Welcome back${firstName ? `, ${firstName}` : ""}`}</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{user?.role === "admin" ? "Review and operate events across the platform without switching into an organizer account." : workspaceSummary}</p>
+              <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
+                <Button className="gap-2 sm:min-w-36" onClick={() => navigate("/organizer/events/new")}><Plus className="h-4 w-4" /> Create event</Button>
+                <Button variant="outline" className="gap-2 sm:min-w-40" onClick={() => navigate("/organizer/registrations?status=all")}><ClipboardList className="h-4 w-4" /> Registrations</Button>
+                <Button variant="ghost" className="gap-2 sm:min-w-36" onClick={() => navigate("/organizer/products")}><Package className="h-4 w-4" /> Products</Button>
+              </div>
             </div>
           </div>
-          <div className="flex flex-col justify-between border-t bg-slate-950 p-6 text-white lg:border-l lg:border-t-0 sm:p-8">
+          <div className="flex flex-col justify-between border-t bg-slate-950 p-5 text-white lg:border-l lg:border-t-0 sm:p-7">
             <div>
-              {user?.role === "admin" ? <><div className="flex items-center gap-2 text-sm font-semibold text-slate-300"><Shield className="h-4 w-4 text-primary" /> Platform operations</div><p className="mt-3 text-3xl font-black tracking-tight">Admin</p><p className="mt-1 text-xs text-slate-400">Use the admin console for organizers, Credits, settlements, and platform controls.</p></> : <><div className="flex items-center gap-2 text-sm font-semibold text-slate-300"><CreditCard className="h-4 w-4 text-primary" /> Available SportPass Credits</div><p className="mt-3 text-3xl font-black tracking-tight">{availableCredits.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</p><p className="mt-1 text-xs text-slate-400">Used when eligible registrations are confirmed.</p></>}
+              {user?.role === "admin" ? <><div className="flex items-center gap-2 text-sm font-semibold text-slate-300"><Shield className="h-4 w-4 text-primary" /> Platform operations</div><p className="mt-3 text-3xl font-black tracking-tight">Admin</p><p className="mt-1 text-xs leading-5 text-slate-400">Manage organizers, Credits, settlements, and platform controls.</p></> : <><div className="flex items-center gap-2 text-sm font-semibold text-slate-300"><CreditCard className="h-4 w-4 text-primary" /> Available Credits</div><p className="mt-3 text-3xl font-black tracking-tight">{availableCredits.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</p><p className="mt-1 text-xs leading-5 text-slate-400">Used as eligible registrations are confirmed.</p></>}
             </div>
-            {user?.role === "admin" ? <Button variant="secondary" className="mt-6 w-fit gap-2 bg-primary text-white hover:bg-primary/90 hover:text-white" onClick={() => navigate("/admin")}>Admin Console <ArrowUpRight className="h-4 w-4" /></Button> : <Button variant="secondary" className="mt-6 w-fit gap-2" onClick={() => navigate("/organizer/credits")}>Manage Credits <ArrowUpRight className="h-4 w-4" /></Button>}
+            {user?.role === "admin" ? <Button variant="secondary" className="mt-6 w-full justify-between gap-2 bg-primary text-white hover:bg-primary/90 hover:text-white" onClick={() => navigate("/admin")}>Admin Console <ArrowUpRight className="h-4 w-4" /></Button> : <Button variant="secondary" className="mt-6 w-full justify-between gap-2" onClick={() => navigate("/organizer/credits")}>Manage Credits <ArrowUpRight className="h-4 w-4" /></Button>}
           </div>
         </section>
 
@@ -192,7 +201,7 @@ const OrganizerDashboard = () => {
         <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="border-b p-5 sm:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div><div className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-primary" /><h2 className="text-xl font-black tracking-tight">Your events</h2><Badge variant="secondary">{filteredEvents.length}</Badge></div><p className="mt-1 text-sm text-muted-foreground">Upcoming events appear first. Use the filters to find older events or drafts.</p></div>
+              <div><div className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-primary" /><h2 className="text-xl font-black tracking-tight">Your events</h2><Badge variant="secondary">{filteredEvents.length}</Badge></div><p className="mt-1 text-sm text-muted-foreground">All events are shown by default. Filter by upcoming, past, published, or draft when needed.</p></div>
               <p className="text-sm font-medium text-muted-foreground">{upcomingCount} upcoming · {pastCount} past</p>
             </div>
             <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

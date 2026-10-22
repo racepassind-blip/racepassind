@@ -219,8 +219,8 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2"><FileCheck2 className="h-5 w-5 text-primary" /> Paid event verification</CardTitle>
-            <CardDescription>Required only if you want to collect paid registrations. Free events can be published without this verification.</CardDescription>
+            <CardTitle className="flex items-center gap-2"><FileCheck2 className="h-5 w-5 text-primary" /> Payment access</CardTitle>
+            <CardDescription>Set up only when you want to collect paid registrations. Free events can be published without it.</CardDescription>
           </div>
           <Badge variant="outline" className={`w-fit gap-1.5 ${meta.className}`}><StatusIcon className="h-3.5 w-3.5" /> {meta.label}</Badge>
         </div>
@@ -228,9 +228,8 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
       <CardContent className="space-y-5">
         {status === "VERIFIED" && (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100">
-            <p className="font-semibold">Your organization is verified for paid events.</p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2"><p className="rounded-md bg-white/70 px-3 py-2"><span className="font-medium">Direct UPI:</span> {verification.allowDirectUpi ? "Enabled" : "Not enabled"}</p><p className="rounded-md bg-white/70 px-3 py-2"><span className="font-medium">Cashfree:</span> {verification.allowCashfree ? "Enabled" : "Not enabled"}</p></div>
-            <p className="mt-3">Only payment methods marked Enabled can be used. You must still select the enabled method and complete its event-level setup before publishing a paid event.{verification?.reviewedAt ? ` Verified on ${formatDate(verification.reviewedAt)}.` : ""}</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-semibold">Payment access is ready.</p><p className="mt-1 leading-5">Choose an enabled method and complete its event-level setup before publishing a paid event.{verification?.reviewedAt ? ` Verified on ${formatDate(verification.reviewedAt)}.` : ""}</p></div><Button asChild size="sm" className="shrink-0"><Link to="/organizer/events/new">Create paid event</Link></Button></div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2"><p className="rounded-md border border-emerald-100 bg-white/70 px-3 py-2"><span className="font-medium">Direct UPI</span><span className="ml-2 text-emerald-700">{verification.allowDirectUpi ? "Enabled" : "Not enabled"}</span></p><p className="rounded-md border border-emerald-100 bg-white/70 px-3 py-2"><span className="font-medium">Cashfree</span><span className="ml-2 text-emerald-700">{verification.allowCashfree ? "Enabled" : "Not enabled"}</span></p></div>
           </div>
         )}
 
@@ -328,6 +327,22 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
               <Button type="submit" disabled={saving || !allFilled}>{saving ? "Submitting…" : status === "REJECTED" ? "Resubmit Verification" : "Submit Verification"}</Button>
             </div>
           </form>
+        ) : status === "VERIFIED" ? (
+          <details className="rounded-lg border bg-muted/20 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-foreground">View submitted verification details</summary>
+            <p className="mt-1 text-xs text-muted-foreground">Your PAN, billing, and tax details are shown only to authorized organizers and SportPass administrators.</p>
+            <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">PAN</dt><dd className="mt-1 font-medium">{verification?.panNumber ?? "—"}</dd></div>
+              <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">Name as per PAN</dt><dd className="mt-1 font-medium">{verification?.nameAsPerPan ?? "—"}</dd></div>
+              <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">GST Registered</dt><dd className="mt-1 font-medium">{verification?.gstRegistered ? "Yes" : "No"}</dd></div>
+              <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">GSTIN</dt><dd className="mt-1 font-medium">{verification?.gstNumber ?? "—"}</dd></div>
+              <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">Billing / Legal Name</dt><dd className="mt-1 font-medium">{verification?.billingName ?? "—"}</dd></div>
+              <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">Billing Address</dt><dd className="mt-1 whitespace-pre-line font-medium">{verification?.billingAddress ?? "—"}</dd></div>
+              <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">City</dt><dd className="mt-1 font-medium">{verification?.billingCity ?? "—"}</dd></div>
+              <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">State</dt><dd className="mt-1 font-medium">{verification?.billingState ?? "—"}</dd></div>
+              <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">PIN Code</dt><dd className="mt-1 font-medium">{verification?.billingPincode ?? "—"}</dd></div>
+            </dl>
+          </details>
         ) : (
           <dl className="grid gap-4 sm:grid-cols-2">
             <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">PAN</dt><dd className="mt-1 font-medium">{verification?.panNumber ?? "—"}</dd></div>

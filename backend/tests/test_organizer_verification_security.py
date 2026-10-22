@@ -6,8 +6,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from db import Base
-from models import Event, EventPaymentSettings, Organization, OrganizationPaymentDestination, ProductListing
-from app.api.v1.organizer import PaidVerificationIn
+from models import Event, EventPaymentSettings, Organization, OrganizationPaymentDestination, ProductListing, User
+from app.api.v1.organizer import PaidVerificationIn, get_paid_verification_status
 from app.services.organizer_payment_security import (
     assert_paid_event_available,
     assert_product_sales_available,
@@ -56,6 +56,26 @@ def configured_event(db: Session):
 def test_paid_event_accepts_only_fully_approved_configuration(db):
     _, event, destination = configured_event(db)
     assert assert_paid_event_available(db, event).id == destination.id
+
+
+def test_paid_verification_status_returns_the_latest_payment_destination(db):
+    organization = Organization(
+        name="Secure Club", status="active", paid_verification_status="UNDER_REVIEW",
+        requested_payment_methods=["DIRECT_UPI"],
+    )
+    admin = User(name="Admin", email="admin@example.test", password_hash="hash", role="admin")
+    db.add_all([organization, admin])
+    db.flush()
+    db.add(OrganizationPaymentDestination(
+        organization_id=organization.id, upi_id="secure@upi", payee_name="Secure Club", status="UNDER_REVIEW",
+    ))
+    db.commit()
+
+    response = get_paid_verification_status(organization.id, user=admin, db=db)
+
+    assert response["requestedPaymentMethods"] == ["DIRECT_UPI"]
+    assert response["upiId"] == "secure@upi"
+    assert response["directUpiDestinationStatus"] == "UNDER_REVIEW"
 
 
 def test_cashfree_managed_event_does_not_require_direct_upi_access_or_destination(db):

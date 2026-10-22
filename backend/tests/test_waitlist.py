@@ -90,6 +90,24 @@ def test_http_join_public_flags_and_organizer_invitation(context):
     assert event.tickets[0].quantity_sold == 1 and event.tickets[0].quantity_reserved == 0
 
 
+def test_public_event_response_includes_the_organization_logo(context):
+    db, event, _, _ = context
+    event.organization.logo_url = "https://cdn.example.test/club-logo.png"
+    db.commit()
+    app = FastAPI()
+    app.include_router(public_events.router)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_storage_service] = lambda: None
+
+    response = TestClient(app).get(f"/events/{event.id}")
+
+    assert response.status_code == 200
+    assert response.json()["organizerInfo"] == {
+        "name": "Isolation test",
+        "logoUrl": "https://cdn.example.test/club-logo.png",
+    }
+
+
 def test_disabled_closed_invalid_and_duplicates(context):
     db, event, _, _ = context
     with pytest.raises(ValidationError):

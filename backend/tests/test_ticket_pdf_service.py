@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import io
 import unittest
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+from PIL import Image
 
 from app.services.ticket_pdf_service import build_ticket_pdf
 from app.services.ticket_bundle_pdf_service import build_ticket_bundle_pdf
@@ -71,6 +75,26 @@ class TicketPdfServiceTests(unittest.TestCase):
         pdf = build_ticket_pdf(registration, event, "sportpass://ticket?v=1&t=opaque")
 
         self.assertTrue(pdf.startswith(b"%PDF-"))
+
+    def test_ticket_embeds_an_uploaded_organization_logo_when_available(self) -> None:
+        registration, event = self._registration()
+        event.organization.logo_url = "storage://private/organization-logo/club.png"
+        logo = io.BytesIO()
+        Image.new("RGB", (24, 24), "#f97316").save(logo, format="PNG")
+        response = MagicMock()
+        response.read.return_value = logo.getvalue()
+        response.__enter__.return_value = response
+        storage = MagicMock()
+        storage.get_read_url.return_value = "https://storage.example.test/signed-logo"
+
+        with patch("app.services.ticket_pdf_service.get_storage_service", return_value=storage), patch(
+            "app.services.ticket_pdf_service.urlopen", return_value=response
+        ) as open_logo:
+            pdf = build_ticket_pdf(registration, event, "sportpass://ticket?v=1&t=opaque")
+
+        self.assertTrue(pdf.startswith(b"%PDF-"))
+        storage.get_read_url.assert_called_once()
+        open_logo.assert_called_once_with("https://storage.example.test/signed-logo", timeout=5)
 
     def test_unconfirmed_registration_cannot_build_pdf(self) -> None:
         registration, event = self._registration("pending_verification")
