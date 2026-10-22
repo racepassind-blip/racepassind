@@ -454,12 +454,18 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
 
           {registration.computedTotal.eventWaiver && (
             <section>
-              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Event waiver</p>
-              <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
-                <p className="font-medium">{registration.computedTotal.eventWaiver.title || "Waiver & Declaration"}</p>
-                {registration.computedTotal.eventWaiver.text && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{registration.computedTotal.eventWaiver.text}</p>}
-                <p className="text-sm font-semibold">{registration.computedTotal.eventWaiver.accepted ? "Accepted" : "Not accepted"}{registration.computedTotal.eventWaiver.acceptedAt ? ` · ${formatDate(registration.computedTotal.eventWaiver.acceptedAt)}` : ""}</p>
-              </div>
+              <details className="group rounded-lg border bg-muted/20">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-3 text-xs font-bold uppercase tracking-widest text-muted-foreground [&::-webkit-details-marker]:hidden">
+                  <span>Event waiver</span>
+                  <span className="text-[11px] normal-case tracking-normal text-muted-foreground group-open:hidden">View details</span>
+                  <span className="hidden text-[11px] normal-case tracking-normal text-muted-foreground group-open:inline">Hide details</span>
+                </summary>
+                <div className="space-y-2 border-t px-3 py-3">
+                  <p className="font-medium">{registration.computedTotal.eventWaiver.title || "Waiver & Declaration"}</p>
+                  {registration.computedTotal.eventWaiver.text && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{registration.computedTotal.eventWaiver.text}</p>}
+                  <p className="text-sm font-semibold">{registration.computedTotal.eventWaiver.accepted ? "Accepted" : "Not accepted"}{registration.computedTotal.eventWaiver.acceptedAt ? ` · ${formatDate(registration.computedTotal.eventWaiver.acceptedAt)}` : ""}</p>
+                </div>
+              </details>
             </section>
           )}
 
