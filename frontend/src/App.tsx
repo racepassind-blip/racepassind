@@ -26,6 +26,7 @@ import OrganizerCheckin from "./pages/OrganizerCheckin";
 import OrganizerRegistrations from "./pages/OrganizerRegistrations";
 import OrganizerEventCreate from "./pages/OrganizerEventCreate";
 import OrganizerEventDashboard from "./pages/OrganizerEventDashboard";
+import OrganizerEventAddons from "./pages/OrganizerEventAddons";
 import OrganizerEventCheckpoints from "./pages/OrganizerEventCheckpoints";
 import OrganizerCheckinMatrix from "./pages/OrganizerCheckinMatrix";
 import OrganizerManualParticipant from "./pages/OrganizerManualParticipant";
@@ -162,6 +163,7 @@ const App = () => (
             <Route path="/organizer/payments" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerPayments /></ProtectedRoute>} />
             <Route path="/event/:eventId/number-list" element={<PublicEventNumberList />} />
             <Route path="/organizer/events/:eventId" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventDashboard /></ProtectedRoute>} />
+            <Route path="/organizer/events/:eventId/add-ons" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerEventAddons /></ProtectedRoute>} />
             <Route path="/organizer/setup" element={<ProtectedRoute allowedRoles={["organizer"]}><OrganizerSetup /></ProtectedRoute>} />
             <Route path="/organizer/refunds" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerFinanceRedirect refunds /></ProtectedRoute>} />
             <Route path="/organizer/credits" element={<ProtectedRoute allowedRoles={["admin", "organizer"]}><OrganizerCredits /></ProtectedRoute>} />

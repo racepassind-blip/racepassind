@@ -293,19 +293,23 @@ const OrganizerEventDashboard = () => {
           </Card>
         </div>
 
-        {byAddon && byAddon.length > 0 && (
-          <Card>
+        <Card id="add-ons" className="scroll-mt-24">
             <CardHeader className="flex-row items-start justify-between space-y-0">
               <div>
-                <CardTitle>Add-on summary</CardTitle>
-                <CardDescription>Selections from confirmed registrations.</CardDescription>
+                <div className="flex items-center gap-2"><Package className="h-5 w-5 text-primary" /><CardTitle>Add-ons & fulfilment</CardTitle></div>
+                <CardDescription className="mt-1">See what confirmed participants selected so you can prepare food, merchandise, and other extras.</CardDescription>
               </div>
-              <Button size="sm" variant="outline" onClick={() => void exportAddonsCsv()} disabled={exportingAddons} className="gap-2">
+              <Button size="sm" variant="outline" onClick={() => void exportAddonsCsv()} disabled={exportingAddons || !byAddon?.length} className="gap-2">
                 <Download className="h-4 w-4" />{exportingAddons ? "Exporting…" : "Export add-on CSV"}
               </Button>
             </CardHeader>
             <CardContent>
-              <div className="space-y-5">
+              {!byAddon?.length ? (
+                <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-6 text-center">
+                  <p className="font-medium">No add-on selections yet</p>
+                  <p className="mt-1 text-sm text-muted-foreground">When confirmed participants choose an add-on, its quantity and details will appear here.</p>
+                </div>
+              ) : <div className="space-y-5">
                 {byAddon.map((addon) => (
                   <div key={addon.addonId} className="rounded-lg border p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -368,10 +372,9 @@ const OrganizerEventDashboard = () => {
                     )}
                   </div>
                 ))}
-              </div>
+              </div>}
             </CardContent>
           </Card>
-        )}
       </div>
     </OrganizerDashboardLayout>
   );

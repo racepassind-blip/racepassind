@@ -35,7 +35,7 @@ from app.services.storage_service import StorageError, StorageService
 from app.config import get_settings
 from app.services.ai_rewrite_service import AiInferenceBusy, acquire_inference_lease, release_inference_lease
 from app.services.rate_limit_service import RateLimitExceeded, enforce_ai_rewrite_limit
-from scripts.test_ai_connection import DiagnosticError, load_config, rewrite_description
+from scripts.test_ai_connection import DiagnosticError, generate_prompt, load_config, rewrite_description
 from db import get_db
 from models import Event, EventCategory, EventCheckpoint, EventPaymentSettings, Organization, OrganizationMember, Registration, Ticket, User
 
@@ -53,6 +53,11 @@ class EventDescriptionRewriteIn(BaseModel):
         if len(value) < 3:
             raise ValueError("Description must contain at least 3 non-space characters")
         return value
+
+
+class AddonSummaryIn(BaseModel):
+    addons: list[dict] = Field(default_factory=list, max_length=50)
+    confirmed_participants: int = Field(default=0, ge=0, le=1_000_000)
 
 
 @router.post("/events/ai/rewrite-description")
@@ -99,6 +104,47 @@ def rewrite_event_description(
                 db.commit()
             except Exception:
                 # The lease expires shortly even if cleanup cannot be persisted.
+                db.rollback()
+
+
+@router.post("/events/{event_id}/addons/ai-summary")
+def summarize_event_addons(
+    event_id: UUID,
+    payload: AddonSummaryIn,
+    user: User = Depends(require_roles("admin", "organizer")),
+    __: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Summarize sanitized add-on totals; no participant data is sent to AI."""
+    event = get_authorized_event(db, user, event_id)
+    safe_addons = [{
+        "name": str(item.get("name", "Add-on"))[:120],
+        "total_quantity": int(item.get("total_quantity", 0)),
+        "options": [{"name": str(option.get("name", ""))[:80], "count": int(option.get("count", 0))} for option in item.get("options", [])[:30]],
+    } for item in payload.addons[:50]]
+    prompt = (
+        f"Event add-on fulfilment data for {event.name}: {safe_addons}. "
+        f"There are {payload.confirmed_participants} confirmed participants in total. "
+        "Write a short practical summary with exactly three labelled sections: Prepare, Patterns, and Check before ordering. "
+        "Compare add-on quantities with the total confirmed participant count and calculate the percentage only when the denominator is greater than zero. "
+        "Mention the most important quantities and option counts. Use only supplied facts."
+    )
+    lease_id: UUID | None = None
+    try:
+        enforce_ai_rewrite_limit(db, organization_id=str(event.organization_id))
+        lease_id = acquire_inference_lease(db, purpose="addon-summary", organization_id=event.organization_id)
+        db.commit()
+        result = generate_prompt(load_config(), prompt)
+        return {"summary": str(result["response"]).strip()}
+    except (RateLimitExceeded, AiInferenceBusy, DiagnosticError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    finally:
+        if lease_id is not None:
+            try:
+                release_inference_lease(db, lease_id)
+                db.commit()
+            except Exception:
                 db.rollback()
 
 

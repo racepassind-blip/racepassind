@@ -57,6 +57,7 @@ export function OrganizerDashboardLayout({ children, eventId, showNavigation = t
   const availableItems: NavItem[] = [
     ...(eventId ? [{ label: "Overview", icon: LayoutDashboard, to: `/organizer/events/${eventId}` }] : [{ label: isAdmin ? "All events" : "Events", icon: CalendarDays, to: "/organizer" }, ...(!isAdmin ? [{ label: "Merchandise", icon: Package, to: "/organizer/products" }, { label: "Organization profile", icon: Settings2, to: "/organizer/setup" }] : [])]),
     { label: "Registrations", icon: ClipboardList, to: `/organizer/registrations${eventQuery}` },
+    ...(eventId ? [{ label: "Add-ons", icon: Package, to: `/organizer/events/${eventId}/add-ons` }] : []),
     ...(eventId && supportsTournamentUnlocked ? [
       { label: "Tournament setup", icon: Settings2, to: `/organizer/events/${eventId}/tournament` },
       { label: "Matches", icon: Trophy, to: `/organizer/events/${eventId}/tournament/matches` },

@@ -174,7 +174,7 @@ def generate_prompt(config: Config, prompt: str, session: requests.Session | Any
     duration = time.perf_counter() - started
     eval_count = result.get("eval_count")
     eval_duration = result.get("eval_duration")
-    return {"duration": duration, "tokens": eval_count if isinstance(eval_count, int) else 0,
+    return {"response": result["response"], "duration": duration, "tokens": eval_count if isinstance(eval_count, int) else 0,
             "tokens_per_second": eval_count / (eval_duration / 1_000_000_000)
             if isinstance(eval_count, int) and isinstance(eval_duration, (int, float)) and eval_duration > 0 else None}
 
