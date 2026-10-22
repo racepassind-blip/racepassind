@@ -50,6 +50,8 @@ const OrganizerDashboard = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [organizationTabOpen, setOrganizationTabOpen] = useState(searchParams.get("tab") === "organization");
   const activeEvents = events.filter((event) => !event.isArchived);
+  const now = Date.now();
+  const eventEndTime = (event: (typeof events)[number]) => new Date(`${event.eventEndDate || event.eventDate}T23:59:59`).getTime();
 
   useEffect(() => {
     if (searchParams.get("tab") === "organization") {
@@ -104,10 +106,9 @@ const OrganizerDashboard = () => {
   const totalSold = activeEvents.reduce((sum, event) => sum + event.categories.flatMap((category) => category.tickets).reduce((ticketSum, ticket) => ticketSum + ticket.quantitySold, 0), 0);
   const averageFillRate = totalInventory > 0 ? Math.round((totalSold / totalInventory) * 100) : 0;
   const normalizedSearch = eventSearch.trim().toLowerCase();
-  const now = Date.now();
   const filteredEvents = activeEvents.filter((event) => {
     const matchesSearch = !normalizedSearch || [event.name, event.sport, event.location.name, event.location.city, event.location.state].filter(Boolean).some((value) => value!.toLowerCase().includes(normalizedSearch));
-    const eventTime = new Date(`${event.eventEndDate || event.eventDate}T23:59:59`).getTime();
+    const eventTime = eventEndTime(event);
     const matchesFilter = eventFilter === "all"
       || (eventFilter === "upcoming" && eventTime >= now)
       || (eventFilter === "past" && eventTime < now)
@@ -127,8 +128,9 @@ const OrganizerDashboard = () => {
   const visibleEvents = filteredEvents.slice((eventPage - 1) * eventPageSize, eventPage * eventPageSize);
   const publishedCount = activeEvents.filter((event) => event.status === "published").length;
   const draftCount = activeEvents.filter((event) => event.status !== "published").length;
-  const upcomingCount = activeEvents.filter((event) => new Date(`${event.eventEndDate || event.eventDate}T23:59:59`).getTime() >= now).length;
-  const pastCount = activeEvents.filter((event) => new Date(`${event.eventEndDate || event.eventDate}T23:59:59`).getTime() < now).length;
+  const upcomingCount = activeEvents.filter((event) => eventEndTime(event) >= now).length;
+  const pastCount = activeEvents.filter((event) => eventEndTime(event) < now).length;
+  const activeEventCount = activeEvents.filter((event) => event.status === "published" && eventEndTime(event) >= now).length;
   const firstName = user?.name?.trim().split(/\s+/)[0];
 
   return (
@@ -174,12 +176,18 @@ const OrganizerDashboard = () => {
           </div>
         </section>
 
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatCard icon={Calendar} label="Active events" value={String(activeEvents.length)} change={user?.role === "admin" ? "Across the platform" : "Your organizer workspace"} />
-          <StatCard icon={Users} label="Participants" value={totalParticipants.toLocaleString()} change="Across all events" />
-          <StatCard icon={DollarSign} label="Sold ticket value" value={`₹${(totalRevenuePaise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`} change="Based on ticket tiers" />
-          <StatCard icon={TrendingUp} label="Ticket fill rate" value={`${averageFillRate}%`} change={`${totalSold.toLocaleString()} sold of ${totalInventory.toLocaleString()}`} />
-        </div>
+        <section aria-labelledby="event-overview-heading">
+          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div><h2 id="event-overview-heading" className="text-lg font-black tracking-tight">Event overview</h2><p className="text-sm text-muted-foreground">Current operations and all-time results, kept separate for clarity.</p></div>
+            <p className="text-xs font-medium text-muted-foreground">Completed and archived events are not active.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <StatCard icon={Calendar} label="Active events" value={String(activeEventCount)} change="Published · not yet completed" />
+            <StatCard icon={Users} label="Registered participants" value={totalParticipants.toLocaleString()} change="All time · non-archived events" />
+            <StatCard icon={DollarSign} label="Ticket value sold" value={`₹${(totalRevenuePaise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`} change="All time · across ticket tiers" />
+            <StatCard icon={TrendingUp} label="Overall ticket fill" value={`${averageFillRate}%`} change={`All time · ${totalSold.toLocaleString()} sold of ${totalInventory.toLocaleString()}`} />
+          </div>
+        </section>
 
         <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="border-b p-5 sm:p-6">
