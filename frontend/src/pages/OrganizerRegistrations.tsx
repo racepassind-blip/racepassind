@@ -32,6 +32,31 @@ interface OrganizerEventOption {
 
 const PICKUP_POINT_FIELD_ID = "pickup_point_id";
 
+const RESPONSE_LABELS: Record<string, string> = {
+  emergency_contact_name: "Emergency contact name",
+  emergency_contact_phone: "Emergency contact phone",
+  custom_motorcycle_make_model: "Motorcycle make and model",
+  custom_motorcycle_registration_number: "Motorcycle registration number",
+};
+
+function responseLabel(fieldId: string): string {
+  return RESPONSE_LABELS[fieldId] ?? fieldId
+    .replace(/^custom_/, "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function responseValue(value: unknown): { text: string; placeholder: boolean } {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return { text: "Not provided", placeholder: true };
+  }
+  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  if (["na", "n/a", "none", "-"].includes(text.trim().toLowerCase())) {
+    return { text: "Not provided", placeholder: true };
+  }
+  return { text, placeholder: false };
+}
+
 interface EventPickupConfig {
   sport?: string;
   enabled?: boolean;
@@ -459,13 +484,22 @@ function RegistrationDetailDrawer({ registration, eventTickets, addonDefs, picku
           {/* ── Form responses ────────────────────────────────── */}
           {responseEntries.length > 0 && (
             <section>
-              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Form responses</p>
-              <div className="space-y-1 rounded-lg border bg-muted/20 p-3">
-                {responseEntries.map(([k, v]) => (
-                  <p key={k} className="text-sm">
-                    <span className="font-medium">{k.replaceAll("_", " ")}:</span> {String(v)}
-                  </p>
-                ))}
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Additional details</p>
+                <span className="text-xs text-muted-foreground">Captured during registration</span>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {responseEntries.map(([k, v]) => {
+                  const formatted = responseValue(v);
+                  return (
+                    <div key={k} className="rounded-lg border bg-muted/20 px-3 py-2.5">
+                      <p className="text-xs font-medium text-muted-foreground">{responseLabel(k)}</p>
+                      <p className={`mt-1 break-words text-sm font-semibold ${formatted.placeholder ? "text-muted-foreground" : "text-foreground"}`}>
+                        {formatted.text}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           )}
