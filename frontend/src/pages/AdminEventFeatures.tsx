@@ -75,11 +75,11 @@ const AdminEventFeatures = () => {
         body: JSON.stringify({ features_unlocked: next }),
       });
       setSummary((current) => ({ ...current, featuresUnlocked: current.featuresUnlocked + (next ? 1 : -1) }));
-      toast.success(next ? `All features unlocked for ${event.name}.` : `Feature override removed for ${event.name}.`);
+      toast.success(next ? `Announcement emails enabled for ${event.name}.` : `Free-event email access removed for ${event.name}.`);
     } catch (error) {
       // Revert on failure
       setEvents((current) => current.map((item) => (item.id === event.id ? { ...item, featuresUnlocked: !next } : item)));
-      toast.error(error instanceof Error ? error.message : "Could not update feature access.");
+      toast.error(error instanceof Error ? error.message : "Could not update free-event email access.");
     } finally {
       setPendingId(null);
     }
@@ -90,10 +90,10 @@ const AdminEventFeatures = () => {
       <div className="mx-auto max-w-7xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary"><ShieldCheck className="h-4 w-4" /> Admin-only override</div>
-            <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Event feature access</h1>
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary"><ShieldCheck className="h-4 w-4" /> Admin-only exception</div>
+            <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Free event email access</h1>
             <p className="mt-2 max-w-2xl text-muted-foreground">
-              Free events normally only get registrations and the basic dashboard. Turn on the override to unlock all paid features (communications, check-in, bib management, tournament tools) for a specific event — useful for custom-pricing arrangements.
+              Free events cannot normally email their registered participants. Enable this only when SportPass has agreed to give a specific free event access to organizer announcement emails.
             </p>
           </div>
           <Button variant="outline" onClick={() => void load()} disabled={loading} className="gap-2"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh</Button>
@@ -101,16 +101,24 @@ const AdminEventFeatures = () => {
 
         <div className="grid gap-4 sm:grid-cols-3">
           <Card><CardContent className="flex items-center gap-3 p-5"><CalendarDays className="h-5 w-5 text-primary" /><div><p className="text-2xl font-black">{total}</p><p className="text-sm text-muted-foreground">Active events</p></div></CardContent></Card>
-          <Card><CardContent className="flex items-center gap-3 p-5"><Sparkles className="h-5 w-5 text-amber-600" /><div><p className="text-2xl font-black">{summary.featuresUnlocked}</p><p className="text-sm text-muted-foreground">Feature overrides active</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-5"><Sparkles className="h-5 w-5 text-amber-600" /><div><p className="text-2xl font-black">{summary.featuresUnlocked}</p><p className="text-sm text-muted-foreground">Free events with email access</p></div></CardContent></Card>
           <Card><CardContent className="flex items-center gap-3 p-5"><ShieldCheck className="h-5 w-5 text-emerald-700" /><div><p className="text-2xl font-black">{summary.organizations}</p><p className="text-sm text-muted-foreground">Organizations</p></div></CardContent></Card>
         </div>
 
+        <Card className="border-blue-200 bg-blue-50/40">
+          <CardHeader className="pb-3"><CardTitle className="text-lg">What enabling this changes</CardTitle><CardDescription>This is a narrow exception for one event only.</CardDescription></CardHeader>
+          <CardContent className="grid gap-4 text-sm sm:grid-cols-2">
+            <div className="rounded-xl border border-emerald-200 bg-white/80 p-4"><p className="font-semibold text-emerald-900">Enabled</p><p className="mt-1 leading-6 text-muted-foreground">The organizer can send published event announcements by email to that event’s registered participants.</p></div>
+            <div className="rounded-xl border border-slate-200 bg-white/80 p-4"><p className="font-semibold text-slate-900">Not changed</p><p className="mt-1 leading-6 text-muted-foreground">It does not enable payments, change registration prices, grant organizer verification, or unlock any other event tools.</p></div>
+          </CardContent>
+        </Card>
+
         <Card>
-          <CardHeader><CardTitle>Events</CardTitle><CardDescription>Toggle the override to unlock all features for an event regardless of its free/paid status.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Events</CardTitle><CardDescription>Turn this on only to let a free event send organizer announcement emails to its registered participants.</CardDescription></CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="border-y bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="px-5 py-3">Event</th><th className="px-5 py-3">Organization</th><th className="px-5 py-3">Event date</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Participants</th><th className="px-5 py-3">Unlock all features</th></tr></thead>
+                <thead className="border-y bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="px-5 py-3">Event</th><th className="px-5 py-3">Organization</th><th className="px-5 py-3">Event date</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Participants</th><th className="px-5 py-3">Allow announcement emails</th></tr></thead>
                 <tbody className="divide-y">
                   {loading ? (
                     <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading events…</td></tr>
@@ -130,9 +138,9 @@ const AdminEventFeatures = () => {
                               checked={event.featuresUnlocked}
                               onCheckedChange={(checked) => void toggleOverride(event, checked)}
                               disabled={pendingId === event.id}
-                              aria-label={`Unlock all features for ${event.name}`}
+                              aria-label={`Allow announcement emails for ${event.name}`}
                             />
-                            {event.featuresUnlocked && <Badge className="bg-amber-500 text-white">Unlocked</Badge>}
+                            {event.featuresUnlocked && <Badge className="bg-amber-500 text-white">Email access enabled</Badge>}
                           </div>
                         </td>
                       </tr>

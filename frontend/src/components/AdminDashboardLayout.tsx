@@ -33,7 +33,7 @@ const navGroups: NavGroup[] = [
     label: "Race operations",
     items: [
       { label: "Events & registrations", to: "/organizer", icon: CalendarDays },
-      { label: "Event feature access", to: "/admin/event-features", icon: LockOpen },
+      { label: "Free event email access", to: "/admin/event-features", icon: LockOpen },
       { label: "Event recovery", to: "/admin/events", icon: ArchiveRestore },
       { label: "Payments", to: "/admin/payments", icon: CreditCard },
     ],

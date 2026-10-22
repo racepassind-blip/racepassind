@@ -8,7 +8,7 @@ vi.mock("@/lib/api", () => ({ apiRequest: request }));
 afterEach(cleanup);
 beforeEach(() => { sessionStorage.clear(); request.mockReset(); });
 const fixture: Bill = { id: 1, number: "SPI-2026-000001", totalPaise: 9000, status: "PENDING", paymentReference: null, paidOn: null,
-  details: { organization_id: "org", event_id: null, kind: "CREDITS", issuer_name: "SportPass India", issuer_email: "billing@example.test", issuer_phone: "+919000000000", issuer_address: "Business address", customer_name: "Client", customer_address: "Client address", issue_date: "2026-01-01", due_date: null, lines: [{ description: "Credits", quantity: 100, unit_paise: 100 }], discount_paise: 1000, notes: "" } };
+  details: { organization_id: "org", event_id: null, kind: "CREDITS", issuer_name: "SportPass India", issuer_email: "billing@example.test", issuer_phone: "+919000000000", issuer_upi_id: "sportpassind@oksbi", issuer_address: "Business address", customer_name: "Client", customer_address: "Client address", issue_date: "2026-01-01", due_date: null, lines: [{ description: "Credits", quantity: 100, unit_paise: 100 }], discount_paise: 1000, notes: "" } };
 
 it("shows amount due for pending bills and zero due for paid bills; escapes supplied text", () => {
   const bill = { ...fixture, details: { ...fixture.details, customer_name: '<script>alert("x")</script>' } };
@@ -20,6 +20,14 @@ it("shows amount due for pending bills and zero due for paid bills; escapes supp
   rerender(<BillDocument bill={{ ...bill, status: "PAID", paymentReference: "BANK-1", paidOn: "2026-01-02" }} />);
   expect(container.querySelector(".bill-due")).toHaveTextContent("₹0.00");
   expect(screen.getByText(/Reference: BANK-1/)).toBeVisible();
+});
+
+it("shows payment details on older pending bills while preserving a saved UPI ID", () => {
+  const { rerender } = render(<BillDocument bill={{ ...fixture, details: { ...fixture.details, issuer_upi_id: undefined } }} />);
+  expect(screen.getByText("sportpassind@oksbi")).toBeVisible();
+  rerender(<BillDocument bill={{ ...fixture, details: { ...fixture.details, issuer_upi_id: "saved@bank" } }} />);
+  expect(screen.getByText("saved@bank")).toBeVisible();
+  expect(screen.queryByText("sportpassind@oksbi")).toBeNull();
 });
 
 it("previews before issuing and retries the same bill safely without touching Credits", async () => {
@@ -46,7 +54,7 @@ it("previews before issuing and retries the same bill safely without touching Cr
   fireEvent.click(dialog.getByRole("button", { name: "Issue bill" }));
   await dialog.findByText("Request timed out");
   fireEvent.click(dialog.getByRole("button", { name: "Issue bill" }));
-  await screen.findByRole("button", { name: "Print / Save PDF" });
+  await screen.findByRole("button", { name: "Print or save PDF" });
   expect(posts).toHaveLength(2);
   expect(posts[0].idempotency_key).toBe(posts[1].idempotency_key);
   expect(posts[0].status).toBe("PENDING");
@@ -62,6 +70,6 @@ it("collects payment date and reference before marking a pending bill paid", asy
   fireEvent.change(dialog.getByLabelText("Payment reference"), { target: { value: "BANK-1" } });
   fireEvent.change(dialog.getByLabelText("Payment date"), { target: { value: "2026-01-02" } });
   fireEvent.click(dialog.getByRole("button", { name: "Mark paid" }));
-  await screen.findByRole("button", { name: "Print / Save PDF" });
+  await screen.findByRole("button", { name: "Print or save PDF" });
   expect(request).toHaveBeenCalledWith("/admin/bills/1", { method: "PATCH", body: JSON.stringify({ status: "PAID", payment_reference: "BANK-1", paid_on: "2026-01-02" }) });
 });

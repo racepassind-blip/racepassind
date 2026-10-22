@@ -11,8 +11,10 @@ import AdminSettlements from "./AdminSettlements";
 import AdminOrganizerPricing from "./AdminOrganizerPricing";
 import AdminOrganizers from "./AdminOrganizers";
 import AdminTransactions from "./AdminTransactions";
+import { AdminBills } from "@/components/AdminBills";
+import { AlertTriangle } from "lucide-react";
 
-const tabs = [["attention", "Needs attention"], ["transactions", "Transactions"], ["payouts", "Organizer payouts"], ["credits", "Credits"]];
+const tabs = [["attention", "Needs attention"], ["transactions", "Transactions"], ["payouts", "Organizer payouts"], ["credits", "Credits"], ["bills", "Bills"]];
 export default function AdminPayments({ initialTab, initialReview }: { initialTab?: string; initialReview?: string }) {
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") || initialTab || "attention";
@@ -25,14 +27,14 @@ export default function AdminPayments({ initialTab, initialReview }: { initialTa
   return <AdminDashboardLayout><div className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6">
     <div className="mb-5 flex items-start justify-between gap-4"><div><h1 className="text-3xl font-bold">Payments</h1><p className="mt-2 text-sm text-muted-foreground">Review payments, pay organizers, and manage SportPass Credits.</p></div><Button variant={tab === "settings" ? "default" : "outline"} onClick={() => navigate("tab", "settings")}>Settings</Button></div>
     <nav aria-label="Payment sections" className="mb-6 flex gap-2 overflow-x-auto border-b pb-3">{tabs.map(([key, label]) => <Button key={key} variant={tab === key ? "default" : "ghost"} aria-current={tab === key ? "page" : undefined} onClick={() => navigate("tab", key)}>{label}</Button>)}</nav>
-    {(tab === "credits" || tab === "payouts") && <div className="mb-4 grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2">
+    {(tab === "payouts" || tab === "bills") && <div className="mb-4 grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2">
       <label className="text-xs font-medium">Organizer<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={params.get("organization_id") || ""} onChange={e => { const next = new URLSearchParams(params); next.set("organization_id", e.target.value); next.delete("event_id"); setParams(next); }}><option value="">All organizers</option>{scope.data?.organizers.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
       <label className="text-xs font-medium">Event<select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={params.get("event_id") || ""} onChange={e => navigate("event_id", e.target.value)}><option value="">All events</option>{scope.data?.events.filter(e => !params.get("organization_id") || e.organization_id === params.get("organization_id")).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
       <p className="text-xs text-muted-foreground sm:col-span-2">Organizer and event selections carry across tabs. Transaction dates and payment statuses apply only to Transactions.</p>
     </div>}
     <EmbeddedAdminPage.Provider value={true}>
       {tab === "attention" && <>
-        <p className="mb-4 text-sm text-muted-foreground">Choose a queue to review. Counts cover all organizers.</p>
+        <div className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div><p className="font-semibold">Work queues that may need action</p><p className="mt-1 leading-5 text-amber-900/80">Review the evidence before approving a refund, verifying Credits, or changing organizer payment access.</p></div></div>
         <div className="grid gap-3 sm:grid-cols-3">
           {[["payments", "Payment issues & refunds", reviews.data ? `${reviews.data.total} booking payments to review` : "Review booking payments and refunds"], ["topups", "Credit top-ups", topups.data ? `${topups.data.total} awaiting verification` : "Verify incoming top-ups"], ["destinations", "Organizer payment access", "Review verification and UPI destinations"]].map(([key, title, description]) => <button key={key} onClick={() => navigate("review", key)} aria-pressed={review === key} className={`rounded-xl border p-4 text-left ${review === key ? "border-primary bg-primary/5" : "bg-card"}`}><p className="font-semibold">{title}</p><p className="mt-1 text-xs text-muted-foreground">{description}</p></button>)}
         </div>
@@ -41,6 +43,7 @@ export default function AdminPayments({ initialTab, initialReview }: { initialTa
       {tab === "transactions" && <AdminTransactions />}
       {tab === "payouts" && <AdminSettlements />}
       {tab === "credits" && <AdminCredits view="ledger" />}
+      {tab === "bills" && <AdminBills organizers={scope.data?.organizers ?? []} />}
       {tab === "settings" && <><div className="mb-4 flex flex-wrap gap-2">{[["pricing", "Organizer fees"], ["upi", "Credit top-up UPI"], ["access", "Payment permissions"]].map(([key, label]) => <Button key={key} variant={settingsSection === key ? "default" : "outline"} onClick={() => setSettingsSection(key)}>{label}</Button>)}</div>{settingsSection === "upi" ? <AdminCredits view="settings" /> : settingsSection === "access" ? <AdminOrganizers /> : <AdminOrganizerPricing />}</>}
     </EmbeddedAdminPage.Provider>
   </div></AdminDashboardLayout>;

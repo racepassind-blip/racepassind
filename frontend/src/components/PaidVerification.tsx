@@ -32,6 +32,12 @@ type PaidVerification = {
   reviewedAt: string | null;
   rejectionReason: string | null;
   suspensionReason?: string | null;
+  requestedPaymentMethods: Array<"DIRECT_UPI" | "CASHFREE">;
+  upiId: string | null;
+  payeeName: string | null;
+  directUpiDestinationStatus: string | null;
+  allowDirectUpi: boolean;
+  allowCashfree: boolean;
 };
 
 interface PaidVerificationProps {
@@ -67,6 +73,10 @@ const emptyForm = {
   billingState: "",
   billingPincode: "",
   acceptTerms: false,
+  directUpi: false,
+  cashfree: false,
+  upiId: "",
+  payeeName: "",
 };
 
 const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationProps) => {
@@ -98,6 +108,10 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
         billingState: data.billingState ?? "",
         billingPincode: data.billingPincode ?? "",
         acceptTerms: false,
+        directUpi: data.requestedPaymentMethods?.includes("DIRECT_UPI") ?? false,
+        cashfree: data.requestedPaymentMethods?.includes("CASHFREE") ?? false,
+        upiId: data.upiId ?? "",
+        payeeName: data.payeeName ?? "",
       });
     } catch (loadError) {
       onStatusChange?.("UNAVAILABLE");
@@ -116,6 +130,7 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
 
   const gstYes = form.gstRegistered === "yes";
   const pan = form.panNumber.trim().toUpperCase();
+  const requestedMethods = [form.directUpi ? "DIRECT_UPI" : null, form.cashfree ? "CASHFREE" : null].filter(Boolean) as Array<"DIRECT_UPI" | "CASHFREE">;
 
   // Button enables once every required field is filled and terms are accepted.
   // Format checks (PAN/GSTIN/PIN shape) are enforced on submit with a clear message,
@@ -129,10 +144,13 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
     form.billingCity.trim().length > 0 &&
     form.billingState.trim().length > 0 &&
     form.billingPincode.trim().length > 0 &&
-    form.acceptTerms;
+    form.acceptTerms &&
+    (form.directUpi || form.cashfree);
 
   const getValidationError = (): string | null => {
     if (!PAN_PATTERN.test(pan)) return "Enter a valid 10-character PAN (e.g. ABCDE1234F).";
+    if (!form.directUpi && !form.cashfree) return "Select at least one payment method.";
+    if (form.directUpi && (!form.upiId.trim() || !form.payeeName.trim())) return "Enter the UPI ID and payee name for Direct UPI.";
     if (form.nameAsPerPan.trim().length < 2) return "Enter the name as printed on the PAN.";
     if (gstYes && form.gstNumber.trim().length !== 15) return "Enter a valid 15-character GSTIN.";
     if (form.billingName.trim().length < 2) return "Enter the billing / legal name.";
@@ -167,6 +185,9 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
           billing_pincode: form.billingPincode.trim(),
           accept_terms: form.acceptTerms,
           terms_accepted_at: new Date().toISOString(),
+          requested_payment_methods: requestedMethods,
+          upi_id: form.directUpi ? form.upiId.trim() : null,
+          payee_name: form.directUpi ? form.payeeName.trim() : null,
         }),
       });
       toast.success("Verification submitted. We'll review it shortly.");
@@ -208,7 +229,8 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
         {status === "VERIFIED" && (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100">
             <p className="font-semibold">Your organization is verified for paid events.</p>
-            <p className="mt-1">Payment access and event payment setup must also be approved before collecting payments.{verification?.reviewedAt ? ` Verified on ${formatDate(verification.reviewedAt)}.` : ""}</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2"><p className="rounded-md bg-white/70 px-3 py-2"><span className="font-medium">Direct UPI:</span> {verification.allowDirectUpi ? "Enabled" : "Not enabled"}</p><p className="rounded-md bg-white/70 px-3 py-2"><span className="font-medium">Cashfree:</span> {verification.allowCashfree ? "Enabled" : "Not enabled"}</p></div>
+            <p className="mt-3">Only payment methods marked Enabled can be used. You must still select the enabled method and complete its event-level setup before publishing a paid event.{verification?.reviewedAt ? ` Verified on ${formatDate(verification.reviewedAt)}.` : ""}</p>
           </div>
         )}
 
@@ -247,6 +269,12 @@ const PaidVerification = ({ organizationId, onStatusChange }: PaidVerificationPr
                 <Label htmlFor="pv-pan-name">Name as per PAN</Label>
                 <Input id="pv-pan-name" value={form.nameAsPerPan} onChange={(event) => update("nameAsPerPan", event.target.value)} minLength={2} maxLength={200} placeholder="Name printed on the PAN card" required />
               </div>
+            </div>
+
+            <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
+              <div><p className="font-semibold">Payment methods you want to request</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Request one or both. SportPass will review each method separately; selecting a method does not enable it automatically.</p></div>
+              <div className="grid gap-3 sm:grid-cols-2"><label className="flex items-start gap-3 rounded-lg border bg-background p-3"><Checkbox checked={form.directUpi} onCheckedChange={(checked) => update("directUpi", checked === true)} /><span><span className="block text-sm font-semibold">Direct UPI</span><span className="text-xs text-muted-foreground">Requires your UPI ID and payee name.</span></span></label><label className="flex items-start gap-3 rounded-lg border bg-background p-3"><Checkbox checked={form.cashfree} onCheckedChange={(checked) => update("cashfree", checked === true)} /><span><span className="block text-sm font-semibold">Cashfree Payment Gateway</span><span className="text-xs text-muted-foreground">Requires PAN and legal verification.</span></span></label></div>
+              {form.directUpi && <div className="grid gap-4 border-t pt-3 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="pv-upi">UPI ID</Label><Input id="pv-upi" value={form.upiId} onChange={(event) => update("upiId", event.target.value)} placeholder="club@bank" required /></div><div className="space-y-2"><Label htmlFor="pv-payee">UPI payee name</Label><Input id="pv-payee" value={form.payeeName} onChange={(event) => update("payeeName", event.target.value)} placeholder="Name shown on your UPI account" required /></div></div>}
             </div>
 
             <div className="space-y-2">

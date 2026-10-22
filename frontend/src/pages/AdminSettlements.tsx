@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/api";
-import { ArrowLeft, ArrowRight, Banknote, CalendarRange, IndianRupee, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Banknote, CalendarRange, IndianRupee, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 
 type Summary = {
@@ -57,6 +57,7 @@ export default function AdminSettlements() {
 
   const outstanding = events.reduce((sum, event) => sum + event.outstandingAmountPaise, 0);
   const managed = events.filter(event => event.paymentMode === "CASHFREE_MANAGED").length;
+  const actionRequired = events.filter(event => event.outstandingAmountPaise > 0).length;
   return <AdminDashboardLayout><div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Finance workspace</p><h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">Organizer payouts</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">Review event balances and record manual transfers to organizers. No money is moved from this screen.</p></div>
@@ -68,10 +69,11 @@ export default function AdminSettlements() {
       <div><p className="font-semibold">Production collections only</p><p className="mt-0.5 leading-5 text-blue-900/80">This ledger records verified production Cashfree collections and manual transfers. Cashfree sandbox payments stay out of organizer balances so test money can never be settled.</p></div>
     </div>
 
-    <div className="grid gap-3 sm:grid-cols-3">
-      <OverviewMetric icon={CalendarRange} label="Events" value={String(total)} />
-      <OverviewMetric icon={Banknote} label="Managed on this page" value={String(managed)} />
-      <OverviewMetric icon={IndianRupee} label="Outstanding on this page" value={money(outstanding)} accent />
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <OverviewMetric icon={CalendarRange} label="Events in view" value={String(total)} />
+      <OverviewMetric icon={Banknote} label="Managed events" value={String(managed)} />
+      <OverviewMetric icon={AlertCircle} label="Needs payout review" value={String(actionRequired)} accent={actionRequired > 0} />
+      <OverviewMetric icon={IndianRupee} label="Total outstanding" value={money(outstanding)} accent />
     </div>
 
     <Card className="overflow-hidden border-slate-200 shadow-sm">
@@ -82,13 +84,13 @@ export default function AdminSettlements() {
       {error && <div role="alert" className="m-4 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[860px] text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">Event</th><th className="px-4 py-3 font-semibold">Registrations</th><th className="px-4 py-3 font-semibold">Settled</th><th className="px-4 py-3 font-semibold">Pending</th><th className="px-4 py-3 font-semibold">Outstanding</th><th className="px-5 py-3" /></tr></thead>
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">Event</th><th className="px-4 py-3 font-semibold">Registrations</th><th className="px-4 py-3 font-semibold">Settled</th><th className="px-4 py-3 font-semibold">Pending</th><th className="px-4 py-3 font-semibold">Outstanding</th><th className="px-5 py-3 text-right font-semibold">Action</th></tr></thead>
           <tbody className="divide-y divide-slate-100">{events.map(event => <tr className="group bg-white transition-colors hover:bg-orange-50/35" key={event.eventId}>
             <td className="px-5 py-4"><p className="font-semibold text-slate-950">{event.eventName}</p><p className="mt-0.5 text-sm text-muted-foreground">{event.organizerName || "Organizer unavailable"}</p><span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${event.paymentMode === "CASHFREE_MANAGED" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{event.paymentMode === "CASHFREE_MANAGED" ? "Managed payments" : "Direct UPI"}</span></td>
             <td className="px-4 py-4"><p className="font-semibold">{event.paidRegistrationCount}</p><p className="text-xs text-muted-foreground">{event.paidParticipantCount} participants</p></td>
             <td className="px-4 py-4 font-medium tabular-nums">{money(event.settledAmountPaise)}</td>
             <td className="px-4 py-4 tabular-nums text-amber-700">{money(event.pendingSettlementPaise)}</td>
-            <td className="px-4 py-4"><p className={`font-bold tabular-nums ${event.outstandingAmountPaise > 0 ? "text-orange-700" : "text-slate-700"}`}>{money(event.outstandingAmountPaise)}</p><p className="text-xs text-muted-foreground">{money(event.availableToSettlePaise)} available</p></td>
+            <td className="px-4 py-4"><p className={`font-bold tabular-nums ${event.outstandingAmountPaise > 0 ? "text-orange-700" : "text-slate-700"}`}>{money(event.outstandingAmountPaise)}</p><p className="text-xs text-muted-foreground">{money(event.availableToSettlePaise)} available</p><span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${event.outstandingAmountPaise > 0 ? "bg-orange-100 text-orange-800" : "bg-emerald-100 text-emerald-800"}`}>{event.outstandingAmountPaise > 0 ? "Needs review" : "Up to date"}</span></td>
             <td className="px-5 py-4 text-right"><Button variant="outline" className="gap-2 border-slate-300 bg-white group-hover:border-primary group-hover:text-primary" onClick={() => setSelected(event.eventId)}>Open ledger <ArrowRight className="h-4 w-4" /></Button></td>
           </tr>)}</tbody>
         </table>
@@ -98,6 +100,7 @@ export default function AdminSettlements() {
           <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold text-slate-950">{event.eventName}</p><p className="mt-0.5 truncate text-sm text-muted-foreground">{event.organizerName || "Organizer unavailable"}</p></div><ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" /></div>
           <div className="mt-3 flex flex-wrap gap-2 text-xs"><span className={`rounded-full px-2 py-1 font-semibold ${event.paymentMode === "CASHFREE_MANAGED" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{event.paymentMode === "CASHFREE_MANAGED" ? "Managed payments" : "Direct UPI"}</span><span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">{event.paidRegistrationCount} paid registrations</span></div>
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-muted-foreground">Available to settle</p><p className="mt-0.5 font-bold tabular-nums text-orange-700">{money(event.availableToSettlePaise)}</p></div><div><p className="text-xs text-muted-foreground">Outstanding</p><p className={`mt-0.5 font-bold tabular-nums ${event.outstandingAmountPaise > 0 ? "text-orange-700" : "text-slate-700"}`}>{money(event.outstandingAmountPaise)}</p></div></div>
+          <div className={`mt-3 inline-flex rounded-full px-2 py-1 text-xs font-semibold ${event.outstandingAmountPaise > 0 ? "bg-orange-100 text-orange-800" : "bg-emerald-100 text-emerald-800"}`}>{event.outstandingAmountPaise > 0 ? "Needs payout review" : "Up to date"}</div>
         </button>)}
       </div>
       {loading && <div className="py-14 text-center text-sm text-muted-foreground">Loading settlement balances…</div>}

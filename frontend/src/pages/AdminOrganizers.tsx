@@ -52,6 +52,10 @@ interface VerificationDetail {
   submittedAt: string | null;
   reviewedAt: string | null;
   rejectionReason: string | null;
+  requestedPaymentMethods: Array<"DIRECT_UPI" | "CASHFREE">;
+  upiId: string | null;
+  payeeName: string | null;
+  directUpiDestinationStatus: string | null;
 }
 
 interface DirectUpiAuditEntry {
@@ -126,6 +130,8 @@ const AdminOrganizers = ({ embedded = false, operations = false }: { embedded?: 
   const [detail, setDetail] = useState<VerificationDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [enableDirectUpi, setEnableDirectUpi] = useState(false);
+  const [enableCashfree, setEnableCashfree] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [verificationDocuments, setVerificationDocuments] = useState<VerificationDocument[]>([]);
 
@@ -169,6 +175,7 @@ const AdminOrganizers = ({ embedded = false, operations = false }: { embedded?: 
     setReviewOrg(org);
     setDetail(null);
     setRejectReason("");
+    setEnableDirectUpi(false); setEnableCashfree(false);
     setVerificationDocuments([]);
     setDetailLoading(true);
     try {
@@ -194,7 +201,7 @@ const AdminOrganizers = ({ embedded = false, operations = false }: { embedded?: 
     try {
       await apiRequest(`/admin/organizations/${reviewOrg.organizationId}/paid-verification/review`, {
         method: "POST",
-        body: JSON.stringify({ status: decision, rejection_reason: decision === "REJECTED" ? rejectReason.trim() : null }),
+        body: JSON.stringify({ status: decision, rejection_reason: decision === "REJECTED" ? rejectReason.trim() : null, enable_direct_upi: decision === "VERIFIED" && enableDirectUpi, enable_cashfree: decision === "VERIFIED" && enableCashfree }),
       });
       toast.success(decision === "VERIFIED" ? "Organizer verified." : "Verification rejected.");
       closeReview();
@@ -421,6 +428,8 @@ const AdminOrganizers = ({ embedded = false, operations = false }: { embedded?: 
                 <div className="sm:col-span-2"><Field label="Billing address" value={[detail.billingAddress, detail.billingCity, detail.billingState].filter(Boolean).join(", ")} /></div>
                 <Field label="Submitted" value={formatDate(detail.submittedAt)} />
                 <Field label="Current status" value={VERIF_META[detail.paidVerificationStatus].label} />
+                <Field label="Requested payment methods" value={detail.requestedPaymentMethods.length ? detail.requestedPaymentMethods.map(method => method === "DIRECT_UPI" ? "Direct UPI" : "Cashfree").join(", ") : "None"} />
+                {detail.requestedPaymentMethods.includes("DIRECT_UPI") && <><Field label="UPI ID" value={detail.upiId} /><Field label="Payee name" value={detail.payeeName} /></>}
               </dl>
 
               <div><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Supporting documents</p>{verificationDocuments.length === 0 ? <p className="mt-1 text-sm text-muted-foreground">No documents submitted.</p> : <div className="mt-2 flex flex-wrap gap-2">{verificationDocuments.map((document) => <Button key={document.id} asChild size="sm" variant="outline"><a href={document.readUrl} target="_blank" rel="noreferrer">{document.documentType.replaceAll("_", " ")}: {document.filename}</a></Button>)}</div>}</div>
@@ -431,6 +440,7 @@ const AdminOrganizers = ({ embedded = false, operations = false }: { embedded?: 
 
               {detail.paidVerificationStatus === "UNDER_REVIEW" && (
                 <div className="space-y-2">
+                  <div className="rounded-xl border bg-muted/20 p-4"><p className="text-sm font-semibold">Payment methods to enable after approval</p><p className="mt-1 text-xs text-muted-foreground">Only methods requested by the organizer and ready for review can be selected.</p><div className="mt-3 space-y-2"><label className={`flex items-start gap-3 rounded-lg border p-3 ${detail.requestedPaymentMethods.includes("DIRECT_UPI") && detail.directUpiDestinationStatus === "UNDER_REVIEW" ? "bg-background" : "bg-muted/40 opacity-60"}`}><input type="checkbox" checked={enableDirectUpi} onChange={event => setEnableDirectUpi(event.target.checked)} disabled={!detail.requestedPaymentMethods.includes("DIRECT_UPI") || detail.directUpiDestinationStatus !== "UNDER_REVIEW"} /><span><span className="block text-sm font-medium">Direct UPI</span><span className="text-xs text-muted-foreground">{detail.requestedPaymentMethods.includes("DIRECT_UPI") ? detail.directUpiDestinationStatus === "UNDER_REVIEW" ? "UPI details ready for review." : `Destination status: ${detail.directUpiDestinationStatus ?? "missing"}.` : "Not requested."}</span></span></label><label className={`flex items-start gap-3 rounded-lg border p-3 ${detail.requestedPaymentMethods.includes("CASHFREE") ? "bg-background" : "bg-muted/40 opacity-60"}`}><input type="checkbox" checked={enableCashfree} onChange={event => setEnableCashfree(event.target.checked)} disabled={!detail.requestedPaymentMethods.includes("CASHFREE")} /><span><span className="block text-sm font-medium">Cashfree Payment Gateway</span><span className="text-xs text-muted-foreground">{detail.requestedPaymentMethods.includes("CASHFREE") ? "PAN and legal details submitted." : "Not requested."}</span></span></label></div></div>
                   <Label htmlFor="reject-reason">Rejection reason <span className="font-normal text-muted-foreground">(required to reject)</span></Label>
                   <Textarea id="reject-reason" value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} rows={3} maxLength={2000} placeholder="Explain what needs to be corrected" />
                 </div>

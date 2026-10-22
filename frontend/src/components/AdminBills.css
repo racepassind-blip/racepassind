@@ -1,36 +1,60 @@
 .sportpass-bill { background: white; color: #16233b; padding: 36px; font: 13px/1.6 Arial, sans-serif; border: 1px solid #e2e6ed; border-top: 5px solid #f26522; border-radius: 8px; overflow-wrap: anywhere; }
-.bill-header { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; }
-.bill-brand { display:flex; align-items:center; gap:14px; }
+.bill-preview-dialog { background:hsl(var(--muted)); }
+.bill-preview-header { display:flex; flex-direction:row; align-items:flex-start; justify-content:space-between; gap:16px; padding-right:24px; text-align:left; }
+.bill-preview-actions { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 14px; margin:4px 0 16px; background:white; border:1px solid #e2e6ed; border-radius:8px; }
+.bill-form-dialog { background:#f8fafc; }
+.bill-form-section { padding:16px; border:1px solid #e2e6ed; border-radius:10px; background:white; }
+.bill-form-section-title { display:flex; gap:10px; align-items:flex-start; margin-bottom:14px; }
+.bill-form-section-title > span { display:grid; place-items:center; width:24px; height:24px; flex:none; border-radius:999px; background:#17253e; color:white; font-size:12px; font-weight:700; }
+.bill-form-section-title h3 { margin:0; font-size:14px; font-weight:700; }
+.bill-form-section-title p { margin:3px 0 0; color:#667185; font-size:12px; }
+.bill-event-picker { padding:14px; border:1px solid #e2e6ed; border-radius:8px; background:#f8fafc; }
+.bill-summary-card { display:flex; flex-direction:column; gap:3px; padding:14px 16px; border:1px solid #e2e6ed; border-radius:9px; background:#f8fafc; }
+.bill-summary-card span { color:#667185; font-size:12px; }
+.bill-summary-card strong { color:#17253e; font-size:20px; }
+.bill-summary-card small { color:#667185; font-size:11px; }
+.bill-summary-card.pending { border-color:#f5d99a; background:#fffaf0; }
+.bill-summary-card.paid { border-color:#b9e4c9; background:#f3fbf6; }
+.bill-empty-state { display:flex; min-height:190px; flex-direction:column; align-items:center; justify-content:center; gap:8px; color:#667185; text-align:center; }
+.bill-empty-state strong { color:#17253e; font-size:15px; }
+.bill-header { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; padding-bottom:24px; border-bottom:1px solid #e2e6ed; }
+.bill-brand { display:flex; align-items:flex-start; gap:16px; min-width:0; flex:1; }
 .bill-brand img { flex-shrink:0; }
-.bill-brand strong { display:block; font-size:24px; letter-spacing:-.6px; }
+.bill-brand > div > strong { display:block; font-size:23px; line-height:1.25; letter-spacing:-.6px; margin-bottom:5px; }
 .bill-brand span, .bill-contacts, .bill-tax { color:#5c677a; }
-.bill-heading { text-align:right; }
-.bill-heading h1 { font-size:30px; font-weight:800; letter-spacing:4px; margin:0; }
+.bill-heading { text-align:right; flex-shrink:0; }
+.bill-heading h1 { font-size:28px; font-weight:800; line-height:1.2; letter-spacing:3px; margin:0 0 8px; }
 .bill-heading > span { display:block; font-size:12px; }
 .bill-status { display:inline-block; padding:3px 9px; border-radius:4px; margin-top:9px; font-size:10px; letter-spacing:.6px; }
 .bill-status.pending { background:#fff3dc; color:#895100; }
 .bill-status.paid { background:#e5f6ec; color:#17623b; }
 .bill-status.cancelled { background:#f1f1f1; color:#666; }
-.bill-contacts { margin:20px 0; font-size:12px; max-width:80%; }
+.bill-contacts { margin:12px 0 0; font-size:11px; line-height:1.65; max-width:360px; }
 .sportpass-bill p { margin:3px 0; white-space:pre-line; }
-.bill-parties { display:grid; grid-template-columns:1.5fr 1fr; gap:30px; padding:22px 0; border-top:1px solid #e2e6ed; }
+.bill-parties { display:grid; grid-template-columns:1.3fr 1fr; gap:40px; padding:22px 0 18px; }
 .sportpass-bill h2 { font-size:10px; letter-spacing:1.4px; color:#667185; margin:0 0 8px; font-weight:700; }
 .bill-parties strong { font-size:16px; }
 .bill-parties dl { margin:0; }
 .bill-parties dl div, .bill-totals > div { display:flex; justify-content:space-between; gap:16px; margin-bottom:7px; }
 .bill-parties dt { color:#667185; }
 .bill-parties dd { margin:0; text-align:right; }
-.sportpass-bill .bill-event { margin:0 0 15px; }
+.sportpass-bill .bill-event { margin:6px 0 16px; padding:10px 12px; background:#f4f7fb; border-left:3px solid #f26522; border-radius:3px; }
 .sportpass-bill table { width:100%; border-collapse:collapse; margin:10px 0 20px; }
 .sportpass-bill th { background:#17253e; color:white; font-size:11px; font-weight:600; padding:11px 10px; text-align:right; }
-.sportpass-bill th:first-child, .sportpass-bill td:first-child { text-align:left; width:48%; }
+.sportpass-bill th:first-child, .sportpass-bill td:first-child { text-align:left; width:54%; }
+.sportpass-bill td:not(:first-child) { white-space:nowrap; font-variant-numeric:tabular-nums; }
 .sportpass-bill td { padding:14px 10px; border-bottom:1px solid #e2e6ed; text-align:right; vertical-align:top; }
-.bill-totals { margin-left:auto; width:55%; min-width:240px; }
+.bill-totals { margin-left:auto; width:43%; min-width:240px; font-variant-numeric:tabular-nums; }
 .bill-total { border-top:1px solid #e2e6ed; padding-top:10px; font-size:16px; }
-.bill-due { padding:10px; background:#fff3e9; border-radius:4px; }
+.bill-due { padding:12px; background:#fff3e9; border:1px solid #ffdfc7; border-radius:4px; font-size:15px; }
 .bill-tax { font-size:11px; text-align:right; }
+.bill-payment { margin-top:22px; padding:16px 18px; background:#f8fafc; border:1px solid #e2e6ed; border-radius:6px; break-inside:avoid; }
+.bill-upi { font-weight:600; color:#17253e; }
+.sportpass-bill .bill-payment-reference { margin-top:8px; font-size:11px; color:#667185; }
 .bill-note { margin-top:20px; padding-top:14px; border-top:1px solid #e2e6ed; }
-.sportpass-bill footer { border-top:1px solid #e2e6ed; margin-top:32px; padding-top:18px; text-align:center; font-size:12px; }
+.sportpass-bill footer { border-top:1px solid #e2e6ed; margin-top:24px; padding-top:14px; text-align:center; font-size:11px; break-inside:avoid; }
 .sportpass-bill footer span { color:#667185; font-size:10px; }
 @media (max-width:540px) { .sportpass-bill { padding:16px; font-size:11px; } .bill-brand strong { font-size:16px; } .bill-brand img { width:36px; height:36px; } .bill-brand { gap:8px; } .bill-heading h1 { font-size:22px; } .bill-parties { gap:14px; } .sportpass-bill th, .sportpass-bill td { padding:8px 5px; } }
+@media (max-width:540px) { .bill-preview-header, .bill-preview-actions { align-items:stretch; flex-direction:column; } .bill-preview-actions button { width:100%; } }
+@media screen and (max-width:540px) { .bill-brand > div > strong { font-size:16px; } .bill-header { gap:12px; } .bill-contacts { font-size:10px; } .bill-heading { max-width:120px; } .bill-totals { min-width:0; width:100%; } }
 @media print { @page { size:A4; margin:16mm; } html, body { background:white !important; margin:0; padding:0; color:#16233b; } .sportpass-bill { padding:0; border:0; border-top:4px solid #f26522; border-radius:0; padding-top:24px; print-color-adjust:exact; -webkit-print-color-adjust:exact; } .sportpass-bill tr, .bill-note, .bill-totals, .bill-header, .bill-parties { break-inside:avoid; } .sportpass-bill thead { display:table-header-group; } }

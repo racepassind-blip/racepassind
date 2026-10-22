@@ -21,6 +21,8 @@ from app.schemas.checkins import CheckpointCreateIn, CheckpointUpdateIn
 from app.schemas.registrations import CategoryTransferIn, ManualRegistrationCreateIn, PaymentDecisionIn
 from app.services.auth_service import utc_now
 from app.services.credit_service import CreditValidationError, get_balance, get_credit_payment_settings, request_topup
+from app.services.payment_service import normalize_upi_id
+from app.services.organizer_payment_security import submit_destination
 from app.services.checkpoint_service import (
     create_event_checkpoint,
     delete_event_checkpoint,
@@ -368,6 +370,9 @@ class PaidVerificationIn(BaseModel):
     accept_terms: bool = Field(...)
     terms_accepted_at: str | None = Field(default=None, description="ISO format timestamp when terms were accepted")
     terms_version: str = Field(default="2026-10-05", min_length=1, max_length=40)
+    requested_payment_methods: list[Literal["DIRECT_UPI", "CASHFREE"]] = Field(default_factory=list, max_length=2)
+    upi_id: str | None = Field(default=None, max_length=320)
+    payee_name: str | None = Field(default=None, max_length=200)
 
     @field_validator("pan_number")
     @classmethod
@@ -387,6 +392,13 @@ class PaidVerificationIn(BaseModel):
             raise ValueError("Enter a valid GSTIN")
         return normalized
 
+    @field_validator("requested_payment_methods")
+    @classmethod
+    def _valid_payment_methods(cls, value: list[str]) -> list[str]:
+        if not value or len(set(value)) != len(value):
+            raise ValueError("Select Direct UPI, Cashfree, or both")
+        return value
+
 
 @router.get("/organizations/{organization_id}/paid-verification")
 def get_paid_verification_status(
@@ -396,6 +408,8 @@ def get_paid_verification_status(
 ) -> dict:
     """Get the paid verification status of an organization."""
     organization = get_authorized_organization(db, user, organization_id)
+    destination = db.scalar(select(OrganizationPaymentDestination).where(OrganizationPaymentDestination.organization_id == organization.id).order_by(OrganizationPaymentDestination.created_at.desc()).limit(1))
+
     return {
         "organizationId": str(organization.id),
         "organizationName": organization.name,
@@ -417,6 +431,12 @@ def get_paid_verification_status(
         "rejectionReason": organization.paid_verification_rejection_reason,
         "suspensionReason": organization.paid_verification_suspension_reason,
         "suspendedAt": organization.paid_verification_suspended_at.isoformat() if organization.paid_verification_suspended_at else None,
+        "requestedPaymentMethods": organization.requested_payment_methods or [],
+        "upiId": destination.upi_id if destination else None,
+        "payeeName": destination.payee_name if destination else None,
+        "directUpiDestinationStatus": destination.status if destination else None,
+        "allowDirectUpi": organization.allow_direct_upi,
+        "allowCashfree": organization.allow_cashfree,
     }
 
 
@@ -433,6 +453,16 @@ def submit_paid_verification(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="You must accept the Organizer Terms to proceed")
     
     organization = get_authorized_organization(db, user, organization_id)
+    methods = list(dict.fromkeys(payload.requested_payment_methods))
+    if "DIRECT_UPI" in methods:
+        if not payload.upi_id or not payload.payee_name:
+            raise HTTPException(status_code=422, detail="UPI ID and payee name are required for Direct UPI")
+        try:
+            normalize_upi_id(payload.upi_id)
+            if not 2 <= len(payload.payee_name.strip()) <= 200:
+                raise ValueError
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Enter a valid UPI ID and payee name") from exc
     
     # Check if already verified or under review
     if organization.paid_verification_status in ("UNDER_REVIEW", "VERIFIED"):
@@ -452,6 +482,7 @@ def submit_paid_verification(
     organization.billing_state = payload.billing_state.strip()
     organization.billing_pincode = payload.billing_pincode.strip()
     organization.paid_verification_status = "UNDER_REVIEW"
+    organization.requested_payment_methods = methods
     organization.paid_verification_submitted_at = utc_now()
     # The server records the acceptance event; a client-provided timestamp is not
     # trusted as legal/audit evidence.
@@ -468,6 +499,8 @@ def submit_paid_verification(
     )
     db.add(submission)
     db.flush()
+    if "DIRECT_UPI" in methods:
+        submit_destination(db, organization_id=organization.id, upi_id=payload.upi_id or "", payee_name=payload.payee_name or "", actor_user_id=user.id)
     
     record_audit(
         db,

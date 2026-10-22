@@ -168,7 +168,7 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
       ? Boolean(organization?.allowCashfree)
       : Boolean(paymentMethods);
   const verificationSummary = verificationStatus === "VERIFIED"
-    ? paymentMethods ? "Your verification and payment access are approved. Complete payment setup for each event; Direct UPI also requires an approved payment destination." : "Your paid-event verification is complete. Payment access is awaiting admin approval."
+    ? paymentMethods ? `Your verification is approved. Enabled payment methods: ${paymentMethods}. Complete payment setup for each event; Direct UPI also requires an approved payment destination.` : "Your paid-event verification is approved, but no payment method is enabled. Contact SportPass if you need payment access."
     : verificationStatus === "UNDER_REVIEW" ? "Your paid-event verification is submitted and awaiting review."
     : verificationStatus === "REJECTED" ? "Your paid-event verification was rejected. Review the reason and update your details."
     : verificationStatus === "SUSPENDED" ? "Your paid-event verification is suspended. Review the details and contact SportPass."
@@ -179,7 +179,7 @@ const OrganizerSetup = ({ embedded = false }: OrganizerSetupProps) => {
   const onboardingSteps = [
     { title: "Organizer account approved", detail: "Your workspace is ready.", done: application?.status === "approved" || organization?.status === "approved" },
     { title: "Complete paid-event verification", detail: "Submit PAN and billing details once to collect paid registrations.", done: verificationStatus === "VERIFIED", action: ["NOT_SUBMITTED", "REJECTED", "SUSPENDED"].includes(verificationStatus) },
-    { title: "Payment access approved", detail: "SportPass enables Direct UPI or the online gateway after review.", done: paymentAccessApproved },
+    { title: "Payment method enabled", detail: "SportPass confirms Direct UPI, Cashfree, or both as part of verification approval.", done: paymentAccessApproved },
     { title: "Set up your event payment", detail: "Choose a payment method and complete the event payment details before publishing.", done: false },
   ];
 

@@ -165,6 +165,7 @@ class Organization(Base):
     paid_verification_suspended_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paid_verification_suspended_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
     paid_verification_suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_payment_methods: Mapped[list | None] = mapped_column(JSON_CONFIG, nullable=True)
 
     # Payment access control: admin controls whether this org may use Direct UPI.
     # Direct UPI sends participant money straight to the organizer; SportPass carries

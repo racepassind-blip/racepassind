@@ -15,7 +15,7 @@ from app.api.v1.admin_bills import router as bills_router
 from app.services.admin_dashboard_service import get_admin_dashboard
 from app.services.admin_organizers_service import get_admin_organizers_overview
 from app.services.audit_service import record_audit
-from app.services.credit_service import CreditValidationError, add_credits, approve_topup, credit_event_discount, event_settlement_summary, get_credit_payment_settings, reject_topup, update_credit_payment_settings
+from app.services.credit_service import CreditValidationError, add_credits, approve_topup, credit_event_discount, event_settlement_summary, get_balance, get_credit_payment_settings, reject_topup, update_credit_payment_settings
 from app.services.auth_service import hash_password, normalize_email, normalize_phone, public_user, utc_now, validate_required_phone
 from app.services.communication_service import (
     get_communication_settings,
@@ -500,7 +500,7 @@ def set_event_feature_override(
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Admin override to unlock all paid-only features for an event regardless of free/paid status."""
+    """Admin exception allowing a free event to send organizer announcement emails."""
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
@@ -696,17 +696,27 @@ def notify_paid_verification_review(db: Session, organization: Organization) -> 
             greeting = name.strip() if name else "Organizer"
             review_link = f"{origin}/organizer/setup#paid-verification"
             if verification_status == "VERIFIED":
-                subject = "Your paid verification is approved — SportPass India"
+                direct_status = "Enabled" if organization.allow_direct_upi else "Not enabled"
+                cashfree_status = "Enabled" if organization.allow_cashfree else "Not enabled"
+                subject = "Your SportPass paid-event verification is complete"
                 body = (
                     f"Hello {greeting},\n\n"
-                    f"Good news — the paid verification for {organization.name} has been approved.\n\n"
-                    "Your verification details have been accepted. Before you can accept paid registrations, "
-                    "SportPass must also enable a payment method for your organization, such as Direct UPI or the online payment gateway.\n\n"
-                    "Next step: sign in to review your payment setup and available options.\n"
+                    f"Your paid-event verification for {organization.name} has been approved.\n\n"
+                    "Payment setup:\n"
+                    f"- Direct UPI: {direct_status}\n"
+                    f"- Cashfree Payment Gateway: {cashfree_status}\n\n"
+                    "Only payment methods marked Enabled may be used for eligible paid events and paid add-ons. "
+                    "A method marked Not enabled is not currently available.\n\n"
+                    "Review your payment setup securely:\n"
                     f"{review_link}\n\n"
-                    "If a payment method is not yet available, please contact SportPass support for assistance.\n\n"
                     "Regards,\nSportPass India Team"
                 )
+            elif verification_status == "SUSPENDED":
+                subject = "Your SportPass paid-event payment access is suspended"
+                body = (f"Hello {greeting},\n\nPaid-event verification for {organization.name} has been suspended.\n\n"
+                        f"Reason:\n{organization.paid_verification_suspension_reason or 'Please contact SportPass support for details.'}\n\n"
+                        "Cashfree Payment Gateway: Not enabled\nDirect UPI: Not enabled\n\n"
+                        f"Review the next steps securely:\n{review_link}\n\nRegards,\nSportPass India Team")
             else:
                 reason = organization.paid_verification_rejection_reason or "Please review your submitted details and update any information that needs correction."
                 subject = "Action required: update your paid verification — SportPass India"
@@ -826,8 +836,6 @@ def approve_organizer_application(
         missing.append("complete address")
     if not application.event_history:
         missing.append("event background")
-    if not application.payment_preference:
-        missing.append("payment preference")
     if not application.privacy_policy_accepted_at or not application.phone or not application.organization_type:
         missing.append("consent and contact profile")
     if missing:
@@ -951,6 +959,8 @@ def reject_organizer_application(
 class PaidVerificationReviewIn(BaseModel):
     status: Literal["VERIFIED", "REJECTED"] = Field(...)
     rejection_reason: str | None = Field(default=None, max_length=2000)
+    enable_direct_upi: bool = False
+    enable_cashfree: bool = False
 
 
 @router.get("/paid-verifications")
@@ -983,6 +993,9 @@ def list_paid_verifications(
             "submittedAt": org.paid_verification_submitted_at.isoformat() if org.paid_verification_submitted_at else None,
             "reviewedAt": org.paid_verification_reviewed_at.isoformat() if org.paid_verification_reviewed_at else None,
             "rejectionReason": org.paid_verification_rejection_reason,
+            "requestedPaymentMethods": org.requested_payment_methods or [],
+            "allowDirectUpi": org.allow_direct_upi,
+            "allowCashfree": org.allow_cashfree,
         }
         for org in organizations
     ]
@@ -1019,6 +1032,20 @@ def review_paid_verification(
     ).order_by(OrganizationVerificationSubmission.submitted_at.desc()).with_for_update())
     if submission is None:
         raise HTTPException(status_code=409, detail="Verification submission snapshot is missing")
+    requested = set(organization.requested_payment_methods or [])
+    selected = {method for method, enabled in (("DIRECT_UPI", payload.enable_direct_upi), ("CASHFREE", payload.enable_cashfree)) if enabled}
+    if payload.status == "VERIFIED" and not selected:
+        raise HTTPException(status_code=422, detail="Select at least one payment method to enable")
+    if payload.status == "VERIFIED" and not selected.issubset(requested):
+        raise HTTPException(status_code=422, detail="Only payment methods requested by the organizer can be enabled")
+    destination = None
+    if payload.status == "VERIFIED" and payload.enable_direct_upi:
+        destination = db.scalar(select(OrganizationPaymentDestination).where(
+            OrganizationPaymentDestination.organization_id == organization.id,
+            OrganizationPaymentDestination.status == "UNDER_REVIEW",
+        ).order_by(OrganizationPaymentDestination.created_at.desc()).with_for_update())
+        if destination is None:
+            raise HTTPException(status_code=422, detail="Direct UPI details are not ready for approval")
     organization.paid_verification_status = payload.status
     organization.paid_verification_reviewed_at = utc_now()
     organization.paid_verification_reviewed_by = admin.id
@@ -1027,6 +1054,12 @@ def review_paid_verification(
         organization.paid_verification_rejection_reason = payload.rejection_reason.strip() if payload.rejection_reason else None
     else:
         organization.paid_verification_rejection_reason = None
+    organization.allow_direct_upi = payload.status == "VERIFIED" and payload.enable_direct_upi
+    organization.allow_cashfree = payload.status == "VERIFIED" and payload.enable_cashfree
+    if destination is not None:
+        destination.status = "APPROVED"
+        destination.reviewed_at = organization.paid_verification_reviewed_at
+        destination.reviewed_by = admin.id
     submission.status = payload.status
     submission.reviewed_at = organization.paid_verification_reviewed_at
     submission.reviewed_by = admin.id
@@ -1042,7 +1075,7 @@ def review_paid_verification(
         action="paid_verification_reviewed",
         resource_type="organization",
         resource_id=organization.id,
-        metadata={"status": payload.status, "has_rejection_reason": bool(payload.rejection_reason)},
+        metadata={"status": payload.status, "has_rejection_reason": bool(payload.rejection_reason), "enable_direct_upi": organization.allow_direct_upi, "enable_cashfree": organization.allow_cashfree},
     )
     
     db.commit()
@@ -1184,12 +1217,15 @@ def suspend_paid_verification(organization_id: UUID, payload: SuspensionIn,
     if organization.paid_verification_status != "VERIFIED":
         raise HTTPException(409, "Only verified organizations can be suspended")
     organization.paid_verification_status = "SUSPENDED"
+    organization.allow_direct_upi = False
+    organization.allow_cashfree = False
     organization.paid_verification_suspended_at = utc_now()
     organization.paid_verification_suspended_by = admin.id
     organization.paid_verification_suspension_reason = payload.reason.strip()
     record_audit(db, actor_user_id=admin.id, action="paid_verification_suspended",
         resource_type="organization", resource_id=organization.id, metadata={"reason": payload.reason.strip()})
     db.commit()
+    notify_paid_verification_review(db, organization)
     return {"organizationId": str(organization.id), "paidVerificationStatus": "SUSPENDED"}
 
 
@@ -1738,6 +1774,13 @@ def admin_credit_topups(
         "total": total,
         "summary": {"total": int(summary[0] or 0), "pending": int(summary[1] or 0), "approvedCreditsPaise": int(summary[2] or 0)},
     }
+
+
+@router.get("/credits/organizations/{organization_id}/balance")
+def admin_credit_balance(organization_id: UUID, _: User = Depends(require_roles("admin")), db: Session = Depends(get_db)) -> dict:
+    if db.get(Organization, organization_id) is None:
+        raise HTTPException(status_code=404, detail="Organizer not found")
+    return {"organizationId": str(organization_id), "balancePaise": get_balance(db, organization_id)}
 
 
 @router.get("/credits/ledger")

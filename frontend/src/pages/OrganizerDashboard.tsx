@@ -151,7 +151,7 @@ const OrganizerDashboard = () => {
         {user?.role === "admin" && (
           <section className="flex flex-col gap-4 rounded-xl border border-blue-300 bg-blue-50 p-4 text-blue-950 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-100">
             <div><p className="font-semibold">Admin console access</p><p className="mt-1 text-sm text-blue-900/75 dark:text-blue-100/75">Switch to the admin workspace to manage organizers, Credits, and platform operations.</p></div>
-            <Button className="w-fit shrink-0 gap-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500" onClick={() => navigate("/admin")}>
+            <Button className="w-fit shrink-0 gap-2 bg-blue-600 text-white hover:bg-blue-700 hover:text-white dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500 dark:hover:text-white" onClick={() => navigate("/admin")}>
               <Shield className="h-4 w-4" /> Admin Console
             </Button>
           </section>
@@ -170,7 +170,7 @@ const OrganizerDashboard = () => {
             <div>
               {user?.role === "admin" ? <><div className="flex items-center gap-2 text-sm font-semibold text-slate-300"><Shield className="h-4 w-4 text-primary" /> Platform operations</div><p className="mt-3 text-3xl font-black tracking-tight">Admin</p><p className="mt-1 text-xs text-slate-400">Use the admin console for organizers, Credits, settlements, and platform controls.</p></> : <><div className="flex items-center gap-2 text-sm font-semibold text-slate-300"><CreditCard className="h-4 w-4 text-primary" /> Available SportPass Credits</div><p className="mt-3 text-3xl font-black tracking-tight">{availableCredits.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</p><p className="mt-1 text-xs text-slate-400">Used when eligible registrations are confirmed.</p></>}
             </div>
-            {user?.role === "admin" ? <Button variant="secondary" className="mt-6 w-fit gap-2" onClick={() => navigate("/admin")}>Admin Console <ArrowUpRight className="h-4 w-4" /></Button> : <Button variant="secondary" className="mt-6 w-fit gap-2" onClick={() => navigate("/organizer/credits")}>Manage Credits <ArrowUpRight className="h-4 w-4" /></Button>}
+            {user?.role === "admin" ? <Button variant="secondary" className="mt-6 w-fit gap-2 bg-primary text-white hover:bg-primary/90 hover:text-white" onClick={() => navigate("/admin")}>Admin Console <ArrowUpRight className="h-4 w-4" /></Button> : <Button variant="secondary" className="mt-6 w-fit gap-2" onClick={() => navigate("/organizer/credits")}>Manage Credits <ArrowUpRight className="h-4 w-4" /></Button>}
           </div>
         </section>
 

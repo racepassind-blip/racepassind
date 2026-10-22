@@ -187,14 +187,14 @@ const AdminCommunication = () => {
 
   return (
     <AdminDashboardLayout>
-      <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
               <ShieldCheck className="h-4 w-4" />
               Admin-only settings
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight">Communication settings</h1>
+            <div className="flex flex-wrap items-center gap-3"><h1 className="text-3xl font-extrabold tracking-tight">Communication settings</h1>{settings && <Badge variant={settings.enabled ? "default" : "secondary"}>{settings.enabled ? "Email enabled" : "Email paused"}</Badge>}</div>
             <p className="mt-2 max-w-2xl text-muted-foreground">
               Configure how SportPass communicates with participants and organizers. Email is the only channel currently supported.
             </p>
@@ -214,6 +214,11 @@ const AdminCommunication = () => {
           </Card>
         ) : settings ? (
           <div className="space-y-6">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border bg-card p-4 shadow-sm"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Channel</p><p className="mt-1 font-semibold">Email</p><p className="mt-1 text-xs text-muted-foreground">Gmail API delivery</p></div>
+              <div className="rounded-xl border bg-card p-4 shadow-sm"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sender</p><p className="mt-1 truncate font-semibold">{settings.sender_name || "Not configured"}</p><p className="mt-1 truncate text-xs text-muted-foreground">{settings.gmail_address || "Add a Gmail address"}</p></div>
+              <div className={`rounded-xl border p-4 shadow-sm ${settings.gmail_api_configured ? "border-emerald-200 bg-emerald-50/50" : "border-amber-200 bg-amber-50/50"}`}><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connection</p><p className="mt-1 font-semibold">{settings.gmail_api_configured ? "OAuth configured" : "Setup required"}</p><p className="mt-1 text-xs text-muted-foreground">Send a test email to confirm delivery</p></div>
+            </div>
             {/* Email Configuration Card */}
             <Card>
               <CardHeader>
@@ -348,11 +353,9 @@ const AdminCommunication = () => {
               </CardContent>
             </Card>
 
-            {/* WhatsApp Coming Soon Card */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Bot className="h-5 w-5" /> Test private AI connection</CardTitle>
-                <CardDescription className="mt-1">Run a safe connectivity proof-of-concept against the configured Ollama server. This does not use event or participant data.</CardDescription>
+                <div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><Bot className="h-5 w-5" /> Private AI diagnostics</CardTitle><CardDescription className="mt-1">Run a safe connectivity check or a small controlled load test against the configured Ollama server. No event or participant data is used.</CardDescription></div><Badge variant="outline">Admin only</Badge></div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap gap-2">
@@ -390,7 +393,6 @@ const AdminCommunication = () => {
               </CardContent>
             </Card>
 
-            {/* WhatsApp Coming Soon Card */}
             <Card>
               <CardHeader>
                 <CardTitle>WhatsApp</CardTitle>

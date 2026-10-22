@@ -210,7 +210,7 @@ def organizer_signup(
     organization_name: str = Form(...), name: str = Form(...), email: str = Form(...), phone: str = Form(...),
     password: str = Form(...), privacy_policy_accepted: bool = Form(...), organization_type: str = Form(...),
     address: str = Form(...), city: str = Form(...), state: str = Form(...), pincode: str = Form(...),
-    event_history: str = Form(...), discovery_source: str = Form(...), payment_preference: str = Form(...),
+    event_history: str = Form(...), discovery_source: str = Form(...), payment_preference: str = Form(""),
     id_proof_type: str = Form(...), id_proof: UploadFile = File(...),
     _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
@@ -230,21 +230,13 @@ def organizer_signup(
     if discovery_source not in {"REFERRAL", "SOCIAL_MEDIA", "SEARCH", "EVENT", "OTHER"}:
         raise HTTPException(422, "Choose how you heard about SportPass")
     organization_type = organization_type.strip().upper()
-    payment_preference = payment_preference.strip().upper()
     id_proof_type = id_proof_type.strip().upper()
     if organization_type not in {"RUNNING_CLUB", "CYCLING_CLUB", "TREK_ORGANIZER", "BADMINTON_ACADEMY", "SPORTS_ACADEMY", "OTHER"}:
         raise HTTPException(422, "Choose a valid organization type")
-    if payment_preference not in {"DIRECT_UPI", "CASHFREE", "BOTH", "UNSURE"}:
-        raise HTTPException(422, "Choose a valid payment preference")
-    payment_details = {}
-    if payment_preference in {"DIRECT_UPI", "BOTH"}:
-        if not isinstance(upi_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]{2,256}@[A-Za-z]{2,64}", upi_id.strip()) or not 2 <= len(payee_name.strip()) <= 200:
-            raise HTTPException(422, "Enter your UPI ID and payee name")
-        payment_details.update({"upiId": upi_id.strip(), "payeeName": payee_name.strip()})
-    if payment_preference in {"CASHFREE", "BOTH"}:
-        if not isinstance(pan_number, str) or not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", pan_number.strip().upper()) or not 2 <= len(legal_name.strip()) <= 200:
-            raise HTTPException(422, "Enter your legal name and valid PAN for gateway verification")
-        payment_details.update({"legalName": legal_name.strip(), "panNumber": pan_number.strip().upper()})
+    # Payment preferences, UPI details, PAN and legal details are collected only
+    # after organizer approval in the paid-verification flow.
+    payment_preference = None
+    payment_details = None
     if id_proof_type not in ORGANIZER_ID_PROOF_TYPES:
         raise HTTPException(422, "Choose a valid ID proof type")
     settings = get_settings()

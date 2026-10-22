@@ -141,7 +141,7 @@ def application_form(**overrides):
         phone="9876543210", password="test-password", privacy_policy_accepted="true",
         organization_type="RUNNING_CLUB", address="123 Main Street", city="Mysuru", state="Karnataka",
         pincode="570001", event_history="Monthly running events", discovery_source="REFERRAL",
-        payment_preference="CASHFREE", legal_name="Test Club", pan_number="ABCDE1234F", id_proof_type="PAN", **overrides)
+        id_proof_type="PAN", **overrides)
 
 
 def test_http_submission_status_rejection_and_admin_boundary(application_client):
@@ -151,7 +151,8 @@ def test_http_submission_status_rejection_and_admin_boundary(application_client)
     response = client.post("/auth/organizer-signup", data=application_form(), files={"id_proof": ("proof.pdf", b"%PDF-1.7 test", "application/pdf")})
     assert response.status_code == 201, response.text
     application = db.get(OrganizerApplication, uuid.UUID(response.json()["applicationId"]))
-    assert application.payment_details["panNumber"] == "ABCDE1234F"
+    assert application.payment_details is None
+    assert application.payment_preference is None
     assert client.get("/admin/organizer-applications").status_code == 401
     assert client.post(f"/admin/organizer-applications/{application.id}/id-proof", json={}).status_code == 401
     from app.api.deps import get_current_user
@@ -177,7 +178,7 @@ def test_http_submission_status_rejection_and_admin_boundary(application_client)
     assert client.post("/auth/organizer-application/status", json={"email": application.email, "password": "test-password"}).status_code == 403
 
 
-@pytest.mark.parametrize("field,value", [("address", " "), ("pincode", "123"), ("event_history", " "), ("privacy_policy_accepted", "false"), ("pan_number", "invalid"), ("discovery_source", "unknown")])
+@pytest.mark.parametrize("field,value", [("address", " "), ("pincode", "123"), ("event_history", " "), ("privacy_policy_accepted", "false"), ("discovery_source", "unknown")])
 def test_invalid_applications_never_upload_proof(application_client, field, value):
     client, db, storage, app = application_client
     data = application_form()

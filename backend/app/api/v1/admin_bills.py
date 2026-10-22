@@ -37,6 +37,7 @@ class BillIn(BaseModel):
     issuer_name: ShortText = "SportPass India"
     issuer_email: Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$", max_length=200)]
     issuer_phone: Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^\+?[0-9 ()-]{7,25}$")]
+    issuer_upi_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=120)] = "sportpassind@oksbi"
     issuer_address: Text
     customer_name: ShortText
     customer_address: Text
